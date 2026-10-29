@@ -20,6 +20,7 @@ import { DayCycle, fmtHour } from './daycycle.js';
 import { Lights } from './lights.js';
 import { Hands } from './hands.js';
 import { Mower } from './scythe.js';
+import { Quarry } from './pickaxe.js';
 import { Placement, PLACEABLE } from './placement.js';
 import { initIcons } from './icons.js';
 import { Book } from './book.js';
@@ -77,7 +78,7 @@ resize();
 initIcons(renderer);
 
 const tex = {
-  grass: T.grassTexture(), sand: T.sandTexture(), rock: T.rockTexture(), trunk: T.trunkTexture(),
+  grass: T.grassTexture(), sand: T.sandTexture(), rock: T.rockTexture(), stone: T.stoneTexture(), trunk: T.trunkTexture(),
   frond: T.frondTexture(), leaflet: T.leafletTexture(), fern: T.frondTexture(12, ['#174f16', '#1f661b', '#2a7f22', '#38972a', '#4cae33', '#68c440', '#8fd85a']),
   leaf: T.leafClusterTexture(), leaf2: T.leafClusterTexture(21, ['#1a5418', '#246e1e', '#2f8a26', '#3fa42f', '#55bd39', '#73d248', '#9de46a']),
   wood: T.woodTexture(), thatch: T.thatchTexture(), cushion: T.cushionTexture(), clouds: T.cloudAtlas(),
@@ -142,12 +143,20 @@ const axe = new Axe(scene, camera, tex, {
   drops: (list) => giveItems(list),
 });
 const mower = new Mower(scene);
+const quarry = new Quarry(scene, camera, {
+  sound: (n) => audio.sfx(n),
+  rumble: (s, ms) => input.rumble(s, ms),
+  freeze: (s) => hands.view.freeze(s),
+  flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
+  drops: (list) => giveItems(list),
+});
 const placement = new Placement(scene, camera, lights, {
   sound: (n) => audio.sfx(n), message: toast,
   flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
 });
 const hands = new Hands(lights, {
   sound: (n) => audio.sfx(n),
+  mine: () => quarry.strike(),
   mow: (x, z, fx, fz, y) => {
     const r = mower.mow(x, z, fx, fz, y);
     if (r.mowed || r.fibres) audio.sfx('mow');
@@ -188,7 +197,7 @@ function openChest(o) {
 }
 function aimedChest() { const o = placement.aimed(); return o?.items ? o : null; }
 
-const ACTION_ICON = { book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍' };
+const ACTION_ICON = { book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍' };
 function onHeldChange(held) {
   fishing.setEquipped(held?.id === 'rod');
   axe.setEquipped(held?.id === 'axe');
@@ -266,15 +275,17 @@ function buildWorld() {
   fishing.setWorld(world);
   axe.setWorld(world, veg, player);
   mower.setWorld(world, veg);
+  quarry.setWorld(world, veg, player);
+  quarry.prewarm(renderer, camera);
   placement.setWorld(world, player);
   world.setShadowDir(globals.uSunDir.value);
   day.shadowDir.copy(globals.uSunDir.value);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { player, camera, fishing, input, inventory, axe, day, hands, mower, placement, lights };
+  window.__game = { player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, placement, lights };
   console.log(`[tropicool] world ${settings.world.seed} (${world.cfg.seed}) built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
-    bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length,
+    bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length, stones: world.props.stones.length,
   });
 }
 
@@ -285,8 +296,8 @@ function regenerate() {
 
 // ---------------------------------------------------------------- menus
 let state = 'start'; // start | play | menu | inventory | book
-const ranges = ['islands', 'size', 'relief', 'vegetation'];
-const fmt = { hour: (v) => fmtHour(+v), islands: (v) => v, size: (v) => `×${(+v).toFixed(2)}`, relief: (v) => `${Math.round(v * 100)}%`, vegetation: (v) => `${Math.round(v * 100)}%`, res: (v) => `${Math.round(v * 100)}%`, sens: (v) => (+v).toFixed(1), volume: (v) => `${Math.round(v * 100)}%` };
+const ranges = ['islands', 'size', 'relief', 'vegetation', 'stones'];
+const fmt = { hour: (v) => fmtHour(+v), islands: (v) => v, size: (v) => `×${(+v).toFixed(2)}`, relief: (v) => `${Math.round(v * 100)}%`, vegetation: (v) => `${Math.round(v * 100)}%`, stones: (v) => `${Math.round(v * 100)}%`, res: (v) => `${Math.round(v * 100)}%`, sens: (v) => (+v).toFixed(1), volume: (v) => `${Math.round(v * 100)}%` };
 function syncOutputs() {
   document.querySelectorAll('output[data-for]').forEach((o) => { const id = o.dataset.for; o.textContent = fmt[id]($('#' + id).value); });
 }
@@ -587,7 +598,7 @@ function frame() {
     else if (p.has('action')) {
       if (heldId === 'rod') fishing.action(input);
       else if (heldId === 'axe') axe.action();
-      else if (heldId === 'scythe') hands.action();
+      else if (heldId === 'scythe' || heldId === 'pickaxe') hands.action();
       else if (heldId === 'book') openBook();
       else if (PLACEABLE[heldId]) { if (placement.place()) inventory.take(heldId, 1); }
       else if (!pickPlaced()) toast('Prends un outil dans ta barre');
@@ -624,6 +635,7 @@ function frame() {
     axe.update(dt);
     hands.update(dt, player, camera);
     mower.update(dt);
+    quarry.update(dt);
     placement.aim(state === 'play' ? inventory.held?.id : null);
     placement.update(dt);
     current.grass.update(camera);

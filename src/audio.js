@@ -299,12 +299,62 @@ export class Audio {
     this.noise({ type: 'highpass', f0: 2500, f1: 4500, q: 0.4, dur: 1.3, attack: 0.15, gain: 0.035, delay: 0.05 }); // grass hiss
   }
 
+  // steel point into stone: a bright ring, the crack of the blow, the knock
+  // of the rock (deeper as it splits), grit trickling down; prog = 0..1
+  mine(prog = 0) {
+    const j = 0.94 + Math.random() * 0.12, body = 520 * j * (1 - prog * 0.3);
+    this.noise({ type: 'highpass', f0: 3200, q: 0.8, dur: 0.03, attack: 0.001, gain: 0.3 });           // the bite
+    this.tone(2650 * j, 2550 * j, 0.22, 'sine', 0.06 * (1 - prog * 0.5));                               // steel ring...
+    this.tone(4170 * j, 4050 * j, 0.14, 'sine', 0.035 * (1 - prog * 0.5));                              // ...inharmonic partial
+    this.noise({ type: 'bandpass', f0: body, q: 6, dur: 0.16, attack: 0.002, gain: 0.5 });              // stone knock
+    this.noise({ type: 'bandpass', f0: body * 2.3, q: 5, dur: 0.08, attack: 0.002, gain: 0.22 });
+    this.tone(body * 0.42, body * 0.3, 0.12, 'triangle', 0.16);
+    this.noise({ type: 'lowpass', f0: 220, q: 0.5, dur: 0.12, gain: 0.32, buf: this.brown });          // weight of the blow
+    for (let i = 0; i < 4 + Math.round(prog * 5); i++) {                                                 // grit and chips falling
+      const d = 0.05 + Math.random() * 0.35;
+      this.noise({ type: 'bandpass', f0: 2200 + Math.random() * 3000, q: 4, dur: 0.018, attack: 0.001, gain: 0.05 + Math.random() * 0.04, delay: d });
+    }
+    if (prog > 0.5) this.noise({ type: 'bandpass', f0: 900, f1: 500, q: 2, dur: 0.1, gain: 0.12, delay: 0.015 }); // a crack opening
+  }
+
+  // the stone gives way: a sharp split, a heavy crunch, rubble rattling down
+  crumble() {
+    this.noise({ type: 'highpass', f0: 2600, q: 0.7, dur: 0.04, attack: 0.001, gain: 0.32 });
+    this.tone(2400, 2300, 0.12, 'sine', 0.03);
+    this.noise({ type: 'bandpass', f0: 380, f1: 180, q: 1.5, dur: 0.35, attack: 0.003, gain: 0.45 });
+    this.tone(110, 50, 0.4, 'sine', 0.35);
+    this.noise({ type: 'lowpass', f0: 700, f1: 150, q: 0.5, dur: 0.6, attack: 0.005, gain: 0.35, buf: this.brown });
+    for (let i = 0; i < 16; i++) { // pieces knocking together as they land
+      const d = 0.08 + Math.random() * 0.7, f = 700 + Math.random() * 2200;
+      this.noise({ type: 'bandpass', f0: f, q: 6, dur: 0.03 + Math.random() * 0.03, attack: 0.001, gain: 0.07 + Math.random() * 0.08, delay: d });
+    }
+    this.noise({ f0: 2400, f1: 1200, q: 0.5, dur: 0.9, attack: 0.1, gain: 0.04, delay: 0.1 }); // grit settling
+  }
+
   sfx(name) {
     if (!this.ctx) return;
     const [kind, a, b] = name.split(':');
     if (kind === 'chop') return this.chop(a, +b || 0);
     if (kind === 'fall') return this.fall(a);
     if (kind === 'thud') return this.landTree(a);
+    if (kind === 'mine') return this.mine(+a || 0);
+    if (name === 'crumble') return this.crumble();
+    if (name === 'pickSwing') { // heavy head rocked back, then whooshing down
+      this.noise({ type: 'lowpass', f0: 300, f1: 500, q: 0.6, dur: 0.16, attack: 0.08, gain: 0.05, buf: this.brown });
+      this.noise({ f0: 450, f1: 1500, q: 1.1, dur: 0.12, attack: 0.08, gain: 0.08, delay: 0.17 });
+    }
+    if (name === 'clank') { // a cliff rock too big for the pick
+      this.noise({ type: 'highpass', f0: 3000, q: 0.8, dur: 0.03, attack: 0.001, gain: 0.3 });
+      this.tone(2900, 2800, 0.35, 'sine', 0.07); this.tone(4400, 4300, 0.25, 'sine', 0.04); this.tone(1900, 1850, 0.3, 'triangle', 0.03);
+      this.noise({ type: 'bandpass', f0: 700, q: 5, dur: 0.1, gain: 0.25 });
+      this.noise({ type: 'lowpass', f0: 200, q: 0.5, dur: 0.1, gain: 0.25, buf: this.brown });
+    }
+    if (name === 'clack') { const f = 900 + Math.random() * 900; this.noise({ type: 'bandpass', f0: f, q: 7, dur: 0.05, attack: 0.001, gain: 0.12 }); this.tone(f * 0.5, f * 0.4, 0.05, 'triangle', 0.04); }
+    if (kind === 'dig') { // point into the ground
+      this.noise({ type: 'lowpass', f0: 300, q: 0.5, dur: 0.14, gain: 0.35, buf: this.brown });
+      this.noise({ type: 'bandpass', f0: a === 'sand' ? 1700 : 1000, f1: 600, q: 0.8, dur: 0.18, attack: 0.004, gain: 0.12 });
+      this.noise({ type: 'highpass', f0: 3500, q: 0.5, dur: 0.25, attack: 0.02, gain: 0.03, delay: 0.04 }); // earth sprinkling back
+    }
     if (name === 'cast') { this.tone(900, 300, 0.35, 'triangle', 0.04); this.noise({ f0: 2500, f1: 900, q: 0.8, dur: 0.3, attack: 0.08, gain: 0.04 }); }
     if (name === 'plop') { this.tone(420, 140, 0.18, 'sine', 0.16); this.noise({ f0: 900, f1: 2000, q: 1, dur: 0.25, gain: 0.06, delay: 0.02 }); }
     if (name === 'bite') { this.tone(700, 500, 0.08, 'square', 0.05); this.tone(700, 500, 0.08, 'square', 0.05, 0.12); }

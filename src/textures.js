@@ -132,6 +132,41 @@ export function rockTexture(seed = 3) {
   return p.texture();
 }
 
+// Loose surface stones (mined with the pickaxe): warm basalt in rounded
+// cells, cracks between them, and pale quartz veins as the signature detail.
+// 96 px over 3 m of the triplanar ROCK mapping = 32 px/m.
+export function stoneTexture(seed = 13) {
+  const S = 96, p = new Pix(S, S), rnd = mulberry32(seed);
+  const pal = ['#4a4450', '#5c5560', '#716a6e', '#877f7e', '#9d948d', '#b4aa9e'].map(hex);
+  const quartz = ['#cfc6b8', '#e8e0d0', '#f8f2e6'].map(hex);
+  const n = tileNoise(rnd, 12);
+  const pts = [];
+  for (let i = 0; i < 26; i++) pts.push([rnd() * S, rnd() * S, 2.2 + rnd() * 1.6]);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    let d1 = 1e9, d2 = 1e9, id = 0;
+    for (let i = 0; i < pts.length; i++) for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      const d = Math.hypot(x - pts[i][0] - ox * S, y - pts[i][1] - oy * S);
+      if (d < d1) { d2 = d1; d1 = d; id = i; } else if (d < d2) d2 = d;
+    }
+    const edge = d2 - d1;
+    let k = pts[id][2] + (n(x / 8, y / 8) - 0.5) * 1.6 - d1 * 0.03;
+    if (edge < 1.2) k = 0.3; else if (edge < 2.4) k += 0.9; // crack, then a lit lip
+    p.set(x, y, pal[Math.max(0, Math.min(5, Math.round(k)))]);
+  }
+  // quartz veins wandering across the cells
+  for (let v = 0; v < 5; v++) {
+    let x = rnd() * S, y = rnd() * S, a = rnd() * 6.28;
+    const len = 30 + rnd() * 50;
+    for (let s = 0; s < len; s++) {
+      a += (rnd() - 0.5) * 0.5; x += Math.cos(a); y += Math.sin(a);
+      p.set(Math.floor(x), Math.floor(y), quartz[s % 7 === 0 ? 2 : 1]);
+      if (rnd() < 0.35) p.set(Math.floor(x), Math.floor(y) + 1, quartz[0]);
+    }
+  }
+  for (let i = 0; i < 120; i++) p.set(Math.floor(rnd() * S), Math.floor(rnd() * S), rnd() < 0.5 ? pal[0] : quartz[0]); // grit
+  return p.texture();
+}
+
 // Palm trunk: stacked fibrous rings.
 export function trunkTexture(seed = 4) {
   const W = 32, H = 32, p = new Pix(W, H), rnd = mulberry32(seed);

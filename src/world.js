@@ -12,6 +12,7 @@ export const DEFAULT_CONFIG = {
   size: 1.0,
   relief: 0.4,
   vegetation: 0.75,
+  stones: 0.5,
 };
 
 // A seed can be any text: digits keep their numeric value (old worlds stay the
@@ -165,7 +166,7 @@ export function generateWorld(cfg, felled = new Set()) {
 
   // ---- vegetation & rocks ---------------------------------------------
   const veg = cfg.vegetation;
-  const props = { palms: [], trees: [], bushes: [], ferns: [], rocks: [] };
+  const props = { palms: [], trees: [], bushes: [], ferns: [], rocks: [], stones: [] };
   const occ = new Map();
   const occKey = (x, z) => `${Math.floor(x / 3)},${Math.floor(z / 3)}`;
   const step = 2;
@@ -221,6 +222,24 @@ export function generateWorld(cfg, felled = new Set()) {
     if (h > 0.4) props.palms.push({ x: px, y: h - 0.15, z: pz, s: 0.95 + rnd() * 0.3, rot: rnd() * 6.28, v: k % 4 });
   }
 
+  // ---- loose stones to mine with the pickaxe ---------------------------
+  // own random stream, so adding them leaves the other props (and the keys of
+  // felled trees in older saves) exactly where they were
+  const srnd = mulberry32(cfg.seed + 5150);
+  const stoneK = cfg.stones ?? DEFAULT_CONFIG.stones;
+  for (let z = -half + 4; z < half - 4; z += 3) {
+    for (let x = -half + 4; x < half - 4; x += 3) {
+      const px = x + (srnd() - 0.5) * 2.7, pz = z + (srnd() - 0.5) * 2.7, r = srnd(), s = srnd(), v = srnd(), rot = srnd();
+      const h = heightAt(px, pz);
+      if (h < 0.55 || exclusion(px, pz, 0.8) || occ.has(occKey(px, pz))) continue;
+      const i = clamp(Math.floor((px + half) / cell), 0, N - 1), j = clamp(Math.floor((pz + half) / cell), 0, N - 1);
+      const patch = smoothstep(0.0, 0.6, sx2.fbm(px * 0.025 + 40, pz * 0.025 - 60, 2)); // stony patches
+      if (r >= stoneK * (0.02 + 0.2 * patch + 0.1 * rock[j * N + i])) continue;
+      occ.set(occKey(px, pz), 1);
+      props.stones.push({ x: px, y: h - 0.06, z: pz, s: 0.45 + s * s * 0.65, rot: rot * 6.28, v: Math.floor(v * 3) });
+    }
+  }
+
   // ---- baked canopy shadows -------------------------------------------
   // shadows are painted along the light direction; the day cycle re-paints
   // them as the sun moves (elevation clamped so evening shadows stay sane)
@@ -243,7 +262,7 @@ export function generateWorld(cfg, felled = new Set()) {
   };
   // every prop gets a stable key so felled trees can be remembered per world
   for (const type of Object.keys(props)) props[type].forEach((p, i) => { p.type = type; p.key = `${type}:${i}`; p.gone = felled.has(p.key); });
-  const SHADOW = { palms: [7.5, 3.6, 0.75], trees: [4.5, 3.4, 0.85], bushes: [0.6, 1.3, 0.7], rocks: [0.7, 1.2, 0.7] };
+  const SHADOW = { palms: [7.5, 3.6, 0.75], trees: [4.5, 3.4, 0.85], bushes: [0.6, 1.3, 0.7], rocks: [0.7, 1.2, 0.7], stones: [0.3, 0.55, 0.6] };
   const shadowOf = (p) => { const [h, r, k] = SHADOW[p.type]; return [p.x, p.z, h * p.s, r * p.s, k]; };
   const hutShadow = [hut.x, hut.z, hut.floor - heightAt(hut.x, hut.z) + 3.2, 4.4, 0.85];
   const paintAll = (filter) => {

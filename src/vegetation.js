@@ -303,11 +303,33 @@ function makeRock(seed) {
   return g;
 }
 
-function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, translucent = 0, rock = false, tint = 0.12, gain = 1, cut = false } = {}) {
+// Loose stone (radius ~0.5 before scaling): a rounded boulder sitting a little
+// sunk in the ground, one flatter knapped face, a lumpy crown.
+export function makeStone(seed, detail = 3, r0 = 0.6) {
+  const sx = makeSimplex(seed);
+  const g = new THREE.IcosahedronGeometry(1, detail);
+  const p = g.attributes.position;
+  const cut = new THREE.Vector3(sx.noise(seed, 1), 0.25, sx.noise(2, seed)).normalize();
+  for (let i = 0; i < p.count; i++) {
+    const v = V(p.getX(i), p.getY(i), p.getZ(i));
+    v.multiplyScalar(1 + sx.noise(v.x * 1.6 + v.z, v.y * 1.6 - v.z) * 0.18 + sx.noise(v.x * 4.2, v.z * 4.2 + v.y) * 0.05);
+    const f = v.dot(cut) - 0.62; // a flatter fractured face
+    if (f > 0) v.addScaledVector(cut, -f * 0.75);
+    v.y = v.y > 0 ? v.y * 0.92 : v.y * 0.45;
+    p.setXYZ(i, v.x * r0, v.y * r0, v.z * r0);
+  }
+  g.computeVertexNormals();
+  g.setAttribute('aSway', new THREE.BufferAttribute(new Float32Array(p.count), 1));
+  g.computeBoundingSphere();
+  return g;
+}
+
+function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, translucent = 0, rock = false, tint = 0.12, gain = 1, cut = false, stone = false, crack = false } = {}) {
   return makeMaterial({
     side: alphaTest > 0 ? THREE.DoubleSide : THREE.FrontSide,
-    defines: { ...(rock ? { ROCK: 1 } : {}), ...(cut ? { CUT: 1 } : {}) },
+    defines: { ...(rock ? { ROCK: 1 } : {}), ...(cut ? { CUT: 1 } : {}), ...(stone ? { STONE: 1 } : {}), ...(crack ? { CRACK: 1 } : {}) },
     uniforms: {
+      uCrack: { value: 0 },
       uMap: { value: map }, uAlphaTest: { value: alphaTest }, uWind: { value: wind },
       uWrap: { value: wrap }, uTrans: { value: translucent }, uTint: { value: tint }, uGain: { value: gain },
     },
@@ -323,9 +345,15 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         attribute float aCut;
         varying float vCut;
       #endif
+      #ifdef CRACK
+        varying vec3 vLocal;
+      #endif
       void main() {
         #ifdef CUT
           vCut = aCut;
+        #endif
+        #ifdef CRACK
+          vLocal = position;
         #endif
         mat4 m = modelMatrix;
         #ifdef USE_INSTANCING
@@ -356,6 +384,24 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
       #ifdef CUT
         varying float vCut;
       #endif
+      #ifdef CRACK
+        uniform float uCrack;
+        varying vec3 vLocal;
+        // pixel-snapped 3D cells: borders of more and more cells split open
+        float crackAt(vec3 q) {
+          vec3 g = floor(q * 22.0) / 22.0 * 5.0, ip = floor(g), fp = fract(g);
+          float d1 = 9.0, d2 = 9.0, id = 0.0;
+          for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+            vec3 o = vec3(float(x), float(y), float(z)), c = ip + o;
+            vec3 h = fract(sin(vec3(dot(c, vec3(127.1, 311.7, 74.7)), dot(c, vec3(269.5, 183.3, 246.1)), dot(c, vec3(113.5, 271.9, 124.6)))) * 43758.5453);
+            vec3 r = o + h - fp; float d = dot(r, r);
+            if (d < d1) { d2 = d1; d1 = d; id = h.x; } else if (d < d2) d2 = d;
+          }
+          float e = sqrt(d2) - sqrt(d1);
+          float open = step(fract(id * 7.31), uCrack);
+          return open * (e < 0.07 ? 2.0 : e < 0.13 ? 1.0 : 0.0);
+        }
+      #endif
       void main() {
         #ifdef ROCK
           vec3 an = abs(vN);
@@ -371,6 +417,15 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         float low = 1.0 - smoothstep(0.4, 2.2, vWorld.y - d.r);
         float shadow = 1.0 - d.b * 0.55 * uShade * low;
         vec3 col = tex.rgb * (1.0 - uTint * 0.5 + vRand * uTint);
+        #ifdef STONE
+          // lichen and moss in pixel clumps on the top of the stone
+          float mossy = step(0.8, n.y) * step(0.78, hash12(floor(vWorld.xz * 4.0)) * 0.6 + hash12(floor(vWorld.xz * 16.0)) * 0.5);
+          col = mix(col, hash12(floor(vWorld.xz * 16.0) + 3.0) < 0.5 ? vec3(0.36, 0.62, 0.17) : vec3(0.49, 0.74, 0.22), mossy);
+        #endif
+        #ifdef CRACK
+          float ck = crackAt(vLocal);
+          col = ck > 1.5 ? vec3(0.17, 0.14, 0.2) : ck > 0.5 ? col * 1.22 : col; // dark split, lit lip
+        #endif
         #ifdef CUT
           // fresh wood inside an axe notch: pale ramp, darker at the bottom of the cut
           if (vCut > 0.04) {
@@ -407,7 +462,9 @@ export class Vegetation {
       fern: foliageMaterial(tex.fern, { alphaTest: 0.5, wrap: 0.7, translucent: 0.3, tint: 0.3, wind: 0.6 }),
       rock: foliageMaterial(tex.rock, { alphaTest: 0, wrap: 0.15, rock: true, tint: 0.25 }),
       trunkCut: foliageMaterial(tex.trunk, { alphaTest: 0, wrap: 0.3, tint: 0.2, cut: true }),
+      stone: foliageMaterial(tex.stone, { alphaTest: 0, wrap: 0.2, rock: true, tint: 0.3, stone: true }),
     };
+    this.tex = tex;
     this.seed = seed;
     this.materials = mats;
 
@@ -417,7 +474,8 @@ export class Vegetation {
     const bushes = [0, 1, 2].map((i) => makeBush(seed * 13 + i * 53));
     const ferns = [0, 1].map((i) => makeFern(seed * 17 + i * 19));
     const rocks = [0, 1, 2].map((i) => makeRock(seed * 19 + i * 7));
-    this.geometries = [...palms.flatMap((p) => [p.trunk, p.fronds, p.near]), ...trees.flatMap((t) => [t.trunk, t.leaves]), ...bushes, ...ferns, ...rocks];
+    const stones = this.stones = [0, 1, 2].map((i) => makeStone(seed * 23 + i * 13));
+    this.geometries = [...palms.flatMap((p) => [p.trunk, p.fronds, p.near]), ...trees.flatMap((t) => [t.trunk, t.leaves]), ...bushes, ...ferns, ...rocks, ...stones];
 
     const parts = {
       palms: (v) => [[palms[v].trunk, mats.trunk], [palms[v].fronds, mats.frond, 'far'], [palms[v].near, mats.leaflet, 'near']],
@@ -425,8 +483,9 @@ export class Vegetation {
       bushes: (v) => [[bushes[v], mats.bush]],
       ferns: (v) => [[ferns[v], mats.fern]],
       rocks: (v) => [[rocks[v], mats.rock]],
+      stones: (v) => [[stones[v], mats.stone]],
     };
-    const range = { palms: 260, trees: 240, bushes: 120, ferns: 70, rocks: 200 };
+    const range = { palms: 260, trees: 240, bushes: 120, ferns: 70, rocks: 200, stones: 150 };
 
     const CELL = 64;
     const buckets = new Map();
@@ -445,7 +504,9 @@ export class Vegetation {
         const im = new THREE.InstancedMesh(geo, mat, list.length);
         list.forEach((p, i) => {
           q.setFromAxisAngle(UP, p.rot);
-          if (type === 'rocks') s.set(p.s * 1.2, p.s, p.s * 0.95); else s.setScalar(p.s);
+          if (type === 'rocks') s.set(p.s * 1.2, p.s, p.s * 0.95);
+          else if (type === 'stones') s.set(p.s * 1.1, p.s * 0.9, p.s);
+          else s.setScalar(p.s);
           m4.compose(t.set(p.x, p.y, p.z), q, s);
           im.setMatrixAt(i, m4);
           (p.inst ||= []).push({ mesh: im, i });
@@ -470,6 +531,12 @@ export class Vegetation {
       basePos: geo.attributes.position.array.slice(), baseNor: geo.attributes.normal.array.slice(),
       material: this.materials.trunkCut,
     };
+  }
+
+  // A stone being mined: same shape as its instance, with its own material so
+  // the cracks can open blow after blow (dispose the material when done).
+  detailStone(p) {
+    return { geo: this.stones[p.v], material: foliageMaterial(this.tex.stone, { alphaTest: 0, wrap: 0.2, rock: true, tint: 0.3, stone: true, crack: true }) };
   }
 
   setDistanceScale(k) { this.distScale = k; }
@@ -497,5 +564,6 @@ export function colliders(world) {
   for (const p of world.props.palms) if (!p.gone) list.push({ x: p.x, z: p.z, r: 0.32 * p.s, prop: p });
   for (const p of world.props.trees) if (!p.gone) list.push({ x: p.x, z: p.z, r: 0.35 * p.s, prop: p });
   for (const p of world.props.rocks) if (p.y + p.s * 0.6 > world.heightAt(p.x, p.z) + 0.4) list.push({ x: p.x, z: p.z, r: 0.95 * p.s });
+  for (const p of world.props.stones) if (!p.gone) list.push({ x: p.x, z: p.z, r: 0.6 * p.s, prop: p });
   return list;
 }

@@ -463,6 +463,48 @@ function scytheModel() {
   };
 }
 
+// Pickaxe: straight golden handle with a leather grip, a curved steel head
+// across its top: long pointed pick towards -X, short flat chisel towards +X,
+// both bending down. Signature detail: the cord binding under the eye and the
+// honed white points.
+export const PICK = { L: 0.8, HY: 0.765, TIP: V(-0.29, 0.69, 0) };
+const STEEL = [[0.32, 0.37, 0.47], [0.4, 0.45, 0.55], [0.5, 0.56, 0.65], [0.72, 0.77, 0.85], [0.96, 0.98, 1.0]];
+function pickaxeModel() {
+  const { L, HY } = PICK;
+  const handle = lathe([[0, 0], [0.03, 0], [0.037, 0.012], [0.036, 0.04], [0.031, 0.07], ...Array.from({ length: 8 }, (_, i) => [0.031 - i * 0.0012, 0.12 + i * (L - 0.14) / 7]), [0.02, L], [0, L]], 10, 1);
+  { const U = handle.attributes.uv; for (let i = 0; i < U.count; i++) U.setY(i, U.getY(i) * 3); }
+  const grip = lathe([[0.033, 0.07], [0.037, 0.078], ...Array.from({ length: 6 }, (_, i) => [0.036 + (i % 2) * 0.002, 0.1 + i * 0.03]), [0.037, 0.26], [0.032, 0.268]], 10, 2);
+  const cord = merge([0, 1, 2, 3].map((k) => [lathe([[0.024, 0], [0.031, 0.008], [0.031, 0.017], [0.024, 0.024]], 8, 2), M(0, HY - 0.135 + k * 0.021)]));
+  // head: two tapered arms on an arc, meeting in a bevelled oval eye
+  const arm = (dir, len, drop, r0, r1, section) => tube(
+    (t) => V(dir * (0.03 + t * len), HY + 0.004 - drop * t * t, 0),
+    (t) => r0 + (r1 - r0) * Math.pow(t, 0.85), { rings: 12, radial: 10, section, up: V(0, 0, 1) });
+  const pick = arm(-1, 0.27, 0.075, 0.025, 0.0035, rounded(1.15, 0.85, 2.6));
+  const chisel = arm(1, 0.17, 0.05, 0.024, 0.016, (a) => { const [x, y] = rounded(1, 1, 3)(a); return [x * 0.45, y * 1.3]; }); // flat blade, wide across
+  const eye = tube(line(V(0, HY - 0.052, 0), V(0, HY + 0.05, 0)), (t) => 0.04 + Math.sin(t * Math.PI) * 0.006, { rings: 4, radial: 12, section: rounded(1.12, 0.92, 3), up: V(0, 0, 1) });
+  const head = merge([[pick], [chisel], [eye]]);
+  const P = head.attributes.position, col = [];
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), ax = Math.abs(x);
+    let k = ax < 0.045 ? 1 : 2; // blued eye, light cheeks
+    if (x < 0 && ax > 0.2) k = ax > 0.26 ? 4 : 3; // honed point
+    if (x > 0 && ax > 0.15) k = 4;                 // chisel edge
+    if (k === 2 && y > HY + 0.012) k = 3;          // lit top of the arms
+    col.push(...STEEL[k]);
+  }
+  head.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  { const U = head.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) * 5, P.getY(i) * 5 + P.getZ(i) * 5); }
+  return {
+    parts: [
+      { geo: handle, tex: T.gold() },
+      { geo: grip, tex: T.grip() },
+      { geo: cord, tex: T.rope() },
+      { geo: head, tex: T.steel(), metal: 1, vcol: true },
+    ],
+  };
+}
+function stoneModel() { return { parts: [{ geo: rockGeo(64, 0.22), tex: T.stone() }] }; }
+
 function axeIcon() { return { parts: [{ geo: handleGeometry(), tex: T.gold() }, { geo: headGeometry(), tex: T.steel(), metal: 1, vcol: true }] }; }
 
 function logModel(pal) {
@@ -678,6 +720,8 @@ export const MODELS = {
   parasol: () => once('m:parasol', parasolModel),
   campfire: () => once('m:campfire', campfireModel),
   scythe: () => once('m:scythe', scytheModel),
+  pickaxe: () => once('m:pickaxe', pickaxeModel),
+  stone: () => once('m:stone', stoneModel),
   axe: () => once('m:axe', axeIcon),
   rod: () => once('m:rod', rodModel),
   'wood:palm': () => once('m:logp', () => logModel(TRUNK)),

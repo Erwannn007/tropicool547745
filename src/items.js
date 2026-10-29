@@ -6,6 +6,7 @@ export const ITEMS = {
   rod: { name: 'Canne à pêche', max: 1, cat: 'Outil', desc: 'Lance depuis le ponton ou la plage, ferre quand ça mord.' },
   axe: { name: 'Hache', max: 1, cat: 'Outil', desc: 'Abat palmiers et arbres. Frappe un objet posé pour le reprendre.' },
   scythe: { name: 'Faux', max: 1, cat: 'Outil', desc: 'Fauche l’herbe haute et les fougères : donne des fibres.' },
+  pickaxe: { name: 'Pioche', max: 1, cat: 'Outil', desc: 'Casse les pierres posées à la surface des îles : donne des pierres.' },
   book: { name: 'Carnet de voyage', max: 1, cat: 'Outil', desc: 'Utilise-le pour l’ouvrir et y écrire tes notes, tes coins de pêche, tes souvenirs.' },
   torch: { name: 'Torche tiki', max: 16, cat: 'Objet à poser', desc: 'Éclaire autour de toi. Utilise-la pour la planter dans le sol.', place: 'torch' },
   transat: { name: 'Transat', max: 4, cat: 'Objet à poser', desc: 'Chaise longue en teck et toile rayée, serviette roulée.', place: 'transat' },
@@ -15,12 +16,13 @@ export const ITEMS = {
   'wood:palm': { name: 'Bois de palmier', max: 64, cat: 'Matériau', desc: 'Tronçon fibreux à anneaux.' },
   'wood:tree': { name: 'Bois tropical', max: 64, cat: 'Matériau', desc: 'Bois dur et sombre des arbres de la jungle.' },
   coconut: { name: 'Noix de coco', max: 64, cat: 'Nourriture', desc: 'Son huile fait brûler les torches.' },
+  stone: { name: 'Pierre', max: 64, cat: 'Matériau', desc: 'Éclat de basalte veiné de quartz, taillé à la pioche.' },
   fibre: { name: 'Fibres végétales', max: 64, cat: 'Matériau', desc: 'Herbe fauchée, tressée en botte.' },
 };
 
 export const RECIPES = [
   { out: 'torch', n: 2, need: [['wood:palm', 1], ['fibre', 2], ['coconut', 1]] },
-  { out: 'campfire', n: 1, need: [['wood:tree', 2], ['wood:palm', 2], ['fibre', 1]] },
+  { out: 'campfire', n: 1, need: [['wood:tree', 2], ['wood:palm', 1], ['stone', 4], ['fibre', 1]] },
   { out: 'transat', n: 1, need: [['wood:tree', 3], ['fibre', 6]] },
   { out: 'parasol', n: 1, need: [['wood:palm', 2], ['fibre', 10]] },
   { out: 'chest', n: 1, need: [['wood:tree', 4], ['wood:palm', 2], ['fibre', 2]] },

@@ -1,8 +1,10 @@
-// What the hands show for the new items: the scythe (mowing sweep), the tiki
+// What the hands show for the new items: the scythe (mowing sweep), the
+// pickaxe (overhead stroke), the tiki
 // torch (lights the way, flickers) and a small version of any placeable.
 import * as THREE from 'three';
 import { HeldView } from './held.js';
-import { MODELS } from './models.js';
+import { MODELS, PICK } from './models.js';
+import { basis } from './axeModel.js';
 import { dress } from './dress.js';
 import { PLACEABLE } from './placement.js';
 
@@ -50,6 +52,32 @@ const SCYTHE = {
   trail: { tip: [-0.6, 0, 0.25], inner: [-0.18, 0, 0.0], from: 0.29, to: 0.47, life: 0.2 },
 };
 
+// Pickaxe: held upright in the right hand, the head just above the middle of
+// the screen, turned a little to the left. Blow: rocked back over the
+// shoulder, a held beat, a fast overhead stroke down in front, a small recoil
+// off the stone and a soft return. The model's handle is +Y, its point -X.
+// pk(t, position, pitch (+ = top towards the player), yaw (+ = left), roll (+ = top leans left))
+const pk = (t, p, pitch, yaw, roll, e) => {
+  const eu = new THREE.Euler(pitch, yaw, roll, 'YXZ');
+  return { t, p, q: basis(new THREE.Vector3(0, 1, 0).applyEuler(eu).toArray(), new THREE.Vector3(0, 0, -1).applyEuler(eu).toArray()), e };
+};
+const P_IDLE = pk(0, [0.34, -0.66, -0.68], -0.05, 0.8, 0.07);
+const PICKAXE = {
+  idle: P_IDLE,
+  scale: 0.86,
+  keys: [
+    P_IDLE,
+    pk(0.17, [0.34, -0.58, -0.74], 0.32, 0.7, -0.05, 'out'),   // rock back over the shoulder
+    pk(0.21, [0.35, -0.57, -0.74], 0.38, 0.69, -0.06, 'inOut'),   // hang
+    pk(0.255, [0.2, -0.68, -0.66], -0.68, 0.5, 0.1, 'in'),      // strike down in front
+    pk(0.3, [0.21, -0.66, -0.66], -0.52, 0.52, 0.09, 'out'),    // recoil off the stone
+    pk(0.36, [0.22, -0.67, -0.67], -0.6, 0.54, 0.09, 'inOut'),  // settle
+    { ...P_IDLE, t: 0.66, e: 'inOut' },                          // back up
+  ],
+  impact: 0.255,
+  trail: { tip: PICK.TIP.toArray(), inner: [-0.08, PICK.HY, 0], from: 0.2, to: 0.26, life: 0.12 },
+};
+
 const TORCH = { idle: { p: [0.36, -0.86, -0.66], q: Q(-0.1, 0.25, -0.16) }, scale: 0.5 };
 const MINI = {
   transat: { idle: { p: [0.36, -0.44, -0.78], q: Q(0.45, -0.7, 0.05) }, scale: 0.22 },
@@ -62,7 +90,7 @@ const MINI = {
 export class Hands {
   constructor(lights, hooks) {
     this.view = new HeldView();
-    this.view.onChain = () => hooks.sound?.('swish');
+    this.view.onChain = () => hooks.sound?.(this.id === 'pickaxe' ? 'pickSwing' : 'swish');
     this.hooks = hooks;
     this.light = lights.add({ x: 0, y: -999, z: 0, radius: 7, r: 0.75, g: 0.45, b: 0.2, off: true, flicker: 1.4 });
     this.id = null;
@@ -71,6 +99,7 @@ export class Hands {
   setHeld(id) {
     this.id = id;
     if (id === 'scythe') this.view.set(id, dress(MODELS.scythe(), 'held'), SCYTHE);
+    else if (id === 'pickaxe') this.view.set(id, dress(MODELS.pickaxe(), 'held'), PICKAXE);
     else if (id === 'torch') this.view.set(id, dress(MODELS.torch(), 'held'), TORCH);
     else if (MINI[id]) this.view.set(id, dress(MODELS[id](), 'held'), MINI[id]);
     else this.view.set(null, null, null);
@@ -79,13 +108,16 @@ export class Hands {
 
   action() {
     if (this.id === 'scythe' && this.view.swing()) this.hooks.sound?.('swish');
+    if (this.id === 'pickaxe' && this.view.swing()) this.hooks.sound?.('pickSwing');
   }
 
   update(dt, player, camera) {
     const moving = player.onGround && Math.hypot(player.vel.x, player.vel.z) > 0.5;
-    if (this.view.update(dt, player.bob, moving) && this.id === 'scythe') {
-      const f = new THREE.Vector3(); camera.getWorldDirection(f);
-      this.hooks.mow?.(player.pos.x, player.pos.z, f.x, f.z, player.pos.y);
+    if (this.view.update(dt, player.bob, moving)) {
+      if (this.id === 'scythe') {
+        const f = new THREE.Vector3(); camera.getWorldDirection(f);
+        this.hooks.mow?.(player.pos.x, player.pos.z, f.x, f.z, player.pos.y);
+      } else if (this.id === 'pickaxe') this.hooks.mine?.();
     }
     if (!this.light.off) {
       // the flame sits ahead and to the right of the eyes

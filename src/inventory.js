@@ -7,7 +7,7 @@ import { iconURL } from './icons.js';
 
 const HOTBAR = 9, SIZE = 36, CHEST = 100, CHEST_COLS = 6;
 const KEY = 'tropicool.inventory.v1';
-const KIT = 4; // starter-kit version: new tools are handed out once to existing saves
+const KIT = 5; // starter-kit version: new tools are handed out once to existing saves
 export { itemDef };
 
 // ---------------------------------------------------------------- model
@@ -21,7 +21,8 @@ export class Inventory {
     this.padIndex = 0;
     this.kit = 0;
     this.load();
-    for (const id of ['rod', 'axe', 'scythe']) if (!this.count(id) && !(id === 'scythe' && this.kit >= KIT)) this.add(id, 1);
+    const since = { scythe: 4, pickaxe: 5 }; // handed out once, from that kit version on
+    for (const id of ['rod', 'axe', 'scythe', 'pickaxe']) if (!this.count(id) && !(since[id] && this.kit >= since[id])) this.add(id, 1);
     if (this.kit < 2) { this.add('torch', 4); this.add('transat', 1); this.add('campfire', 1); }
     if (this.kit < 3 && !this.count('book')) this.add('book', 1);
     if (this.kit < 4) this.add('chest', 1);
