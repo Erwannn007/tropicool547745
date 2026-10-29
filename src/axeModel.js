@@ -50,6 +50,7 @@ const steelTex = () => pixTex(32, 32, (g, w, h) => {
 
 // ---------------------------------------------------------------- geometry
 const HANDLE_LEN = 0.86;
+const HEAD_Y = HANDLE_LEN - 0.038; // eye centre: the handle top stays hidden inside the eye
 const handleCurve = new THREE.CatmullRomCurve3([
   new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.012, 0.28, 0.004),
   new THREE.Vector3(-0.006, 0.58, 0), new THREE.Vector3(0.004, HANDLE_LEN, 0),
@@ -76,9 +77,12 @@ function handleGeometry() {
     const a = i * (radial + 1) + k, b = a + radial + 1;
     idx.push(a, b, a + 1, a + 1, b, b + 1);
   }
-  // butt cap
+  // butt cap + top cap (closed ends, no hollow tube)
   const capC = pos.length / 3; pos.push(0, -0.004, 0); nor.push(0, -1, 0); uv.push(0.5, 0);
   for (let k = 0; k < radial; k++) idx.push(capC, k + 1, k);
+  const top = handleCurve.getPointAt(1), last = rings * (radial + 1);
+  const capT = pos.length / 3; pos.push(top.x, top.y, top.z); nor.push(0, 1, 0); uv.push(0.5, 3);
+  for (let k = 0; k < radial; k++) idx.push(capT, last + k, last + k + 1);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
@@ -90,14 +94,14 @@ function handleGeometry() {
 // bearded head profile, blade towards -X, thinned to a sharp edge
 function headGeometry() {
   const s = new THREE.Shape();
-  s.moveTo(0.055, 0.036);                           // poll, top
-  s.lineTo(0.055, -0.036);                          // poll, bottom
-  s.lineTo(-0.028, -0.042);                         // neck under the eye
-  s.quadraticCurveTo(-0.085, -0.05, -0.15, -0.105); // beard sweeping down
-  s.quadraticCurveTo(-0.19, -0.03, -0.172, 0.075);  // curved cutting edge
-  s.quadraticCurveTo(-0.1, 0.05, -0.028, 0.042);    // top line back to the eye
-  s.lineTo(0.055, 0.036);
-  const depth = 0.05;
+  s.moveTo(0.062, 0.038);                           // poll, top
+  s.lineTo(0.062, -0.038);                          // poll, bottom
+  s.lineTo(-0.038, -0.044);                         // neck under the eye
+  s.quadraticCurveTo(-0.095, -0.052, -0.16, -0.105); // beard sweeping down
+  s.quadraticCurveTo(-0.2, -0.03, -0.182, 0.075);   // curved cutting edge
+  s.quadraticCurveTo(-0.11, 0.05, -0.038, 0.044);   // top line back to the eye
+  s.lineTo(0.062, 0.038);
+  const depth = 0.064; // eye wraps the 0.054 m handle completely
   const g = new THREE.ExtrudeGeometry(s, {
     depth, curveSegments: 10, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.005, bevelSegments: 2,
   });
@@ -107,21 +111,23 @@ function headGeometry() {
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i);
     // taper the cheeks from the eye towards the edge
-    const t = Math.min(1, Math.max(0, (-x - 0.03) / 0.145));
+    const t = Math.min(1, Math.max(0, (-x - 0.04) / 0.14));
     p.setZ(i, p.getZ(i) * (1 - 0.85 * Math.pow(t, 0.8)));
     // colour: dark blued poll/eye, light cheeks, bright honed edge
     let c = [0.5, 0.56, 0.65];
-    if (x > 0.02) c = [0.32, 0.37, 0.47];
+    if (x > -0.038) c = [0.4, 0.45, 0.55];  // eye
+    if (x > 0.036) c = [0.32, 0.37, 0.47];  // poll
     if (t > 0.82) c = [0.96, 0.98, 1.0];
     else if (t > 0.62) c = [0.72, 0.77, 0.85];
-    if (y > 0.03 && x > -0.03) c = c.map((v) => v * 1.12);
+    if (y > 0.03 && x > -0.038) c = c.map((v) => v * 1.12);
     col.set(c, i * 3);
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   const uv = g.attributes.uv; // planar UVs for the pixel noise
   for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * 6, p.getY(i) * 6);
   g.computeVertexNormals();
-  g.translate(0, HANDLE_LEN - 0.06, 0);
+  const top = handleCurve.getPointAt(1);
+  g.translate(top.x, HEAD_Y, top.z);
   return g;
 }
 
@@ -181,7 +187,7 @@ const ease = {
 };
 // diagonal chop down into the trunk, cheek of the blade towards the viewer,
 // long handle reaching from the bottom-right corner - like the reference shot
-const IDLE = { p: [0.25, -0.5, -0.32], q: basis([-0.1, 0.9, -0.42], [-0.33, 0.05, -0.94]) }; // blade facing forward, turned slightly left
+const IDLE = { p: [0.25, -0.76, -0.32], q: basis([-0.1, 0.9, -0.42], [-0.33, 0.05, -0.94]) }; // blade facing forward, turned slightly left
 const KEYS = [
   { t: 0.0, ...IDLE },
   { t: 0.16, p: [0.28, -0.34, -0.24], q: basis([0.3, 0.72, -0.62], [-0.35, 0.35, -0.85]), e: 'out' },  // wind up to the right
@@ -223,8 +229,8 @@ export class AxeModel {
     this.ribbon.frustumCulled = false;
     this.scene.add(this.ribbon);
     this.samples = [];
-    this.tipLocal = new THREE.Vector3(-0.18, HANDLE_LEN - 0.06, 0);
-    this.innerLocal = new THREE.Vector3(-0.07, HANDLE_LEN - 0.06, 0);
+    this.tipLocal = new THREE.Vector3(-0.19, HEAD_Y, 0);
+    this.innerLocal = new THREE.Vector3(-0.08, HEAD_Y, 0);
 
     // low-res target + nearest upscale = chunky pixels
     this.rt = new THREE.WebGLRenderTarget(4, 4, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true });
