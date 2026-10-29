@@ -57,7 +57,7 @@ resize();
 
 const tex = {
   grass: T.grassTexture(), sand: T.sandTexture(), rock: T.rockTexture(), trunk: T.trunkTexture(),
-  frond: T.frondTexture(), fern: T.frondTexture(12, ['#174f16', '#1f661b', '#2a7f22', '#38972a', '#4cae33', '#68c440', '#8fd85a']),
+  frond: T.frondTexture(), leaflet: T.leafletTexture(), fern: T.frondTexture(12, ['#174f16', '#1f661b', '#2a7f22', '#38972a', '#4cae33', '#68c440', '#8fd85a']),
   leaf: T.leafClusterTexture(), leaf2: T.leafClusterTexture(21, ['#1a5418', '#246e1e', '#2f8a26', '#3fa42f', '#55bd39', '#73d248', '#9de46a']),
   wood: T.woodTexture(), thatch: T.thatchTexture(), cushion: T.cushionTexture(), clouds: T.cloudAtlas(),
 };
@@ -168,7 +168,7 @@ function buildWorld() {
   const terrain = buildTerrain(world, tex, settings.quality);
   scene.add(terrain);
   const grass = new Grass(scene, settings.quality);
-  const veg = new Vegetation(scene, world, tex);
+  const veg = new Vegetation(scene, world, tex, settings.quality);
   veg.setDistanceScale({ low: 0.6, medium: 0.8, high: 1 }[settings.quality]);
   const structures = buildStructures(world, tex);
   scene.add(structures.group);
@@ -306,8 +306,8 @@ function updateHint(show) {
   $('#inv-help').textContent = dev === 'gamepad'
     ? '✕ prendre / poser · □ prendre la moitié / poser 1 · R1 transfert rapide · △ / ○ fermer'
     : dev === 'touch'
-      ? 'Touche : prendre / poser · Appui long : moitié / 1 · Double touche : transfert rapide'
-      : 'Clic : prendre / poser · Clic droit : moitié / 1 · Maj+clic : transfert rapide · Double-clic : regrouper · 1-9 : échanger avec la barre';
+      ? 'Glisse un objet pour le déplacer · Touche : prendre / poser · Appui long : moitié · Double touche : transfert rapide'
+      : 'Glisser-déposer ou clic : prendre / poser · Clic droit : moitié / 1 · Maj+clic : transfert rapide · Double-clic : regrouper · 1-9 : échanger avec la barre';
   $('#controls-help').textContent = txt;
   if (show) {
     $('#hint').style.opacity = 0.92;
@@ -402,6 +402,7 @@ function frame() {
   water.position.set(Math.round(camera.position.x), 0, Math.round(camera.position.z));
   globals.uCamPos.value.copy(camera.position);
   renderer.render(scene, camera);
+  if (state !== 'inventory') axe.render(renderer, camera);
 
   // fps + dynamic resolution
   fpsAcc += dt; fpsFrames++;

@@ -27,24 +27,41 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 // Tube along a curve made of separate stepped rings (palm trunk look).
 function ringTrunk(b, curve, rings, r0, r1, radial, rnd, swayK, uvScale = 1) {
-  for (let k = 0; k < rings; k++) {
+  const rot = rnd() * 0.5;
+  const frame = (k) => {
     const ta = k / rings, tb = (k + 1) / rings;
     const ca = curve(ta), cb = curve(tb);
     const T = cb.clone().sub(ca).normalize();
     const S = new THREE.Vector3().crossVectors(T, Math.abs(T.y) > 0.9 ? V(1, 0, 0) : UP).normalize();
     const B = new THREE.Vector3().crossVectors(S, T).normalize();
-    const ra = (r0 + (r1 - r0) * ta) * 1.12, rb = (r0 + (r1 - r0) * tb) * 0.9;
-    const rot = rnd() * 0.5;
+    const dir = (i) => { const a = (i / radial) * Math.PI * 2 + rot; return S.clone().multiplyScalar(Math.cos(a)).addScaledVector(B, Math.sin(a)); };
+    return { ta, tb, ca, cb, T, dir, ra: (r0 + (r1 - r0) * ta) * 1.12, rb: (r0 + (r1 - r0) * tb) * 0.9 };
+  };
+  for (let k = 0; k < rings; k++) {
+    const f = frame(k);
     const start = b.count;
     for (let i = 0; i <= radial; i++) {
-      const a = (i / radial) * Math.PI * 2 + rot;
-      const dir = S.clone().multiplyScalar(Math.cos(a)).addScaledVector(B, Math.sin(a));
-      b.v(ca.clone().addScaledVector(dir, ra), dir, i / radial * uvScale, 0, ta * ta * swayK);
-      b.v(cb.clone().addScaledVector(dir, rb), dir, i / radial * uvScale, 1, tb * tb * swayK);
+      const dir = f.dir(i);
+      b.v(f.ca.clone().addScaledVector(dir, f.ra), dir, i / radial * uvScale, 0, f.ta * f.ta * swayK);
+      b.v(f.cb.clone().addScaledVector(dir, f.rb), dir, i / radial * uvScale, 1, f.tb * f.tb * swayK);
     }
     for (let i = 0; i < radial; i++) {
       const a = start + i * 2;
       b.quad(a, a + 1, a + 3, a + 2); // counter-clockwise seen from outside
+    }
+    // downward-facing lip closing the step to the wider base of the next ring
+    if (k < rings - 1) {
+      const g = frame(k + 1), down = f.T.clone().negate();
+      const s0 = b.count, sw = f.tb * f.tb * swayK;
+      for (let i = 0; i <= radial; i++) {
+        const n = f.dir(i).multiplyScalar(0.4).add(down).normalize();
+        b.v(f.cb.clone().addScaledVector(f.dir(i), f.rb), n, i / radial * uvScale, 0.93, sw);
+        b.v(g.ca.clone().addScaledVector(g.dir(i), g.ra), n, i / radial * uvScale, 0.97, sw);
+      }
+      for (let i = 0; i < radial; i++) {
+        const a = s0 + i * 2;
+        b.quad(a, a + 1, a + 3, a + 2);
+      }
     }
   }
 }
@@ -77,6 +94,67 @@ function frond(b, origin, az, el0, droop, length, width, rows, swayBase, swayTip
   }
 }
 
+// Detailed frond: rachis + individual leaflets (two rows, V-fold, drooping,
+// bent tips). Reads as a real 3D leaf from every angle, unlike a textured strip.
+function leafletFrond(b, origin, az, el0, droop, length, perSide, col, swayBase, swayTip, rnd) {
+  const rows = 14, ds = length / rows;
+  const spine = [];
+  let p = origin.clone(), el = el0;
+  for (let r = 0; r <= rows; r++) {
+    const s = r / rows;
+    const T = V(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
+    const S = new THREE.Vector3().crossVectors(T, UP).normalize();
+    const N = new THREE.Vector3().crossVectors(S, T).normalize();
+    if (N.y < 0) N.negate();
+    spine.push({ p: p.clone(), T, S, N, s });
+    p.addScaledVector(T, ds);
+    el -= droop * ds / length * (0.4 + s * 1.6);
+  }
+  const at = (s) => {
+    const f = Math.min(rows - 1e-4, s * rows), i = Math.floor(f), u = f - i, a = spine[i], c = spine[i + 1];
+    return { p: a.p.clone().lerp(c.p, u), T: a.T.clone().lerp(c.T, u).normalize(), S: a.S.clone().lerp(c.S, u).normalize(), N: a.N.clone().lerp(c.N, u).normalize() };
+  };
+  const u0 = col / 3, uMid = u0 + 1 / 6;
+  // rachis: two crossed thin ribbons so it has thickness from any side
+  for (const k of [0, 1]) {
+    for (let r = 0; r <= rows; r++) {
+      const { p: q, S, N, s } = spine[r];
+      const off = (k ? N : S).clone().multiplyScalar(0.03 * (1 - s * 0.7));
+      const nn = N.clone().lerp(UP, 0.5).normalize();
+      const sw = swayBase + s * s * swayTip;
+      b.v(q.clone().sub(off), nn, uMid - 0.01, 0.5, sw);
+      b.v(q.clone().add(off), nn, uMid + 0.01, 0.5, sw);
+      if (r > 0) { const c = b.count - 2; b.quad(c - 2, c, c + 1, c - 1); }
+    }
+  }
+  for (let k = 0; k < perSide; k++) {
+    const s = 0.05 + 0.93 * (k + 0.5) / perSide;
+    const { p: q, T, S, N } = at(s);
+    for (const side of [-1, 1]) {
+      const L = length * 0.3 * Math.pow(Math.sin(Math.PI * (0.1 + 0.88 * s)), 0.75) * (0.85 + rnd() * 0.3);
+      const fwd = 0.8 + rnd() * 0.25;
+      const dir = T.clone().multiplyScalar(Math.cos(fwd)).addScaledVector(S, side * Math.sin(fwd))
+        .addScaledVector(N, -(0.3 + 0.55 * s + rnd() * 0.15)).normalize();
+      const flat = new THREE.Vector3().crossVectors(dir, N).normalize();
+      const w = 0.05 + 0.025 * Math.sin(Math.PI * s);
+      const mid = q.clone().addScaledVector(dir, L * 0.5);
+      const tipDir = dir.clone().addScaledVector(N, -0.55).normalize();
+      const tip = mid.clone().addScaledVector(tipDir, L * 0.5);
+      const nn = N.clone().lerp(UP, 0.45).normalize();
+      const sw = swayBase + s * s * swayTip;
+      const uL = u0 + 0.01, uR = u0 + 1 / 3 - 0.01;
+      const i0 = b.v(q.clone().addScaledVector(flat, -w * 0.35), nn, uL, 0.02, sw);
+      b.v(q.clone().addScaledVector(flat, w * 0.35), nn, uR, 0.02, sw);
+      b.v(mid.clone().addScaledVector(flat, -w), nn, uL, 0.5, sw + 0.02);
+      b.v(mid.clone().addScaledVector(flat, w), nn, uR, 0.5, sw + 0.02);
+      b.v(tip.clone().addScaledVector(flat, -w * 0.3), nn, uL, 0.98, sw + 0.05);
+      b.v(tip.clone().addScaledVector(flat, w * 0.3), nn, uR, 0.98, sw + 0.05);
+      b.quad(i0, i0 + 1, i0 + 3, i0 + 2);
+      b.quad(i0 + 2, i0 + 3, i0 + 5, i0 + 4);
+    }
+  }
+}
+
 function leafCards(b, center, radius, cards, size, rnd, sway, squashY = 0.75) {
   for (let i = 0; i < cards; i++) {
     const u = rnd() * 2 - 1, a = rnd() * Math.PI * 2;
@@ -97,7 +175,7 @@ function leafCards(b, center, radius, cards, size, rnd, sway, squashY = 0.75) {
   }
 }
 
-function makePalm(seed) {
+function makePalm(seed, perSide) {
   const rnd = mulberry32(seed);
   const H = 6.8 + rnd() * 3.2;
   const la = rnd() * Math.PI * 2, lean = (0.12 + rnd() * 0.3) * H;
@@ -119,16 +197,25 @@ function makePalm(seed) {
     }
     for (let k = 0; k < pp.count; k += 3) trunk.tri(start + k, start + k + 1, start + k + 2);
   }
-  const fronds = new Builder();
-  const n = 10 + Math.floor(rnd() * 4);
+  // crown: 16-20 fronds in tiers - young upright spears, mature arching
+  // fronds, old drooping ones, sometimes a dry frond hanging under the crown
+  const n = 16 + Math.floor(rnd() * 5);
+  const specs = [];
   for (let i = 0; i < n; i++) {
-    const az = (i / n) * Math.PI * 2 + rnd() * 0.4;
-    const young = i % 4 === 0;
-    const el0 = young ? 0.75 + rnd() * 0.35 : 0.2 + rnd() * 0.45;
-    const L = (young ? 2.6 : 3.6) + rnd() * 1.1;
-    frond(fronds, top.clone().add(V(0, 0.05, 0)), az, el0, young ? 1.1 : 1.6 + rnd() * 0.7, L, 0.95, 10, 0.35, 0.35);
+    const az = (i / n) * Math.PI * 2 * 2.618 + rnd() * 0.5; // golden-angle-ish spiral
+    const tier = i % 5 === 0 ? 'young' : i % 3 === 0 ? 'old' : 'mature';
+    if (tier === 'young') specs.push({ az, el0: 0.95 + rnd() * 0.35, droop: 0.9, L: 2.3 + rnd() * 0.6, col: 0 });
+    else if (tier === 'old') specs.push({ az, el0: -0.05 + rnd() * 0.25, droop: 2.2 + rnd() * 0.5, L: 3.8 + rnd() * 0.8, col: 1 });
+    else specs.push({ az, el0: 0.25 + rnd() * 0.4, droop: 1.5 + rnd() * 0.6, L: 3.4 + rnd() * 1.0, col: rnd() < 0.5 ? 0 : 1 });
   }
-  return { trunk: trunk.build(), fronds: fronds.build(), height: H };
+  if (rnd() < 0.7) specs.push({ az: rnd() * 6.28, el0: -0.7, droop: 0.9, L: 3.2, col: 2 });
+  const origin = top.clone().add(V(0, 0.05, 0));
+  const fronds = new Builder(), near = new Builder();
+  for (const f of specs) {
+    frond(fronds, origin, f.az, f.el0, f.droop, f.L, 0.95, 10, 0.35, 0.35);
+    leafletFrond(near, origin, f.az, f.el0, f.droop, f.L, perSide, f.col, 0.35, 0.35, rnd);
+  }
+  return { trunk: trunk.build(), fronds: fronds.build(), near: near.build(), height: H };
 }
 
 function makeTree(seed) {
@@ -262,7 +349,7 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
 }
 
 export class Vegetation {
-  constructor(scene, world, tex) {
+  constructor(scene, world, tex, quality = 'medium') {
     this.group = new THREE.Group();
     scene.add(this.group);
     this.cells = [];
@@ -271,6 +358,7 @@ export class Vegetation {
     const mats = {
       trunk: foliageMaterial(tex.trunk, { alphaTest: 0, wrap: 0.3, tint: 0.2 }),
       frond: foliageMaterial(tex.frond, { alphaTest: 0.5, wrap: 0.7, translucent: 0.55, tint: 0.25, gain: 1.05 }),
+      leaflet: foliageMaterial(tex.leaflet, { alphaTest: 0.5, wrap: 0.7, translucent: 0.6, tint: 0.22, gain: 1.08 }),
       leaf: foliageMaterial(tex.leaf, { alphaTest: 0.5, wrap: 0.6, translucent: 0.4, tint: 0.3 }),
       bush: foliageMaterial(tex.leaf2, { alphaTest: 0.5, wrap: 0.6, translucent: 0.3, tint: 0.3 }),
       fern: foliageMaterial(tex.fern, { alphaTest: 0.5, wrap: 0.7, translucent: 0.3, tint: 0.3, wind: 0.6 }),
@@ -278,15 +366,16 @@ export class Vegetation {
     };
     this.materials = mats;
 
-    const palms = [0, 1, 2, 3].map((i) => makePalm(seed * 7 + i * 101));
+    const perSide = { low: 16, medium: 22, high: 28 }[quality] ?? 22;
+    const palms = [0, 1, 2, 3].map((i) => makePalm(seed * 7 + i * 101, perSide));
     const trees = [0, 1, 2].map((i) => makeTree(seed * 11 + i * 37));
     const bushes = [0, 1, 2].map((i) => makeBush(seed * 13 + i * 53));
     const ferns = [0, 1].map((i) => makeFern(seed * 17 + i * 19));
     const rocks = [0, 1, 2].map((i) => makeRock(seed * 19 + i * 7));
-    this.geometries = [...palms.flatMap((p) => [p.trunk, p.fronds]), ...trees.flatMap((t) => [t.trunk, t.leaves]), ...bushes, ...ferns, ...rocks];
+    this.geometries = [...palms.flatMap((p) => [p.trunk, p.fronds, p.near]), ...trees.flatMap((t) => [t.trunk, t.leaves]), ...bushes, ...ferns, ...rocks];
 
     const parts = {
-      palms: (v) => [[palms[v].trunk, mats.trunk], [palms[v].fronds, mats.frond]],
+      palms: (v) => [[palms[v].trunk, mats.trunk], [palms[v].fronds, mats.frond, 'far'], [palms[v].near, mats.leaflet, 'near']],
       trees: (v) => [[trees[v].trunk, mats.trunk], [trees[v].leaves, mats.leaf]],
       bushes: (v) => [[bushes[v], mats.bush]],
       ferns: (v) => [[ferns[v], mats.fern]],
@@ -307,7 +396,7 @@ export class Vegetation {
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), t = new THREE.Vector3();
     for (const [key, list] of buckets) {
       const [type, v, cx, cz] = key.split('|');
-      for (const [geo, mat] of parts[type](+v)) {
+      for (const [geo, mat, lod] of parts[type](+v)) {
         const im = new THREE.InstancedMesh(geo, mat, list.length);
         list.forEach((p, i) => {
           q.setFromAxisAngle(UP, p.rot);
@@ -319,7 +408,7 @@ export class Vegetation {
         im.computeBoundingSphere();
         im.matrixAutoUpdate = false;
         this.group.add(im);
-        this.cells.push({ mesh: im, x: (+cx + 0.5) * CELL, z: (+cz + 0.5) * CELL, range: range[type] });
+        this.cells.push({ mesh: im, x: (+cx + 0.5) * CELL, z: (+cz + 0.5) * CELL, range: range[type], lod });
       }
     }
   }
@@ -330,7 +419,9 @@ export class Vegetation {
     const k = this.distScale ?? 1;
     for (const c of this.cells) {
       const d = Math.hypot(c.x - cam.position.x, c.z - cam.position.z) - 46;
-      c.mesh.visible = d < c.range * k;
+      // detailed leaflet crowns up close, light textured strips further away
+      const near = d < 75 * k;
+      c.mesh.visible = d < c.range * k && (c.lod === 'near' ? near : c.lod === 'far' ? !near : true);
     }
   }
 

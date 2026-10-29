@@ -32,9 +32,21 @@ export class Input {
       if (e.code === 'Escape' || e.code === 'Tab' || e.code === 'KeyM') { this.pressed.add('menu'); e.preventDefault(); }
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
+    // Hotbar scrolling: a mouse wheel notch is one step, but trackpads send a
+    // stream of tiny deltas (plus momentum) - accumulate and rate-limit.
+    let wheelAcc = 0, wheelLast = 0;
     addEventListener('wheel', (e) => {
-      if (document.pointerLockElement !== canvas || !e.deltaY) return;
-      this.pressed.add(e.deltaY > 0 ? 'next' : 'prev');
+      if (!this.enabled || !e.deltaY) return;
+      const now = performance.now();
+      const dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      if (now - wheelLast > 250 || Math.sign(dy) !== Math.sign(wheelAcc)) wheelAcc = 0;
+      wheelLast = now;
+      wheelAcc += dy;
+      if (Math.abs(wheelAcc) >= 90 && now - (this.wheelStep || 0) > 170) {
+        this.pressed.add(wheelAcc > 0 ? 'next' : 'prev');
+        this.wheelStep = now;
+        wheelAcc = 0;
+      }
     }, { passive: true });
     addEventListener('blur', () => this.keys.clear());
 

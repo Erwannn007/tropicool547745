@@ -1,8 +1,8 @@
-// Axe: pixel-art first-person sprite (see axeSprite.js), chop palms / jungle
+// Axe: 3D voxel pixel-art viewmodel (see axeModel.js), chop palms / jungle
 // trees with notches carved into the trunk, chips, shake, fall, and drops.
 // Felled trees are remembered per world and grow back after a while.
 import * as THREE from 'three';
-import { AxeSprite } from './axeSprite.js';
+import { AxeModel } from './axeModel.js';
 
 const HITS = { palms: 4, trees: 5 };
 const REGROW_MS = 20 * 60 * 1000;
@@ -81,7 +81,7 @@ function notchGeometry(w, h, r) {
 export class Axe {
   constructor(scene, camera, tex, hooks) {
     this.scene = scene; this.camera = camera; this.hooks = hooks;
-    this.sprite = new AxeSprite();
+    this.sprite = new AxeModel();
     this.sprite.onChain = () => this.hooks.sound?.('swing');
     this.hits = new Map();
     this.shakes = [];
@@ -116,6 +116,8 @@ export class Axe {
   }
 
   setEquipped(on) { this.equipped = on; this.sprite.setVisible(on); }
+
+  render(renderer, camera) { this.sprite.render(renderer, camera); }
 
   // nearest standing trunk in front of the player, within reach
   target() {
@@ -249,6 +251,7 @@ export class Axe {
     const m = new THREE.Matrix4();
     for (const { mesh, i } of p.inst || []) {
       mesh.getMatrixAt(i, m);
+      if (!mesh.visible) { mesh.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0)); mesh.instanceMatrix.needsUpdate = true; continue; } // inactive LOD
       const tmp = new THREE.Mesh(mesh.geometry, mesh.material);
       tmp.matrixAutoUpdate = false;
       tmp.matrix.copy(m);

@@ -305,46 +305,71 @@ export class Inventory {
     this.cursorEl = $('#inv-cursor');
     this.tipEl = $('#inv-tip');
 
-    // pointer handling inside the inventory
-    let lastClick = { t: 0, i: -1 }, press = null;
+    // Pointer handling, mouse + touch:
+    //  - press on a stack and drag it onto another slot (move / merge / swap)
+    //  - tap to pick up, tap again to place (block-game style)
+    //  - touch: long-press while holding still = keep only half
+    //  - double tap = quick move; mouse: right click, shift+click, double click
+    let lastTap = { t: 0, i: -1 }, drag = null;
+    const slotAt = (x, y) => {
+      const el = document.elementFromPoint(x, y)?.closest?.('.slot');
+      return el && el.dataset.i !== undefined && this.root.contains(el) ? +el.dataset.i : -1;
+    };
     this.root.addEventListener('contextmenu', (e) => e.preventDefault());
     this.root.addEventListener('pointerdown', (e) => {
       const el = e.target.closest('.slot');
       this.moveCursor(e.clientX, e.clientY);
-      if (!el) { if (e.target === this.root) this.closeRequest?.(); return; }
+      if (!el || el.dataset.i === undefined) { if (e.target === this.root) this.closeRequest?.(); return; }
       e.preventDefault();
+      try { this.root.setPointerCapture(e.pointerId); } catch (_) { /* not capturable */ }
       const i = +el.dataset.i;
       this.padIndex = i;
-      if (e.pointerType === 'touch') {
-        // long-press = right click (split / place one), tap = left click
-        press = { i, timer: setTimeout(() => { this.rightClick(i); press = null; navigator.vibrate?.(15); }, 380) };
-        return;
-      }
-      if (e.button === 2) this.rightClick(i);
-      else if (e.shiftKey) this.quickMove(i);
-      else {
-        const now = performance.now();
-        if (now - lastClick.t < 300 && lastClick.i === i && this.cursor) this.collect();
-        else this.leftClick(i);
-        lastClick = { t: now, i };
-      }
-    });
-    this.root.addEventListener('pointerup', (e) => {
-      if (press && e.pointerType === 'touch') {
-        clearTimeout(press.timer);
-        const now = performance.now();
-        if (now - lastClick.t < 300 && lastClick.i === press.i) this.quickMove(press.i); // double tap = quick move
-        else this.leftClick(press.i);
-        lastClick = { t: now, i: press.i };
-        press = null;
+      this.hideTip();
+      if (e.pointerType === 'mouse' && e.button === 2) { this.rightClick(i); return; }
+      if (e.pointerType === 'mouse' && e.shiftKey) { this.quickMove(i); return; }
+      if (e.pointerType === 'mouse' && this.cursor && performance.now() - lastTap.t < 300 && lastTap.i === i) { this.collect(); return; }
+      const hadCursor = !!this.cursor;
+      this.leftClick(i); // pick up, or place what we were carrying
+      drag = { id: e.pointerId, from: i, x: e.clientX, y: e.clientY, moved: false, picked: !hadCursor && !!this.cursor, timer: null };
+      if (e.pointerType === 'touch' && drag.picked) {
+        drag.timer = setTimeout(() => {
+          if (!drag || drag.moved || !this.cursor) return;
+          const c = this.cursor, keep = Math.floor(c.n / 2);
+          if (keep > 0 && !this.slots[i]) { this.slots[i] = { id: c.id, n: keep }; c.n -= keep; this.changed(); }
+          navigator.vibrate?.(15);
+        }, 380);
       }
     });
     this.root.addEventListener('pointermove', (e) => {
       this.moveCursor(e.clientX, e.clientY);
-      const el = e.target.closest('.slot');
-      if (el && e.pointerType !== 'touch') { this.hover = +el.dataset.i; this.showTipFor(this.hover, el, e.clientX, e.clientY); }
-      else if (!el) { this.hover = -1; this.hideTip(); }
+      if (drag && e.pointerId === drag.id && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag.moved = true;
+      if (e.pointerType === 'touch') return;
+      const i = slotAt(e.clientX, e.clientY);
+      if (i >= 0) { this.hover = i; this.showTipFor(i, this.slotEls[i], e.clientX, e.clientY); } else { this.hover = -1; this.hideTip(); }
     });
+    const end = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      clearTimeout(drag.timer);
+      const d = drag; drag = null;
+      const now = performance.now();
+      if (!d.moved) {
+        // a tap: second tap on the same slot = quick move
+        if (now - lastTap.t < 300 && lastTap.i === d.from && !this.cursor) this.quickMove(d.from);
+        lastTap = { t: now, i: d.from };
+        return;
+      }
+      if (!d.picked || !this.cursor) return;
+      const to = e.type === 'pointercancel' ? -1 : slotAt(e.clientX, e.clientY);
+      if (to >= 0 && to !== d.from) {
+        this.leftClick(to); // drop: move, merge or swap
+        // swapped stack goes back to where the drag started
+        if (this.cursor && !this.slots[d.from]) this.leftClick(d.from);
+      } else if (!this.slots[d.from] || this.slots[d.from].id === this.cursor.id) {
+        this.leftClick(d.from); // dropped outside: put it back
+      }
+    };
+    this.root.addEventListener('pointerup', end);
+    this.root.addEventListener('pointercancel', end);
     addEventListener('keydown', (e) => {
       if (!this.open || this.hover == null || this.hover < 0) return;
       const n = +e.key;

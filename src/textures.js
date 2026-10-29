@@ -307,3 +307,32 @@ export function cushionTexture(seed = 10) {
   }
   return p.texture();
 }
+
+// Palm leaflet atlas: 3 columns (young green, mature green, dry), 8x32 each.
+// v = 0 at the leaflet base, 1 at its pointed tip; lighter midrib, darker rims.
+export function leafletTexture() {
+  const C = 8, W = C * 3, H = 32, p = new Pix(W, H), rnd = mulberry32(31);
+  p.fill([0, 0, 0], 0);
+  const pals = [
+    ['#2f8a22', '#47a82e', '#63c23a', '#86d84c', '#b4ec72'],
+    ['#1f6a1c', '#2d8424', '#3f9e2c', '#58b438', '#7fcc4c'],
+    ['#7a5a22', '#9a7a32', '#b8964a', '#d2b262', '#e8d088'],
+  ].map((pl) => pl.map(hex));
+  for (let col = 0; col < 3; col++) {
+    const pal = pals[col], ox = col * C;
+    for (let y = 0; y < H; y++) {
+      const t = 1 - y / (H - 1); // canvas top = tip
+      const w = 3.7 * Math.pow(Math.sin(Math.PI * Math.min(1, 0.08 + 0.95 * t)), 0.65);
+      for (let x = 0; x < C; x++) {
+        const dx = Math.abs(x + 0.5 - C / 2);
+        if (dx > w) continue;
+        let k = 2 + Math.round(t * 1.2 + (rnd() - 0.5) * 0.8);
+        if (dx > w - 1) k -= 1;               // darker rims
+        if (dx < 0.6) k = 4;                   // midrib
+        if (x + 0.5 < C / 2 && dx > 0.6) k += 0; else if (dx > 0.6) k -= 1; // one half in shade: folded look
+        p.set(ox + x, y, pal[Math.max(0, Math.min(4, k))], 255, false);
+      }
+    }
+  }
+  return p.texture({ repeat: false });
+}
