@@ -185,15 +185,15 @@ const ease = {
   out: (t) => 1 - Math.pow(1 - t, 3),
   in: (t) => t * t * t,
 };
-// diagonal chop down into the trunk, cheek of the blade towards the viewer,
-// long handle reaching from the bottom-right corner - like the reference shot
+// overhead chop driven forward into the trunk, only slightly diagonal (a bit
+// right-to-left), long handle reaching from the bottom-right corner
 const IDLE = { p: [0.25, -0.76, -0.32], q: basis([-0.1, 0.9, -0.42], [-0.33, 0.05, -0.94]) }; // blade facing forward, turned slightly left
 const KEYS = [
   { t: 0.0, ...IDLE },
-  { t: 0.16, p: [0.28, -0.34, -0.24], q: basis([0.3, 0.72, -0.62], [-0.35, 0.35, -0.85]), e: 'out' },  // wind up to the right
-  { t: 0.2, p: [0.29, -0.33, -0.23], q: basis([0.34, 0.74, -0.58], [-0.33, 0.35, -0.86]), e: 'inOut' }, // hang
-  { t: 0.29, p: [0.16, -0.3, -0.34], q: basis([-0.42, 0.42, -0.8], [-0.62, -0.6, 0.1]), e: 'in' },    // chop down-left
-  { t: 0.36, p: [0.1, -0.36, -0.32], q: basis([-0.62, 0.15, -0.77], [-0.35, -0.88, 0.1]), e: 'out' }, // follow-through
+  { t: 0.16, p: [0.3, -0.5, -0.3], q: basis([0.26, 0.86, -0.22], [-0.22, 0.4, -0.89]), e: 'out' },    // raise over the right shoulder
+  { t: 0.2, p: [0.31, -0.48, -0.28], q: basis([0.28, 0.87, -0.16], [-0.22, 0.45, -0.86]), e: 'inOut' }, // hang
+  { t: 0.29, p: [0.16, -0.36, -0.4], q: basis([-0.38, 0.3, -0.87], [-0.42, -0.9, 0.0]), e: 'in' },    // chop forward, a bit diagonal
+  { t: 0.36, p: [0.13, -0.38, -0.4], q: basis([-0.4, 0.14, -0.9], [-0.36, -0.93, 0.05]), e: 'out' },  // follow-through, down
   { t: 0.62, ...IDLE, e: 'inOut' },                                                                   // recover
 ];
 const SWING_TIME = KEYS[KEYS.length - 1].t;

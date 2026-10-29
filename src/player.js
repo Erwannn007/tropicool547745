@@ -14,6 +14,20 @@ export class Player {
     this.bob = 0;
     this.swimming = false;
     this.wading = 0;
+    this.stepPhase = 0; this.swimT = 0;
+    this.sound = null; // { step(surface, k), land(surface, speed), sfx(name) }
+  }
+
+  // what is under the feet: wood (pier/hut), water, rock, grass or sand
+  surface() {
+    if (this.swimming) return 'swim';
+    if (this.wading > 0.06) return 'water';
+    const w = this.world;
+    if (this.pos.y > w.heightAt(this.pos.x, this.pos.z) + 0.15) return 'wood';
+    const i = Math.max(0, Math.min(w.N - 1, Math.floor((this.pos.x / w.size + 0.5) * w.N)));
+    const j = Math.max(0, Math.min(w.N - 1, Math.floor((this.pos.z / w.size + 0.5) * w.N)));
+    if (w.rock[j * w.N + i] > 0.5) return 'rock';
+    return w.grass[j * w.N + i] > 0.45 ? 'grass' : 'sand';
   }
 
   setWorld(world, colliders, surfaces) {
@@ -71,6 +85,7 @@ export class Player {
 
     if (input.pressed.has('jump') && !frozen && (this.onGround || this.swimming)) {
       this.vel.y = this.swimming ? 3.5 : 5.6;
+      if (!this.swimming) this.sound?.sfx('jump');
       this.onGround = false;
     }
     this.vel.y -= 16 * dt;
@@ -100,6 +115,7 @@ export class Player {
     this.pos.y += this.vel.y * dt;
 
     const ground = this.groundAt(this.pos.x, this.pos.z, this.pos.y);
+    const wasGround = this.onGround, wasSwimming = this.swimming, fall = -this.vel.y;
     const floatY = water - 1.28;
     if (this.swimming || (ground < floatY && this.pos.y <= floatY)) {
       if (this.pos.y < floatY) { this.pos.y += (floatY - this.pos.y) * Math.min(1, 6 * dt); this.vel.y = Math.max(this.vel.y, 0) * 0.9; }
@@ -115,6 +131,16 @@ export class Player {
 
     const hs = Math.hypot(this.vel.x, this.vel.z);
     if (this.onGround && hs > 0.5) this.bob += dt * hs * 1.9; else this.bob *= 0.9;
+
+    // sounds: a footstep at each dip of the head bob, swim strokes, landings
+    if (this.sound && !frozen) {
+      const phase = Math.floor(this.bob / Math.PI + 0.25);
+      if (this.onGround && hs > 0.5 && phase !== this.stepPhase) this.sound.step(this.surface(), Math.min(1, hs / 7));
+      this.stepPhase = phase;
+      if (this.swimming && hs > 0.5 && (this.swimT += dt) > 0.95) { this.swimT = 0; this.sound.step('swim'); }
+      if (this.onGround && !wasGround && fall > 2.5) this.sound.land(this.surface(), fall);
+      if (this.swimming && !wasSwimming && fall > 1) this.sound.sfx('splash');
+    }
     const swimBob = this.swimming ? Math.sin(performance.now() * 0.002) * 0.08 : 0;
 
     this.camera.position.set(this.pos.x, this.pos.y + EYE + Math.sin(this.bob * 2) * 0.045 + swimBob, this.pos.z);

@@ -70,6 +70,7 @@ const water = buildWater();
 scene.add(water);
 
 const player = new Player(camera);
+player.sound = audio;
 
 // ---------------------------------------------------------------- UI hooks
 let toastTimer;
@@ -347,6 +348,19 @@ function menuNav() {
 }
 
 // ---------------------------------------------------------------- loop
+// how close the lagoon is (0 inland/up high .. 1 at the waterline), for the sea sounds
+let shoreTimer = 0;
+function shoreness() {
+  const w = current.world, { x, z, y } = camera.position;
+  let wet = 0;
+  for (let a = 0; a < 8; a++) {
+    const cx = Math.cos(a * Math.PI / 4), sz = Math.sin(a * Math.PI / 4);
+    if (w.heightAt(x + cx * 8, z + sz * 8) < 0) wet += 0.09;
+    if (w.heightAt(x + cx * 22, z + sz * 22) < 0) wet += 0.035;
+  }
+  if (w.heightAt(x, z) < 0.2) wet += 0.3;
+  return Math.min(1, wet) * Math.max(0.35, 1 - Math.max(0, y - 4) / 14);
+}
 const clock = new THREE.Clock();
 let fpsAcc = 0, fpsFrames = 0, slowAcc = 0, fastAcc = 0;
 function frame() {
@@ -367,6 +381,8 @@ function frame() {
     if (p.has('prev')) inventory.select(inventory.selected - 1);
     const look = input.consumeLook();
     player.update(dt, input, look);
+    shoreTimer -= dt;
+    if (shoreTimer < 0 && current) { shoreTimer = 0.5; audio.setShore(shoreness()); }
     if (p.has('action')) {
       const id = inventory.held?.id;
       if (id === 'rod') fishing.action(input);
