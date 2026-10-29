@@ -63,7 +63,7 @@ export class HeldView {
     for (let i = 1; i < keys.length; i++) {
       const k0 = keys[i - 1], k1 = keys[i];
       if (t <= k1.t) {
-        const u = ease[k1.e || 'inOut']((t - k0.t) / (k1.t - k0.t));
+        const r = (t - k0.t) / (k1.t - k0.t), u = k1.e === 'lin' ? r : ease[k1.e || 'inOut'](r);
         return { p: k0.p.map((v, j) => v + (k1.p[j] - v) * u), q: k0.q.clone().slerp(k1.q, u) };
       }
     }

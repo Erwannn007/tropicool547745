@@ -24,20 +24,30 @@ function frame(A, B) {
 }
 const sk = (t, p, A, B, e) => ({ t, p, q: frame(A, B), e });
 const S_IDLE = sk(0, [0.3, 0.03, -0.78], [-0.12, 1, -0.08], [-0.8, 0.12, -0.6]);
+// the stroke: a wide flat arc around the player, far right to far left,
+// the snath always coming from the hands at the bottom right
+const GRIP = [0.28, -0.72, -0.22];
+function arcKey(t, theta, lift, e, raise = 0) {
+  const p = [0.02 + Math.sin(theta) * 0.62, -0.12 + lift, -0.3 - Math.cos(theta) * 0.7];
+  const A = [p[0] - GRIP[0], p[1] - GRIP[1], p[2] - GRIP[2]];
+  const B = [-Math.cos(theta), -0.12 + raise, -Math.sin(theta) - 0.15]; // blade leads the motion
+  return sk(t, p, A, B, e);
+}
 const SCYTHE = {
   idle: S_IDLE,
   scale: 0.62,
   keys: [
     S_IDLE,
-    sk(0.17, [0.4, 0.2, -0.62], [0.35, 1, 0.3], [-0.55, 0.55, -0.55], 'out'),     // raise it back over the right shoulder
-    sk(0.23, [0.42, 0.22, -0.6], [0.4, 1, 0.34], [-0.5, 0.6, -0.55], 'inOut'),     // hang
-    sk(0.3, [0.32, 0.14, -0.84], [-0.05, 0.95, -0.5], [-0.8, 0.0, -0.6], 'in'),     // whip forward...
-    sk(0.37, [0.16, -0.06, -0.88], [-0.45, 0.6, -0.65], [-0.5, -0.7, -0.45], 'out'), // ...curving down through the grass
-    sk(0.46, [0.02, -0.2, -0.82], [-0.65, 0.3, -0.6], [-0.25, -0.92, -0.25], 'out'), // follow-through, low left
-    sk(0.82, S_IDLE.p, [-0.12, 1, -0.08], [-0.8, 0.12, -0.6], 'inOut'),            // back upright
+    arcKey(0.2, 1.15, 0.24, 'out', 0.5),   // wind up far to the right, blade lifted
+    arcKey(0.27, 1.22, 0.26, 'inOut', 0.5), // hang
+    arcKey(0.31, 0.72, 0.1, 'in'),          // the sweep starts...
+    arcKey(0.35, 0.0, 0.0, 'lin'),          // ...right across the middle...
+    arcKey(0.39, -0.7, 0.02, 'lin'),        // ...and out to the left
+    arcKey(0.46, -1.1, 0.1, 'out', 0.15),   // follow-through, far left
+    sk(0.86, S_IDLE.p, [-0.12, 1, -0.08], [-0.8, 0.12, -0.6], 'inOut'), // back upright
   ],
-  impact: 0.34,
-  trail: { tip: [-0.6, 0, 0.25], inner: [-0.18, 0, 0.0], from: 0.24, to: 0.47, life: 0.18 },
+  impact: 0.35,
+  trail: { tip: [-0.6, 0, 0.25], inner: [-0.18, 0, 0.0], from: 0.29, to: 0.47, life: 0.2 },
 };
 
 const TORCH = { idle: { p: [0.36, -0.86, -0.66], q: Q(-0.1, 0.25, -0.16) }, scale: 0.5 };
