@@ -181,7 +181,7 @@ const ease = {
 };
 // diagonal chop down into the trunk, cheek of the blade towards the viewer,
 // long handle reaching from the bottom-right corner - like the reference shot
-const IDLE = { p: [0.25, -0.44, -0.3], q: basis([-0.14, 0.85, -0.5], [-0.95, 0.1, -0.1]) };
+const IDLE = { p: [0.25, -0.5, -0.32], q: basis([-0.1, 0.9, -0.42], [-0.33, 0.05, -0.94]) }; // blade facing forward, turned slightly left
 const KEYS = [
   { t: 0.0, ...IDLE },
   { t: 0.16, p: [0.28, -0.34, -0.24], q: basis([0.3, 0.72, -0.62], [-0.35, 0.35, -0.85]), e: 'out' },  // wind up to the right

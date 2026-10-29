@@ -14,29 +14,29 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261029155208">
+  <link rel="stylesheet" href="style.css?v=20261029155605">
   <script type="importmap">
 {
   "imports": {
-    "three": "./vendor/three.module.js?v=20261029155208",
-    "./src/audio.js": "./src/audio.js?v=20261029155208",
-    "./src/axe.js": "./src/axe.js?v=20261029155208",
-    "./src/axeModel.js": "./src/axeModel.js?v=20261029155208",
-    "./src/fishing.js": "./src/fishing.js?v=20261029155208",
-    "./src/grass.js": "./src/grass.js?v=20261029155208",
-    "./src/input.js": "./src/input.js?v=20261029155208",
-    "./src/inventory.js": "./src/inventory.js?v=20261029155208",
-    "./src/main.js": "./src/main.js?v=20261029155208",
-    "./src/noise.js": "./src/noise.js?v=20261029155208",
-    "./src/player.js": "./src/player.js?v=20261029155208",
-    "./src/shaders.js": "./src/shaders.js?v=20261029155208",
-    "./src/sky.js": "./src/sky.js?v=20261029155208",
-    "./src/structures.js": "./src/structures.js?v=20261029155208",
-    "./src/terrain.js": "./src/terrain.js?v=20261029155208",
-    "./src/textures.js": "./src/textures.js?v=20261029155208",
-    "./src/vegetation.js": "./src/vegetation.js?v=20261029155208",
-    "./src/water.js": "./src/water.js?v=20261029155208",
-    "./src/world.js": "./src/world.js?v=20261029155208"
+    "three": "./vendor/three.module.js?v=20261029155605",
+    "./src/audio.js": "./src/audio.js?v=20261029155605",
+    "./src/axe.js": "./src/axe.js?v=20261029155605",
+    "./src/axeModel.js": "./src/axeModel.js?v=20261029155605",
+    "./src/fishing.js": "./src/fishing.js?v=20261029155605",
+    "./src/grass.js": "./src/grass.js?v=20261029155605",
+    "./src/input.js": "./src/input.js?v=20261029155605",
+    "./src/inventory.js": "./src/inventory.js?v=20261029155605",
+    "./src/main.js": "./src/main.js?v=20261029155605",
+    "./src/noise.js": "./src/noise.js?v=20261029155605",
+    "./src/player.js": "./src/player.js?v=20261029155605",
+    "./src/shaders.js": "./src/shaders.js?v=20261029155605",
+    "./src/sky.js": "./src/sky.js?v=20261029155605",
+    "./src/structures.js": "./src/structures.js?v=20261029155605",
+    "./src/terrain.js": "./src/terrain.js?v=20261029155605",
+    "./src/textures.js": "./src/textures.js?v=20261029155605",
+    "./src/vegetation.js": "./src/vegetation.js?v=20261029155605",
+    "./src/water.js": "./src/water.js?v=20261029155605",
+    "./src/world.js": "./src/world.js?v=20261029155605"
   }
 }
   </script>
@@ -147,7 +147,7 @@
   <script>
     // Startup guard: if the game fails to boot, say so and offer a clean reload
     // (clears the offline cache + service worker) instead of a frozen menu.
-    window.TROPICOOL_VERSION = '20261029155208';
+    window.TROPICOOL_VERSION = '20261029155605';
     window.__bootFail = function (msg) {
       if (window.__booted || document.getElementById('boot-error')) return;
       var p = document.querySelector('#start .panel');
@@ -166,6 +166,6 @@
     addEventListener('unhandledrejection', function (e) { window.__bootFail((e.reason && e.reason.message) || 'erreur de chargement'); });
     setTimeout(function () { if (!window.__booted) window.__bootFail('Chargement trop long (connexion ?)'); }, 20000);
   </script>
-  <script type="module" src="src/main.js?v=20261029155208"></script>
+  <script type="module" src="src/main.js?v=20261029155605"></script>
 </body>
 </html>
