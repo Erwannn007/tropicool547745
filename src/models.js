@@ -426,18 +426,24 @@ function scytheModel() {
   };
   const grips = merge([[peg(0.04, 0.9)], [peg(0.45, 1)]]);
   const s = new THREE.Shape();
-  s.moveTo(0.03, -0.035);
-  s.quadraticCurveTo(-0.3, -0.07, -0.68, 0.1);   // spine (back)
-  s.quadraticCurveTo(-0.34, 0.0, 0.02, 0.04);    // cutting edge (front)
-  s.lineTo(0.03, -0.035);
-  const blade = new THREE.ExtrudeGeometry(s, { depth: 0.012, curveSegments: 16, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.003, bevelSegments: 1 });
+  // crescent: the tip hooks back towards the mower, edge on the inner curve
+  const qb = (p0, c, p1, t) => [(1 - t) * (1 - t) * p0[0] + 2 * (1 - t) * t * c[0] + t * t * p1[0], (1 - t) * (1 - t) * p0[1] + 2 * (1 - t) * t * c[1] + t * t * p1[1]];
+  const HEELB = [0.03, -0.035], TIP = [-0.6, 0.25], HEELE = [0.02, 0.045];
+  const SPC = [-0.42, -0.12], EDC = [-0.34, 0.02];
+  s.moveTo(...HEELB);
+  s.quadraticCurveTo(...SPC, ...TIP);   // spine (back)
+  s.quadraticCurveTo(...EDC, ...HEELE); // cutting edge (inner curve)
+  s.lineTo(...HEELB);
+  const blade = new THREE.ExtrudeGeometry(s, { depth: 0.012, curveSegments: 20, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.003, bevelSegments: 1 });
   blade.translate(0, 0, -0.006);
+  const spine = [], edge = [];
+  for (let k = 0; k <= 40; k++) { spine.push(qb(HEELB, SPC, TIP, k / 40)); edge.push(qb(TIP, EDC, HEELE, k / 40)); }
+  const near = (pts, x, y) => Math.min(...pts.map(([px, py]) => Math.hypot(px - x, py - y)));
   const P = blade.attributes.position, col = new Float32Array(P.count * 3);
   for (let i = 0; i < P.count; i++) {
-    const x = P.getX(i), y = P.getY(i), u = Math.max(0, Math.min(1, -x / 0.68));
-    const spineY = -0.035 - Math.sin(u * Math.PI) * 0.03 + u * 0.135;
-    const edgeY = 0.04 - Math.sin(u * Math.PI) * 0.045 + u * 0.06;
-    const t = Math.max(0, Math.min(1, (y - spineY) / Math.max(0.01, edgeY - spineY)));
+    const x = P.getX(i), y = P.getY(i);
+    const ds = near(spine, x, y), de = near(edge, x, y);
+    const t = ds / Math.max(1e-4, ds + de); // 0 on the spine .. 1 on the edge
     P.setZ(i, P.getZ(i) * (1 - 0.8 * t)); // thin towards the edge
     const c = t > 0.8 ? [0.96, 0.98, 1.0] : t > 0.6 ? [0.72, 0.77, 0.85] : t < 0.15 ? [0.36, 0.4, 0.5] : [0.52, 0.58, 0.67];
     col.set(c, i * 3);
@@ -445,7 +451,7 @@ function scytheModel() {
   blade.setAttribute('color', new THREE.BufferAttribute(col, 3));
   const uv = blade.attributes.uv; for (let i = 0; i < P.count; i++) uv.setXY(i, P.getX(i) * 5, P.getY(i) * 5);
   blade.computeVertexNormals();
-  blade.rotateX(-Math.PI / 2); // lie flat, edge forward
+  blade.rotateX(Math.PI / 2); // lie flat, edge and hooked tip towards the mower
   const collar = tube(line(V(0.0, 0.0, 0.0), G.clone().normalize().multiplyScalar(0.07)), () => 0.03, { rings: 1, radial: 8, up: V(1, 0, 0) });
   return {
     parts: [
@@ -515,7 +521,48 @@ function fishModel(colors) {
   return { parts: [{ geo: body, tex }, { geo: merge([[tg], [dg]]), tex: finTex }] };
 }
 
+// Travel notebook: teal leather boards with a gold palm, rounded spine,
+// cream page block, red ribbon bookmark hanging out.
+const LEATHER = ['#0b3c44', '#11525c', '#186a72', '#20828a', '#2e9a9c'];
+const GOLD = ['#8a5a14', '#c08a28', '#e8b444', '#f8d878'];
+const PAPER = ['#c8b48a', '#dccaa0', '#ece0bc', '#f6eed6'];
+function bookModel() {
+  const W = 0.16, H = 0.22, R = 0.012;
+  const rect = (w, h, r) => {
+    const sh = new THREE.Shape();
+    sh.moveTo(-w / 2, -h / 2 + r); sh.lineTo(-w / 2, h / 2 - r); sh.quadraticCurveTo(-w / 2, h / 2, -w / 2 + r, h / 2);
+    sh.lineTo(w / 2 - r, h / 2); sh.quadraticCurveTo(w / 2, h / 2, w / 2, h / 2 - r);
+    sh.lineTo(w / 2, -h / 2 + r); sh.quadraticCurveTo(w / 2, -h / 2, w / 2 - r, -h / 2);
+    sh.lineTo(-w / 2 + r, -h / 2); sh.quadraticCurveTo(-w / 2, -h / 2, -w / 2, -h / 2 + r);
+    return sh;
+  };
+  const planar = (g, w, h) => { const P = g.attributes.position, U = g.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) / w + 0.5, P.getY(i) / h + 0.5); return g; };
+  const board = (z) => { const g = new THREE.ExtrudeGeometry(rect(W, H, R), { depth: 0.006, bevelEnabled: true, bevelThickness: 0.0015, bevelSize: 0.0015, bevelSegments: 1, curveSegments: 3 }); g.translate(0, 0, z); return planar(g, W, H); };
+  const covers = merge([[board(0.024)], [board(-0.03)]]);
+  const spine = tube(line(V(-W / 2 + 0.004, -H / 2, 0), V(-W / 2 + 0.004, H / 2, 0)), () => 0.03, { rings: 1, radial: 12, section: (a) => [Math.cos(a) * 0.45 - 0.2, Math.sin(a)], up: V(0, 0, 1) });
+  const pages = new THREE.ExtrudeGeometry(rect(W - 0.012, H - 0.012, 0.004), { depth: 0.048, bevelEnabled: false, curveSegments: 2 });
+  pages.translate(0.004, 0, -0.024);
+  { const P = pages.attributes.position, U = pages.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, (P.getX(i) + P.getY(i)) * 6, P.getZ(i) * 40); }
+  const ribbon = tube(line(V(0.02, -H / 2 + 0.01, 0.004), V(0.03, -H / 2 - 0.045, 0.012)), () => 0.008, { rings: 3, radial: 4, section: rounded(1, 0.25, 2), up: V(0, 0, 1) });
+  const cover = pixTex(32, 44, (g, w, h) => {
+    const r = mulberry32(17);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, LEATHER, x, y, 2 + (r() - 0.5) * 1.2 - (x < 3 || y < 2 || x > w - 3 || y > h - 3 ? 1 : 0));
+    for (let x = 3; x < w - 3; x++) { ramp(g, GOLD, x, 3, 2); ramp(g, GOLD, x, h - 4, 1); }
+    for (let y = 3; y < h - 3; y++) { ramp(g, GOLD, 3, y, 2); ramp(g, GOLD, w - 4, y, 1); }
+    // gold title plate with a little palm stamped above it
+    for (let y = 26; y < 32; y++) for (let x = 9; x < 23; x++) ramp(g, GOLD, x, y, y === 26 ? 3 : y === 31 ? 0 : (x + y) % 5 === 0 && y > 27 && y < 30 ? 0 : 2);
+    for (let y = 12; y < 22; y++) ramp(g, GOLD, 16 + (y < 16 ? 1 : 0), y, 1);
+    for (const [x, y] of [[13, 12], [14, 11], [15, 11], [17, 11], [18, 11], [19, 12], [12, 13], [20, 13], [16, 10]]) ramp(g, GOLD, x, y, 3);
+    for (let x = 13; x < 21; x++) ramp(g, GOLD, x, 22, 2);
+  });
+  const paper = pixTex(8, 8, (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, PAPER, x, y, y % 2 ? 3 : 1.6); });
+  const red = pixTex(2, 4, (g) => { g.fillStyle = '#c8342a'; g.fillRect(0, 0, 2, 4); g.fillStyle = '#e8584a'; g.fillRect(0, 0, 1, 4); });
+  const spineTex = pixTex(8, 32, (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, LEATHER, x, y, y % 10 < 2 ? 0.5 : 2.4 - Math.abs(x - 4) * 0.3); });
+  return { parts: [{ geo: covers, tex: cover }, { geo: spine, tex: spineTex }, { geo: pages, tex: paper }, { geo: ribbon, tex: red }] };
+}
+
 export const MODELS = {
+  book: () => once('m:book', bookModel),
   torch: () => once('m:torch', torchModel),
   transat: () => once('m:transat', transatModel),
   parasol: () => once('m:parasol', parasolModel),

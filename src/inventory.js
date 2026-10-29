@@ -7,7 +7,7 @@ import { iconURL } from './icons.js';
 
 const HOTBAR = 9, SIZE = 36;
 const KEY = 'tropicool.inventory.v1';
-const KIT = 2; // starter-kit version: new tools are handed out once to existing saves
+const KIT = 3; // starter-kit version: new tools are handed out once to existing saves
 export { itemDef };
 
 // ---------------------------------------------------------------- model
@@ -22,7 +22,9 @@ export class Inventory {
     this.kit = 0;
     this.load();
     for (const id of ['rod', 'axe', 'scythe']) if (!this.count(id) && !(id === 'scythe' && this.kit >= KIT)) this.add(id, 1);
-    if (this.kit < KIT) { this.add('torch', 4); this.add('transat', 1); this.add('campfire', 1); this.kit = KIT; this.save(); }
+    if (this.kit < 2) { this.add('torch', 4); this.add('transat', 1); this.add('campfire', 1); }
+    if (this.kit < 3 && !this.count('book')) this.add('book', 1);
+    if (this.kit < KIT) { this.kit = KIT; this.save(); }
     this.buildDOM();
     this.render();
   }
@@ -282,6 +284,7 @@ export class Inventory {
       }
     });
     this.root.addEventListener('pointermove', (e) => {
+      if (this.padFocus && e.pointerType === 'mouse' && Math.abs(e.movementX) + Math.abs(e.movementY) > 2) { this.padFocus = false; this.render(); }
       this.moveCursor(e.clientX, e.clientY);
       if (drag && e.pointerId === drag.id && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag.moved = true;
       if (e.pointerType === 'touch') return;
@@ -373,6 +376,12 @@ export class Inventory {
     this.lens.style.setProperty('--i', this.selected);
     this.paint(this.cursorEl, this.cursor);
     this.cursorEl.classList.toggle('hidden', !this.cursor);
+    // gamepad: the carried stack hovers over the focused slot, not the mouse
+    if (this.open && this.padFocus && this.cursor) {
+      const el = this.padIndex < SIZE ? this.slotEls[this.padIndex] : this.craftEls[this.padIndex - SIZE];
+      const r = el.getBoundingClientRect();
+      this.moveCursor(r.left + r.width * 0.72, r.top + r.height * 0.28);
+    }
     // crafting availability
     this.craftEls?.forEach((el, k) => {
       const ok = this.canCraft(RECIPES[k]);

@@ -80,7 +80,7 @@ export class HeldView {
       p.p[2],
     );
     this.holder.quaternion.copy(p.q);
-    if (this.anim.scale) this.holder.scale.setScalar(this.anim.scale);
+    this.holder.scale.setScalar(this.anim.scale || 1); // reset: the previous item may have been scaled
     return impact;
   }
 

@@ -324,6 +324,10 @@ export class Audio {
       this.noise({ type: 'lowpass', f0: 500, q: 0.5, dur: 0.14, gain: 0.18, buf: this.brown });
       this.noise({ f0: 2400, f1: 1200, q: 0.8, dur: 0.12, gain: 0.03, delay: 0.03 });
     }
+    if (name === 'page') { // paper turning
+      this.noise({ f0: 1800, f1: 3800, q: 0.6, dur: 0.22, attack: 0.06, gain: 0.05 });
+      this.noise({ type: 'highpass', f0: 4000, q: 0.5, dur: 0.08, gain: 0.02, delay: 0.14 });
+    }
     if (name === 'deny') { this.tone(300, 220, 0.09, 'square', 0.025); this.tone(240, 180, 0.12, 'square', 0.025, 0.09); }
     if (name === 'craft') {
       [0, 0.08, 0.16].forEach((d) => this.tone(200 + d * 600, 150, 0.06, 'triangle', 0.1, d));

@@ -18,7 +18,9 @@ Jeu cozy en 3D à la première personne : un archipel tropical généré procéd
 
 **Inventaire** (barre de 9 + 27 cases, piles de 64) : clic = prendre/poser, clic droit = moitié / poser 1, Maj+clic = transfert rapide, double-clic = regrouper, 1-9 au survol = échanger avec la barre. Tactile : toucher, appui long (moitié / 1), double touche (transfert). Manette : croix pour déplacer, ✕ prendre/poser, □ moitié, R1 transfert, △/○ fermer. Les poissons pêchés vont dans l'inventaire ; la **hache** abat palmiers (4 coups → bois de palmier + noix de coco) et arbres (5 coups → bois tropical) en creusant de vraies entailles dans le tronc ; ils repoussent au bout de 20 minutes. La **faux** fauche l’herbe haute et les fougères (→ fibres végétales), l’herbe repousse en 10 minutes. Le journal reste dans le menu.
 
-**Fabrication** (panneau à droite de l’inventaire) : torche tiki, feu de camp, transat, parasol en paille, à partir de bois, fibres et noix de coco.
+**Fabrication** (panneau à droite de l’inventaire) : torche tiki, feu de camp, transat, parasol en paille, carnet de voyage, à partir de bois, fibres et noix de coco.
+
+**Carnet de voyage** : utilise-le pour l’ouvrir et écrire librement (40 pages, sauvegardées sur l’appareil ; L1 / R1 tournent les pages à la manette).
 
 **Objets à poser** : en main, un hologramme bleu montre où l’objet sera posé (rouge si impossible : eau, pente, obstacle, trop loin). La torche éclaire aussi quand on la tient. Un coup de hache (ou la main vide) reprend un objet posé. Les objets posés sont mémorisés par archipel.
 

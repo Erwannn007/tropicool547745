@@ -21,6 +21,7 @@ import { Hands } from './hands.js';
 import { Mower } from './scythe.js';
 import { Placement, PLACEABLE } from './placement.js';
 import { initIcons } from './icons.js';
+import { Book } from './book.js';
 
 const $ = (s) => document.querySelector(s);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -166,7 +167,7 @@ function pickPlaced() {
 }
 axe.hooks.hitPlaced = pickPlaced;
 
-const ACTION_ICON = { rod: '🎣', axe: '🪓', scythe: '🌾', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍' };
+const ACTION_ICON = { book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍' };
 function onHeldChange(held) {
   fishing.setEquipped(held?.id === 'rod');
   axe.setEquipped(held?.id === 'axe');
@@ -177,6 +178,20 @@ const inventory = new Inventory({ sound: (n) => audio.sfx(n), toast, onChange: o
 onHeldChange(inventory.held);
 inventory.closeRequest = () => closeInventory();
 $('#inv-close').addEventListener('click', () => closeInventory());
+
+const book = new Book({ sound: (n) => audio.sfx(n), onClose: () => closeBook() });
+function openBook() {
+  state = 'book';
+  document.exitPointerLock?.();
+  book.open();
+  $('#book-hint').textContent = input.lastDevice === 'gamepad' ? 'L1 / R1 : tourner les pages · ○ : fermer' : input.lastDevice === 'touch' ? 'Touche une page pour écrire' : 'Clique sur une page pour écrire · Échap : fermer';
+}
+function closeBook() {
+  if (state !== 'book') return;
+  book.close();
+  state = 'play';
+  if (!isTouch && input.lastDevice === 'keyboard') lockPointer();
+}
 
 function openInventory() {
   state = 'inventory';
@@ -239,7 +254,7 @@ function regenerate() {
 }
 
 // ---------------------------------------------------------------- menus
-let state = 'start'; // start | play | menu | inventory
+let state = 'start'; // start | play | menu | inventory | book
 const ranges = ['islands', 'size', 'relief', 'vegetation'];
 const fmt = { hour: (v) => fmtHour(+v), islands: (v) => v, size: (v) => `×${(+v).toFixed(2)}`, relief: (v) => `${Math.round(v * 100)}%`, vegetation: (v) => `${Math.round(v * 100)}%`, res: (v) => `${Math.round(v * 100)}%`, sens: (v) => (+v).toFixed(1), volume: (v) => `${Math.round(v * 100)}%` };
 function syncOutputs() {
@@ -469,15 +484,23 @@ function frame() {
       if (heldId === 'rod') fishing.action(input);
       else if (heldId === 'axe') axe.action();
       else if (heldId === 'scythe') hands.action();
+      else if (heldId === 'book') openBook();
       else if (PLACEABLE[heldId]) { if (placement.place()) inventory.take(heldId, 1); }
       else if (!pickPlaced()) toast('Prends un outil dans ta barre');
     }
+  } else if (state === 'book') {
+    input.consumeLook();
+    const p = input.pressed;
+    if (p.has('back') || p.has('menu') || p.has('inventory')) closeBook();
+    if (p.has('next')) book.turn(1);
+    if (p.has('prev')) book.turn(-1);
+    player.update(dt, { move: { x: 0, y: 0 }, pressed: new Set(), sprint: false }, { x: 0, y: 0 }, true);
   } else if (state === 'inventory') {
     input.consumeLook();
     const p = input.pressed;
     if (p.has('inventory') || p.has('back') || p.has('menu')) closeInventory();
     else {
-      if (input.lastDevice === 'gamepad' && !inventory.padFocus) { inventory.padFocus = true; inventory.render(); }
+      if (input.lastDevice === 'gamepad' && p.size && !inventory.padFocus) { inventory.padFocus = true; inventory.render(); }
       if (p.has('next')) p.add('quick');
       inventory.handlePad(p);
     }
@@ -515,7 +538,7 @@ function frame() {
   water.position.set(Math.round(camera.position.x), 0, Math.round(camera.position.z));
   globals.uCamPos.value.copy(camera.position);
   renderer.render(scene, camera);
-  if (state !== 'inventory') { axe.render(renderer, camera); hands.render(renderer, camera); }
+  if (state !== 'inventory' && state !== 'book') { axe.render(renderer, camera); hands.render(renderer, camera); }
   hudTick(dt);
 
   // fps + dynamic resolution

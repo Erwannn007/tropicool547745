@@ -29,6 +29,7 @@ Tropicool est un jeu cozy en 3D à la première personne (archipel tropical proc
 - `src/icons.js` : icônes d'inventaire rendues depuis les modèles 3D (30 px + contour).
 - `src/held.js` : objet tenu générique (même recette que la hache) ; `src/hands.js` : faux, torche et objets à poser en main.
 - `src/placement.js` : aperçu bleu/rouge, règles de pose, collisions, lumières, braises, sauvegarde par archipel.
+- `src/book.js` : carnet de voyage (pages à écrire, sauvegarde locale).
 - `src/scythe.js` : fauchage (carte d'herbe coupée lue par `grass.js`, repousse, fougères, fibres).
 - `src/fishing.js`, `src/axe.js`, `src/axeModel.js` : pêche ; hache (abattage, entailles creusées dans la géométrie du tronc via `Vegetation.detailTrunk`) et son modèle tenu en main.
 - `sw.js`, `manifest.webmanifest` : PWA (service worker « réseau d'abord »).
