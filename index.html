@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Tropicool">
+  <meta name="theme-color" content="#2a7be4">
+  <title>Tropicool</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div id="crosshair"></div>
+    <div id="bite">!</div>
+    <div id="toast"></div>
+    <div id="catch" class="card hidden">
+      <canvas id="catch-icon" width="32" height="16"></canvas>
+      <div>
+        <div id="catch-badge"></div>
+        <div id="catch-name"></div>
+        <div id="catch-info"></div>
+      </div>
+    </div>
+    <div id="fps"></div>
+    <div id="hint"></div>
+  </div>
+
+  <div id="touch">
+    <div id="stick"><div id="knob"></div></div>
+    <button id="btn-menu" class="tbtn small" aria-label="Menu">☰</button>
+    <button id="btn-journal" class="tbtn small" aria-label="Journal">📖</button>
+    <button id="btn-fish" class="tbtn big" aria-label="Pêcher">🎣</button>
+    <button id="btn-jump" class="tbtn mid" aria-label="Sauter">⤒</button>
+  </div>
+
+  <div id="start" class="screen">
+    <div class="panel title-panel">
+      <h1>Tropicool</h1>
+      <p class="sub">Un archipel paisible à explorer, à ton rythme.</p>
+      <button id="play" class="primary">Jouer</button>
+      <button id="start-settings">Configurer l'archipel</button>
+      <p class="tiny" id="pad-status">Tactile, clavier/souris ou manette (DualSense, Xbox, AYN Thor)</p>
+    </div>
+  </div>
+
+  <div id="menu" class="screen hidden">
+    <div class="panel">
+      <div class="tabs">
+        <button data-tab="world" class="tab active">Archipel</button>
+        <button data-tab="options" class="tab">Options</button>
+        <button data-tab="journal" class="tab">Journal</button>
+      </div>
+
+      <section data-panel="world">
+        <label>Nombre d'îles <output data-for="islands"></output>
+          <input type="range" id="islands" min="1" max="10" step="1"></label>
+        <label>Taille des îles <output data-for="size"></output>
+          <input type="range" id="size" min="0.5" max="1.6" step="0.05"></label>
+        <label>Relief <output data-for="relief"></output>
+          <input type="range" id="relief" min="0" max="1" step="0.05"></label>
+        <label>Végétation <output data-for="vegetation"></output>
+          <input type="range" id="vegetation" min="0" max="1" step="0.05"></label>
+        <label>Graine
+          <span class="row"><input type="number" id="seed" min="1" max="999999"><button id="dice" aria-label="Graine aléatoire">🎲</button></span></label>
+        <button id="generate" class="primary">Générer l'archipel</button>
+      </section>
+
+      <section data-panel="options" class="hidden">
+        <label>Qualité
+          <select id="quality">
+            <option value="low">Basse (batterie)</option>
+            <option value="medium">Moyenne</option>
+            <option value="high">Haute</option>
+          </select></label>
+        <label>Résolution <output data-for="res"></output>
+          <input type="range" id="res" min="0.4" max="1.5" step="0.05"></label>
+        <label class="check"><input type="checkbox" id="autores"> Résolution dynamique (fluidité)</label>
+        <label>Sensibilité de la vue <output data-for="sens"></output>
+          <input type="range" id="sens" min="0.3" max="2.5" step="0.1"></label>
+        <label>Volume <output data-for="volume"></output>
+          <input type="range" id="volume" min="0" max="1" step="0.05"></label>
+        <label class="check"><input type="checkbox" id="showfps"> Afficher les FPS</label>
+      </section>
+
+      <section data-panel="journal" class="hidden">
+        <div id="journal-list"></div>
+      </section>
+
+      <button id="resume" class="primary">Reprendre</button>
+      <p class="tiny" id="controls-help"></p>
+    </div>
+  </div>
+
+  <div id="loading" class="screen hidden"><div class="panel"><p>Génération de l'archipel…</p></div></div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,255 @@
+// Procedural archipelago: heightfield, surface masks, props placement.
+import * as THREE from 'three';
+import { makeSimplex, mulberry32, clamp, lerp, smoothstep } from './noise.js';
+import { sunDir } from './shaders.js';
+
+export const WORLD_SIZE = 512;
+export const MAP_N = 512; // 1 texel per metre
+
+export const DEFAULT_CONFIG = {
+  seed: 4242,
+  islands: 5,
+  size: 1.0,
+  relief: 0.4,
+  vegetation: 0.75,
+};
+
+export function generateWorld(cfg) {
+  const N = MAP_N, S = WORLD_SIZE, half = S / 2, cell = S / N;
+  const rnd = mulberry32(cfg.seed);
+  const sx = makeSimplex(cfg.seed);
+  const sx2 = makeSimplex(cfg.seed + 77);
+
+  // ---- island layout -------------------------------------------------
+  const islands = [];
+  const mainR = 62 * cfg.size;
+  islands.push({ x: (rnd() - 0.5) * 30, z: (rnd() - 0.5) * 30, r: mainR, h: 1 });
+  let tries = 0;
+  while (islands.length < cfg.islands && tries < 4000) {
+    tries++;
+    const shrink = 1 - Math.min(0.6, tries / 5000);
+    const r = (18 + rnd() * 34) * cfg.size * shrink;
+    const a = rnd() * Math.PI * 2, d = 40 + rnd() * (half - 60 - r);
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
+    if (Math.abs(x) + r * 1.2 > half - 10 || Math.abs(z) + r * 1.2 > half - 10) continue;
+    let ok = true;
+    for (const o of islands) {
+      if (Math.hypot(o.x - x, o.z - z) < (o.r + r) * 1.08) { ok = false; break; }
+    }
+    if (ok) islands.push({ x, z, r, h: 0.55 + rnd() * 0.6 });
+  }
+
+  // ---- heightfield ----------------------------------------------------
+  const heights = new Float32Array(N * N);
+  const relief = cfg.relief;
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const x = -half + (i + 0.5) * cell, z = -half + (j + 0.5) * cell;
+      const wx = x + sx.fbm(x * 0.008, z * 0.008, 3) * 26;
+      const wz = z + sx.fbm(x * 0.008 + 31, z * 0.008 - 17, 3) * 26;
+      let e = -1, hs = 0;
+      for (const isl of islands) {
+        const d = Math.hypot(wx - isl.x, wz - isl.z) / isl.r;
+        const ei = 1 - d;
+        if (ei > e) { e = ei; hs = isl.h; }
+      }
+      e += sx.fbm(x * 0.03, z * 0.03, 3) * 0.06;
+      let h;
+      if (e < 0) {
+        const t = -e;
+        h = -0.35 - 2.1 * smoothstep(0, 0.16, t) - 13 * smoothstep(0.12, 0.65, t);
+        h += sx2.fbm(x * 0.05, z * 0.05, 2) * 0.35 * (1 - smoothstep(0.2, 0.5, t));
+      } else {
+        const beach = 0.13;
+        if (e < beach) {
+          h = -0.35 + smoothstep(0, beach, e) * 1.5;
+        } else {
+          const t = e - beach;
+          const hills = (sx.ridged(x * 0.011, z * 0.011, 4) * 0.75 + (sx2.fbm(x * 0.02, z * 0.02, 3) * 0.5 + 0.5) * 0.35);
+          const k = smoothstep(0, 0.45, t);
+          h = 1.15 + t * 5 + hills * k * (4 + relief * 38) * hs;
+          h += sx2.fbm(x * 0.07, z * 0.07, 2) * 0.35 * k;
+        }
+      }
+      heights[j * N + i] = h;
+    }
+  }
+
+  const H = (i, j) => heights[clamp(j, 0, N - 1) * N + clamp(i, 0, N - 1)];
+  function heightAt(x, z) {
+    const fx = (x + half) / cell - 0.5, fz = (z + half) / cell - 0.5;
+    const i = Math.floor(fx), j = Math.floor(fz);
+    const u = fx - i, v = fz - j;
+    if (i < -1 || j < -1 || i > N || j > N) return -14;
+    return lerp(lerp(H(i, j), H(i + 1, j), u), lerp(H(i, j + 1), H(i + 1, j + 1), u), v);
+  }
+  function normalAt(x, z, out = new THREE.Vector3()) {
+    const e = 1.0;
+    return out.set(heightAt(x - e, z) - heightAt(x + e, z), 2 * e, heightAt(x, z - e) - heightAt(x, z + e)).normalize();
+  }
+
+  // ---- masks ---------------------------------------------------------
+  const grass = new Float32Array(N * N);
+  const rock = new Float32Array(N * N);
+  const shadeMap = new Float32Array(N * N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const h = H(i, j);
+    const gx = (H(i + 1, j) - H(i - 1, j)) / (2 * cell), gz = (H(i, j + 1) - H(i, j - 1)) / (2 * cell);
+    const slope = Math.sqrt(gx * gx + gz * gz);
+    const x = -half + (i + 0.5) * cell, z = -half + (j + 0.5) * cell;
+    const sandLine = 1.05 + sx2.fbm(x * 0.06, z * 0.06, 2) * 0.45;
+    let g = smoothstep(sandLine - 0.15, sandLine + 0.25, h);
+    const r = smoothstep(0.95, 1.4, slope + sx.fbm(x * 0.09, z * 0.09, 2) * 0.25);
+    g *= 1 - r;
+    grass[j * N + i] = g;
+    rock[j * N + i] = h > 0.3 ? r : 0;
+  }
+
+  // ---- structures: pier + hut on the main island ----------------------
+  const main = islands[0];
+  let best = null;
+  for (let k = 0; k < 24; k++) {
+    const a = (k / 24) * Math.PI * 2 + rnd() * 0.1;
+    const dx = Math.cos(a), dz = Math.sin(a);
+    let coast = null;
+    for (let d = 5; d < main.r * 2; d += 0.5) {
+      if (heightAt(main.x + dx * d, main.z + dz * d) < 0.15) { coast = d; break; }
+    }
+    if (coast == null) continue;
+    const cx = main.x + dx * coast, cz = main.z + dz * coast;
+    // prefer long gentle shelves with open sea
+    let shelf = 0;
+    for (let d = 0; d < 40; d += 2) {
+      const hh = heightAt(cx + dx * d, cz + dz * d);
+      if (hh < -0.4 && hh > -3.5) shelf++;
+      if (hh > 0.2) shelf -= 3;
+    }
+    const inland = heightAt(cx - dx * 14, cz - dz * 14);
+    const flat = Math.abs(inland - heightAt(cx - dx * 10, cz - dz * 10));
+    const score = shelf - flat * 3 - Math.max(0, inland - 4);
+    if (!best || score > best.score) best = { score, a, dx, dz, cx, cz };
+  }
+  const pier = {
+    x0: best.cx - best.dx * 3, z0: best.cz - best.dz * 3,
+    dx: best.dx, dz: best.dz, length: 26, width: 2.6, deck: 1.35,
+  };
+  const hutX = best.cx - best.dx * 13, hutZ = best.cz - best.dz * 13;
+  let hutFloor = -1e9;
+  for (let a = 0; a < 8; a++) hutFloor = Math.max(hutFloor, heightAt(hutX + Math.cos(a) * 3.5, hutZ + Math.sin(a) * 3.5));
+  const hut = { x: hutX, z: hutZ, floor: hutFloor + 0.45, rot: Math.atan2(best.dx, best.dz) };
+
+  const exclusion = (x, z, pad) => {
+    // pier capsule
+    const px = x - pier.x0, pz = z - pier.z0;
+    const along = clamp(px * pier.dx + pz * pier.dz, 0, pier.length);
+    const ex = pier.x0 + pier.dx * along, ez = pier.z0 + pier.dz * along;
+    if (Math.hypot(x - ex, z - ez) < 2.5 + pad) return true;
+    if (Math.hypot(x - hut.x, z - hut.z) < 5.5 + pad) return true;
+    // path between hut and pier
+    const qx = x - hut.x, qz = z - hut.z;
+    const t = clamp(qx * pier.dx + qz * pier.dz, 0, 13);
+    if (Math.hypot(x - (hut.x + pier.dx * t), z - (hut.z + pier.dz * t)) < 1.5 + pad) return true;
+    return false;
+  };
+
+  // ---- vegetation & rocks ---------------------------------------------
+  const veg = cfg.vegetation;
+  const props = { palms: [], trees: [], bushes: [], ferns: [], rocks: [] };
+  const occ = new Map();
+  const occKey = (x, z) => `${Math.floor(x / 3)},${Math.floor(z / 3)}`;
+  const step = 2;
+  for (let z = -half + 4; z < half - 4; z += step) {
+    for (let x = -half + 4; x < half - 4; x += step) {
+      const px = x + (rnd() - 0.5) * step * 0.9, pz = z + (rnd() - 0.5) * step * 0.9;
+      const h = heightAt(px, pz);
+      if (h < -1.6) continue;
+      const i = clamp(Math.floor((px + half) / cell), 0, N - 1), j = clamp(Math.floor((pz + half) / cell), 0, N - 1);
+      const g = grass[j * N + i], rk = rock[j * N + i];
+      const forest = smoothstep(-0.25, 0.45, sx.fbm(px * 0.018 + 100, pz * 0.018, 3));
+      const r = rnd();
+      const ex = exclusion(px, pz, 0);
+      const key = occKey(px, pz);
+      if (ex) continue;
+
+      if (h > -1.5 && h < 0.4 && r < 0.012) { // coastal boulders
+        props.rocks.push({ x: px, y: h - 0.3, z: pz, s: 0.5 + rnd() * 1.4, rot: rnd() * 6.28, v: Math.floor(rnd() * 3) });
+        continue;
+      }
+      if (h < 0.35) continue;
+      if (rk > 0.4 && r < 0.05) {
+        props.rocks.push({ x: px, y: h - 0.4, z: pz, s: 0.8 + rnd() * 2.2, rot: rnd() * 6.28, v: Math.floor(rnd() * 3) });
+        continue;
+      }
+      if (occ.has(key)) continue;
+      const coastal = h < 3.2 ? 1 : 0.25;
+      const pPalm = veg * (0.028 * coastal + 0.018 * forest) * (rk > 0.5 ? 0.1 : 1);
+      if (r < pPalm) {
+        occ.set(key, 1);
+        props.palms.push({ x: px, y: h - 0.15, z: pz, s: 0.8 + rnd() * 0.45, rot: rnd() * 6.28, v: Math.floor(rnd() * 4) });
+        continue;
+      }
+      if (g < 0.5) continue;
+      const r2 = rnd();
+      if (h > 2.0 && r2 < veg * 0.022 * forest) {
+        occ.set(key, 1);
+        props.trees.push({ x: px, y: h - 0.2, z: pz, s: 0.8 + rnd() * 0.6, rot: rnd() * 6.28, v: Math.floor(rnd() * 3) });
+      } else if (r2 < veg * (0.03 + 0.07 * forest)) {
+        props.bushes.push({ x: px, y: h - 0.25, z: pz, s: 0.6 + rnd() * 0.8, rot: rnd() * 6.28, v: Math.floor(rnd() * 3) });
+      } else if (r2 < veg * (0.09 + 0.1 * forest)) {
+        props.ferns.push({ x: px, y: h - 0.05, z: pz, s: 0.7 + rnd() * 0.6, rot: rnd() * 6.28, v: Math.floor(rnd() * 2) });
+      }
+    }
+  }
+  // a few palms framing the pier & hut, like the reference shot
+  for (let k = 0; k < 6; k++) {
+    const side = k % 2 ? 1 : -1;
+    const t = 2 + k * 2.2 + rnd();
+    const px = hut.x + best.dx * t * 0.8 + -best.dz * side * (6 + rnd() * 3);
+    const pz = hut.z + best.dz * t * 0.8 + best.dx * side * (6 + rnd() * 3);
+    const h = heightAt(px, pz);
+    if (h > 0.4) props.palms.push({ x: px, y: h - 0.15, z: pz, s: 0.95 + rnd() * 0.3, rot: rnd() * 6.28, v: k % 4 });
+  }
+
+  // ---- baked canopy shadows -------------------------------------------
+  const sdx = -sunDir.x / sunDir.y, sdz = -sunDir.z / sunDir.y;
+  const paint = (x, z, h, radius, strength) => {
+    const cx = x + sdx * h, cz = z + sdz * h;
+    const ri = Math.ceil(radius / cell) + 1;
+    const ci = Math.floor((cx + half) / cell), cj = Math.floor((cz + half) / cell);
+    for (let j = cj - ri; j <= cj + ri; j++) for (let i = ci - ri; i <= ci + ri; i++) {
+      if (i < 0 || j < 0 || i >= N || j >= N) continue;
+      const wx = -half + (i + 0.5) * cell, wz = -half + (j + 0.5) * cell;
+      const d = Math.hypot(wx - cx, wz - cz) / radius;
+      if (d > 1) continue;
+      const gap = 0.75 + 0.25 * sx2.noise(wx * 0.6, wz * 0.6);
+      const v = strength * gap * (1 - smoothstep(0.55, 1, d));
+      shadeMap[j * N + i] = Math.max(shadeMap[j * N + i], v);
+    }
+  };
+  for (const p of props.palms) paint(p.x, p.z, 7.5 * p.s, 3.6 * p.s, 0.75);
+  for (const p of props.trees) paint(p.x, p.z, 4.5 * p.s, 3.4 * p.s, 0.85);
+  for (const p of props.bushes) paint(p.x, p.z, 0.6 * p.s, 1.3 * p.s, 0.7);
+  for (const p of props.rocks) paint(p.x, p.z, 0.7 * p.s, 1.2 * p.s, 0.7);
+  paint(hut.x, hut.z, hut.floor - heightAt(hut.x, hut.z) + 3.2, 4.4, 0.85);
+
+  // ---- data texture (half float, linear-filterable in WebGL2) ---------
+  const data = new Uint16Array(N * N * 4);
+  const toHalf = THREE.DataUtils.toHalfFloat;
+  for (let k = 0; k < N * N; k++) {
+    data[k * 4] = toHalf(heights[k]);
+    data[k * 4 + 1] = toHalf(grass[k]);
+    data[k * 4 + 2] = toHalf(shadeMap[k]);
+    data[k * 4 + 3] = toHalf(rock[k]);
+  }
+  const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat, THREE.HalfFloatType);
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.needsUpdate = true;
+
+  const deckEnd = { x: pier.x0 + pier.dx * (pier.length - 1.5), z: pier.z0 + pier.dz * (pier.length - 1.5) };
+  const spawn = { x: deckEnd.x, y: pier.deck, z: deckEnd.z, yaw: Math.atan2(pier.dx, pier.dz) };
+
+  return { cfg, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex };
+}
