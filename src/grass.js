@@ -32,6 +32,7 @@ function grassMaterial(innerR, outerR, widthMul) {
     vertex: /* glsl */`
       attribute vec3 aOffset;
       uniform float uInner, uOuter, uWidth;
+      uniform vec4 uGust;
       varying vec3 vCol;
       varying vec3 vWorld;
       varying float vY;
@@ -65,6 +66,15 @@ function grassMaterial(innerR, outerR, widthMul) {
         vec2 lean = (hash22(cell + 9.1) - 0.5) * 0.35;
         float gust = sin(uTime * 1.6 + root.x * 0.25 + root.z * 0.18) * 0.5 + sin(uTime * 2.7 + root.x * 0.7) * 0.2;
         p.xz += (lean + vec2(0.7, 0.45) * gust * 0.32) * y * y * height;
+        // blast of air rolling out from a felled tree hitting the ground
+        float ga = uTime - uGust.z;
+        if (ga > 0.0 && ga < 1.8) {
+          vec2 gd = root.xz - uGust.xy;
+          float gr = length(gd);
+          float k = (1.0 - smoothstep(0.0, 2.5, abs(gr - ga * 10.0))) * uGust.w * (1.0 - ga / 1.8) * (1.0 - smoothstep(5.0, 18.0, gr));
+          p.xz += gd / max(gr, 0.1) * k * y * y * height * 1.4;
+          p.y -= k * y * height * 0.35;
+        }
         vY = y;
         vWorld = p;
 

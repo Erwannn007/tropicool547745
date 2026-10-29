@@ -231,8 +231,52 @@ export class Audio {
     this.noise({ type: 'lowpass', f0: 180, q: 0.5, dur: 0.18, gain: 0.25 * k, buf: this.brown });
   }
 
+  // axe biting into a trunk; prog = 0..1 how deep the cut already is
+  chop(type, prog = 0) {
+    const palm = type === 'palms', j = 0.93 + Math.random() * 0.14;
+    const body = (palm ? 150 : 205) * j * (1 - prog * 0.18); // duller as the cut deepens
+    this.noise({ type: 'highpass', f0: 2600, q: 0.7, dur: 0.025, attack: 0.001, gain: 0.22 });           // steel bite
+    this.noise({ type: 'bandpass', f0: body * 2, q: 9, dur: 0.24, attack: 0.002, gain: 0.55 });          // wooden knock
+    this.noise({ type: 'bandpass', f0: body * 3.4, q: 7, dur: 0.13, attack: 0.002, gain: 0.28 });
+    this.tone(body, body * 0.78, 0.17, 'sine', 0.22);
+    this.noise({ type: 'lowpass', f0: 200, q: 0.5, dur: 0.12, gain: 0.3, buf: this.brown });           // weight of the blow
+    if (palm) {
+      this.noise({ type: 'bandpass', f0: 1700, f1: 1100, q: 1.5, dur: 0.1, gain: 0.09, delay: 0.012 }); // fibres tearing
+      this.noise({ type: 'bandpass', f0: 3600, f1: 2600, q: 0.6, dur: 0.75, attack: 0.08, gain: 0.05, delay: 0.06 }); // fronds shaking
+    } else {
+      for (let i = 0; i < 3; i++) this.noise({ type: 'highpass', f0: 3000 + Math.random() * 2000, q: 1, dur: 0.02, gain: 0.05, delay: 0.03 + i * 0.03 * Math.random() }); // splinters
+      this.noise({ type: 'bandpass', f0: 3000, q: 0.6, dur: 0.5, attack: 0.06, gain: 0.035, delay: 0.05 }); // leaves
+    }
+  }
+
+  // trunk gives way: splintering, a long fibre creak, then the crown rushing through the air
+  fall(type) {
+    for (let i = 0; i < 8; i++) this.noise({ type: 'highpass', f0: 1500 + Math.random() * 2500, q: 1, dur: 0.035, gain: 0.12, delay: i * 0.04 * Math.random() * 2 });
+    this.tone(120, 70, 1.1, 'sawtooth', 0.03, 0.05, this.master, 0.05);
+    this.tone(180, 110, 0.7, 'sawtooth', 0.015, 0.15, this.master, 0.06);
+    this.noise({ f0: 600, f1: 2200, q: 0.7, dur: 1.3, attack: 1.1, gain: type === 'palms' ? 0.11 : 0.09 });
+    this.noise({ type: 'lowpass', f0: 300, f1: 900, q: 0.4, dur: 1.3, attack: 1.1, gain: 0.14, buf: this.brown });
+  }
+
+  // crown hits the ground: boom, leaves crashing, and a blast of wind along the ground
+  landTree(type) {
+    this.tone(90, 35, 0.6, 'sine', 0.4);
+    this.noise({ type: 'lowpass', f0: 500, f1: 120, q: 0.5, dur: 1.0, attack: 0.005, gain: 0.35, buf: this.brown });
+    this.noise({ f0: 2500, f1: 1500, q: 0.5, dur: 0.8, attack: 0.01, gain: 0.13 });
+    if (type === 'palms') for (let i = 0; i < 2 + Math.floor(Math.random() * 2); i++) { // coconuts bouncing
+      const f = 260 + Math.random() * 80, d = 0.15 + i * 0.18 + Math.random() * 0.08;
+      this.tone(f, f * 0.7, 0.09, 'triangle', 0.08, d); this.tone(f * 0.9, f * 0.65, 0.06, 'triangle', 0.04, d + 0.16);
+    }
+    this.noise({ f0: 900, f1: 280, q: 0.6, dur: 1.7, attack: 0.08, gain: 0.14, delay: 0.04, buf: this.brown }); // gust
+    this.noise({ type: 'highpass', f0: 2500, f1: 4500, q: 0.4, dur: 1.3, attack: 0.15, gain: 0.035, delay: 0.05 }); // grass hiss
+  }
+
   sfx(name) {
     if (!this.ctx) return;
+    const [kind, a, b] = name.split(':');
+    if (kind === 'chop') return this.chop(a, +b || 0);
+    if (kind === 'fall') return this.fall(a);
+    if (kind === 'thud') return this.landTree(a);
     if (name === 'cast') { this.tone(900, 300, 0.35, 'triangle', 0.04); this.noise({ f0: 2500, f1: 900, q: 0.8, dur: 0.3, attack: 0.08, gain: 0.04 }); }
     if (name === 'plop') { this.tone(420, 140, 0.18, 'sine', 0.16); this.noise({ f0: 900, f1: 2000, q: 1, dur: 0.25, gain: 0.06, delay: 0.02 }); }
     if (name === 'bite') { this.tone(700, 500, 0.08, 'square', 0.05); this.tone(700, 500, 0.08, 'square', 0.05, 0.12); }
@@ -240,9 +284,6 @@ export class Audio {
     if (name === 'click') this.tone(1200, 900, 0.04, 'square', 0.03);
     if (name === 'swing') this.noise({ f0: 500, f1: 1800, q: 1.2, dur: 0.2, attack: 0.1, gain: 0.07, delay: 0.12 });
     if (name === 'whiff') this.noise({ f0: 1600, f1: 600, q: 1.2, dur: 0.14, attack: 0.03, gain: 0.05 });
-    if (name === 'chop') { this.tone(190, 90, 0.09, 'square', 0.09); this.tone(1400, 700, 0.04, 'triangle', 0.05); this.noise({ f0: 1200, q: 2, dur: 0.06, gain: 0.08 }); }
-    if (name === 'creak') { this.tone(140, 90, 0.7, 'sawtooth', 0.035); }
-    if (name === 'thud') { this.tone(110, 38, 0.45, 'sine', 0.3); this.tone(220, 60, 0.2, 'square', 0.05); this.noise({ type: 'lowpass', f0: 600, f1: 150, dur: 0.8, gain: 0.2, buf: this.brown }); }
     if (name === 'pickup') { this.tone(880, 1320, 0.08, 'sine', 0.06); this.tone(1320, 1760, 0.08, 'sine', 0.05, 0.07); }
     if (name === 'tick') this.tone(1800, 1400, 0.035, 'sine', 0.04);
     if (name === 'open') { this.tone(500, 900, 0.12, 'sine', 0.05); }

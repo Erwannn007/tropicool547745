@@ -16,6 +16,7 @@ export const globals = {
   uWorldSize: { value: 512 },
   uWorldTex: { value: null },
   uWaterLevel: { value: 0 },
+  uGust: { value: new THREE.Vector4(0, 0, -100, 0) }, // x, z, start time, strength: felled-tree shockwave
 };
 
 export const commonGLSL = /* glsl */`

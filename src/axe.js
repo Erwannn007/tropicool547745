@@ -3,6 +3,7 @@
 // Felled trees are remembered per world and grow back after a while.
 import * as THREE from 'three';
 import { AxeModel } from './axeModel.js';
+import { globals } from './shaders.js';
 
 const HITS = { palms: 4, trees: 5 };
 const REGROW_MS = 20 * 60 * 1000;
@@ -24,46 +25,26 @@ function saveFelled(cfg, key) {
   try { localStorage.setItem(FKEY, JSON.stringify(all)); } catch (_) { /* private mode */ }
 }
 
-// Pixel-art notch: fresh pale wood rim, V-shaped cut (lit top face, shaded
-// bottom face, dark crease), jagged bark edge and splinters. 3 depth stages.
+// Cut mark: a smooth eye-shaped wedge of fresh wood (plain colours, no pixel
+// noise), a slightly darker crease in the middle. 3 depth stages.
 function notchTexture(stage) {
-  const W = 32, H = 24;
+  const W = 128, H = 96;
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
-  let seed = 11 + stage * 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const px = (x, y, col) => { g.fillStyle = col; g.fillRect(x, y, 1, 1); };
   const depth = [0.55, 0.78, 1][stage];
-  const cx = W / 2 - 0.5, cy = H / 2 - 0.5;
-  const rx = 7 + 7 * depth, ry = 3 + 6 * depth;
-  const jag = Array.from({ length: 24 }, () => 0.82 + rnd() * 0.3);
-  const rim = ['#5a3a1c', '#f6e2b4', '#ecd29a', '#dcb97e'];
-  const top = ['#e0b676', '#cf9f5f', '#bb884a'];
-  const bot = ['#9a6638', '#845530', '#6e4426'];
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const dx = (x - cx) / rx, dy = (y - cy) / ry;
-    const ang = Math.atan2(dy, dx);
-    const j = jag[Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 24) % 24];
-    const r = Math.hypot(dx, dy) / j;
-    if (r > 1.12) continue;
-    if (r > 1.0) { px(x, y, rim[0]); continue; }                          // bark edge
-    if (r > 0.78) { px(x, y, rim[1 + Math.floor(rnd() * 3)]); continue; } // chipped fresh wood
-    const v = (y - cy) / (ry * 0.78);                                     // -1 top .. 1 bottom
-    if (Math.abs(v) < 0.14 + 0.06 * depth) { px(x, y, '#3e2210'); continue; } // crease
-    const k = Math.min(2, Math.floor(Math.abs(v) * 3 + rnd() * 0.6));
-    px(x, y, v < 0 ? top[k] : bot[2 - k]);
-    if (rnd() < 0.08) px(x, y, v < 0 ? '#f0cc8c' : '#5e381e'); // fibres
-  }
-  for (let i = 0; i < 3 + stage * 2; i++) { // splinters sticking out of the rim
-    const a = rnd() * Math.PI * 2, len = 2 + Math.floor(rnd() * 3);
-    for (let k = 0; k < len; k++) {
-      const x = Math.round(cx + Math.cos(a) * (rx + 0.5 + k)), y = Math.round(cy + Math.sin(a) * (ry + 0.5 + k * 0.6));
-      if (x >= 0 && y >= 0 && x < W && y < H) px(x, y, k === len - 1 ? '#c99a5e' : '#f2d9a4');
-    }
-  }
+  const rx = W * (0.26 + 0.22 * depth), ry = H * (0.16 + 0.26 * depth);
+  const eye = (sx, sy, col) => {
+    g.fillStyle = col; g.beginPath();
+    g.moveTo(W / 2 - rx * sx, H / 2);
+    g.quadraticCurveTo(W / 2, H / 2 - ry * sy * 2, W / 2 + rx * sx, H / 2);
+    g.quadraticCurveTo(W / 2, H / 2 + ry * sy * 2, W / 2 - rx * sx, H / 2);
+    g.fill();
+  };
+  eye(1, 1, '#f2d7a2');               // fresh wood
+  eye(0.92, 0.5, '#d9b47a');          // inner faces in shade
+  eye(0.8, 0.12 + 0.08 * depth, '#a97a45'); // crease
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.NoColorSpace;
-  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
   return t;
 }
 
@@ -89,7 +70,7 @@ export class Axe {
     this.marks = [];
     this.camShake = 0;
     this.notchMats = [0, 1, 2].map((s) => new THREE.MeshBasicMaterial({
-      map: notchTexture(s), alphaTest: 0.5, color: 0xece4d6,
+      map: notchTexture(s), alphaTest: 0.5,
       polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
     }));
     this.ray = new THREE.Raycaster();
@@ -105,6 +86,28 @@ export class Axe {
     this.life = new Float32Array(this.N);
     this.next = 0;
     scene.add(this.chips);
+
+    // dust and leaf bits blown along the ground when a tree lands (per-particle fade)
+    this.DN = 140;
+    const dg = new THREE.BufferGeometry();
+    dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.DN * 3).fill(-999), 3));
+    dg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.DN * 3), 3));
+    dg.setAttribute('aAlpha', new THREE.BufferAttribute(new Float32Array(this.DN), 1));
+    dg.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(this.DN), 1));
+    this.dust = new THREE.Points(dg, new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      uniforms: { uScale: { value: 400 } },
+      vertexShader: `attribute vec3 color; attribute float aAlpha, aSize; uniform float uScale; varying vec4 vC;
+        void main() { vC = vec4(color, aAlpha); vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = aSize * uScale / -mv.z; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: 'varying vec4 vC; void main() { if (vC.a < 0.01) discard; gl_FragColor = vC; }',
+    }));
+    this.dust.frustumCulled = false;
+    this.dVel = new Float32Array(this.DN * 3);
+    this.dLife = new Float32Array(this.DN);
+    this.dMax = new Float32Array(this.DN);
+    this.dNext = 0;
+    scene.add(this.dust);
   }
 
   setWorld(world, veg, player) {
@@ -117,7 +120,10 @@ export class Axe {
 
   setEquipped(on) { this.equipped = on; this.sprite.setVisible(on); }
 
-  render(renderer, camera) { this.sprite.render(renderer, camera); }
+  render(renderer, camera) {
+    this.dust.material.uniforms.uScale.value = renderer.getDrawingBufferSize(new THREE.Vector2()).y * 0.5;
+    this.sprite.render(renderer, camera);
+  }
 
   // nearest standing trunk in front of the player, within reach
   target() {
@@ -225,7 +231,7 @@ export class Axe {
     const hp = hit ? hit.point : new THREE.Vector3(p.x + (cam.x - p.x) / d * 0.3 * p.s, p.y + 1.1, p.z + (cam.z - p.z) / d * 0.3 * p.s);
     this.burst(hp.x, hp.y, hp.z, 12, [0.55, 0.36, 0.18], 1.8);
     this.burst(hp.x, hp.y, hp.z, 6, [0.95, 0.82, 0.58], 1.4);
-    this.hooks.sound?.('chop');
+    this.hooks.sound?.(`chop:${p.type}:${n / HITS[p.type]}`);
     this.hooks.rumble?.(0.5, 90);
     this.sprite.freeze(0.07);
     this.camShake = 1;
@@ -269,7 +275,7 @@ export class Axe {
     this.world.removeProp(p);
     this.player.removeCollider(p);
     saveFelled(this.world.cfg, p.key);
-    this.hooks.sound?.('creak');
+    this.hooks.sound?.('fall:' + p.type);
   }
 
   finishFall(f) {
@@ -286,10 +292,34 @@ export class Axe {
     const drops = p.type === 'palms'
       ? [['wood:palm', 3 + Math.floor(rnd() * 3)], ['coconut', Math.floor(rnd() * 3)]]
       : [['wood:tree', 3 + Math.floor(rnd() * 3)]];
-    this.hooks.sound?.('thud');
+    this.gust(p.x + tip.x * 0.55, p.z + tip.z * 0.55, f.away, 5 * p.s);
+    this.hooks.sound?.('thud:' + p.type);
     this.hooks.rumble?.(0.8, 220);
     this.camShake = 1.6;
     this.hooks.drops(drops.filter(([, n]) => n > 0));
+  }
+
+  // the crown slams down: dust, sand and leaf bits rush out along the ground,
+  // and the grass is flattened by a ring of air (uGust in the grass shader)
+  gust(cx, cz, away, len) {
+    globals.uGust.value.set(cx, cz, globals.uTime.value, 1);
+    const pos = this.dust.geometry.attributes.position, col = this.dust.geometry.attributes.color;
+    const side = new THREE.Vector3(-away.z, 0, away.x);
+    const cols = [[0.97, 0.93, 0.8], [0.93, 0.85, 0.66], [0.89, 0.8, 0.6], [0.58, 0.9, 0.29], [1, 1, 1]];
+    for (let k = 0; k < 110; k++) {
+      const i = this.dNext = (this.dNext + 1) % this.DN;
+      const along = (Math.random() - 0.3) * len, s = Math.random() < 0.5 ? -1 : 1;
+      const x = cx + away.x * along, z = cz + away.z * along;
+      pos.setXYZ(i, x, this.world.heightAt(x, z) + 0.1 + Math.random() * 0.3, z);
+      const sp = 3 + Math.random() * 5;
+      const dir = side.clone().multiplyScalar(s).addScaledVector(away, (Math.random() - 0.3) * 0.9).normalize();
+      this.dVel.set([dir.x * sp, 0.4 + Math.random() * 1.4, dir.z * sp], i * 3);
+      const c = cols[Math.floor(Math.random() * cols.length)];
+      col.setXYZ(i, c[0], c[1], c[2]);
+      this.dLife[i] = this.dMax[i] = 0.9 + Math.random() * 0.9;
+      this.dust.geometry.attributes.aSize.setX(i, 0.16 + Math.random() * 0.22);
+    }
+    col.needsUpdate = true;
   }
 
   burst(x, y, z, count, color, speed) {
@@ -361,5 +391,22 @@ export class Axe {
       if (this.life[i] <= 0) pos.setY(i, -999);
     }
     if (any) pos.needsUpdate = true;
+
+    // ground dust: fast then dragged to a stop, growing and fading
+    const dp = this.dust.geometry.attributes.position, da = this.dust.geometry.attributes.aAlpha, ds = this.dust.geometry.attributes.aSize;
+    let dAny = false;
+    const drag = Math.exp(-3.2 * dt);
+    for (let i = 0; i < this.DN; i++) {
+      if (this.dLife[i] <= 0) { if (da.getX(i) > 0) { da.setX(i, 0); dAny = true; } continue; }
+      dAny = true;
+      this.dLife[i] -= dt;
+      const v = this.dVel;
+      v[i * 3] *= drag; v[i * 3 + 2] *= drag; v[i * 3 + 1] = v[i * 3 + 1] * drag - 1.5 * dt;
+      dp.setXYZ(i, dp.getX(i) + v[i * 3] * dt, dp.getY(i) + v[i * 3 + 1] * dt, dp.getZ(i) + v[i * 3 + 2] * dt);
+      const life = Math.max(0, this.dLife[i] / this.dMax[i]);
+      da.setX(i, Math.min(1, life * 1.8) * 0.85);
+      ds.setX(i, ds.getX(i) * (1 + dt * 1.4));
+    }
+    if (dAny) { dp.needsUpdate = true; da.needsUpdate = true; ds.needsUpdate = true; }
   }
 }
