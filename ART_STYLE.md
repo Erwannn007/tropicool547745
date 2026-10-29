@@ -42,6 +42,7 @@ Les images de référence du projet sont des captures de jeux indé pixel-art 3D
 - Bois frais (entailles, sections) : `#a97a45 #c49a5e #d9b47a #e8c890 #f2d7a2 #f8e6c0`
 - Pierre (basalte) : `#4a4450 #5c5560 #716a6e #877f7e #9d948d #b4aa9e` · quartz : `#cfc6b8 #e8e0d0 #f8f2e6`
 - Flamme : `#fff5b2 #ffc740 #ff801f #e64214` (bandes nettes, jamais de dégradé)
+- Peau (main et avant-bras) : `#6e3a2c #8a4e34 #a8683f #c4824e #d89c64 #eab67c` · bracelet en fibres tressées (détail signature)
 
 ## Mouvement
 Anticipation, temps mort, geste rapide, impact marqué (arrêt d'environ 70 ms, secousse, particules carrées), retour en douceur. Référence : le coup de hache (0 → 0,16 → 0,20 → impact 0,255 → 0,29 → 0,36 → 0,62 s) ; la pioche suit le même rythme (armé 0,17, temps mort 0,21, impact 0,255, recul 0,30, retour 0,66 s).

@@ -27,11 +27,12 @@ Tropicool est un jeu cozy en 3D à la première personne (archipel tropical proc
 - `src/inventory.js` : inventaire 9 + 27 cases + fabrication, panneaux pixel assortis aux menus.
 - `src/models.js` : modèles 3D des objets (torche tiki, transat, parasol, feu de camp, faux, bûches, noix de coco, fibres, canne, poissons) ; `src/dress.js` : leurs matériaux (monde, main, icône, hologramme, flamme).
 - `src/icons.js` : icônes d'inventaire rendues depuis les modèles 3D (30 px + contour).
-- `src/held.js` : objet tenu générique (même recette que la hache) ; `src/hands.js` : faux, pioche, torche et objets à poser en main.
+- `src/held.js` : objet tenu générique (même recette que la hache ; pivot autour de la main, inertie au regard, vibration d'impact) ; `src/hands.js` : faux, pioche tenue dans le poing (avant-bras posé chaque image vers le coude), torche, objets à poser, pierre portée dans la main ouverte.
 - `src/placement.js` : aperçu bleu/rouge, règles de pose, collisions, lumières, braises, sauvegarde par archipel.
 - `src/saves.js` : mondes enregistrés ; chaque monde joué a un id d'instance (`settings.world.instance`) sous lequel sont rangés arbres abattus, herbe fauchée et objets posés (`worldKey()` dans `src/axe.js`).
 - `src/book.js` : carnet de voyage (pages à écrire, sauvegarde locale).
-- `src/pickaxe.js` : minage des pierres de surface (fissures, éclats, étincelles, débris qui rebondissent, butin, repousse) ; leur densité vient du réglage « Pierres » du générateur (`cfg.stones`, tirées avec leur propre flux aléatoire pour ne pas décaler les autres accessoires).
+- `src/pickaxe.js` : minage des pierres de surface. `Quarry.cast()` lance un rayon contre les vrais maillages (pierres, rochers), troncs, sol et morceaux ; le coup part là où la pointe de la pioche touche réellement (balayage de la pointe dans `hands.js`), creuse un éclat et ouvre des fissures autour du point frappé (`uHits` du matériau à fissures), puis la pierre éclate en morceaux physiques. Tables `MINERALS` (dureté) et `TOOLS` (puissance). Rien ne va dans l'inventaire automatiquement. Densité : réglage « Pierres » du générateur (`cfg.stones`, flux aléatoire à part).
+- `src/debris.js` : objets physiques posés dans le monde (morceaux de pierre irréguliers) : petit solide rigide (contacts sur les points de l'enveloppe, rebonds, frottement, troncs, pierres, lagon), sommeil quand immobile, plafond de 36 morceaux ; visée, saisie, lâcher, lancer et rangement dans le sac (actions séparées : G / clic droit, clic, V ; ○, □, R3 ; boutons ✋ ⤓ ➶ 🎒 en tactile).
 - `src/scythe.js` : fauchage (carte d'herbe coupée lue par `grass.js`, repousse, fougères, fibres).
 - `src/fishing.js`, `src/axe.js`, `src/axeModel.js` : pêche ; hache (abattage, entailles creusées dans la géométrie du tronc via `Vegetation.detailTrunk`) et son modèle tenu en main.
 - `sw.js`, `manifest.webmanifest` : PWA (service worker « réseau d'abord »).

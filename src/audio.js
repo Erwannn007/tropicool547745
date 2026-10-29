@@ -398,6 +398,11 @@ export class Audio {
       [784, 988, 1318].forEach((f, i) => this.tone(f, f, 0.12, 'triangle', 0.05, 0.26 + i * 0.07));
     }
     if (name === 'whiff') this.noise({ f0: 1600, f1: 600, q: 1.2, dur: 0.14, attack: 0.03, gain: 0.05 });
+    if (name === 'grab') { // a stone scraped off the ground into the palm
+      this.noise({ type: 'bandpass', f0: 1400, f1: 700, q: 1.5, dur: 0.09, attack: 0.005, gain: 0.08 });
+      this.noise({ type: 'lowpass', f0: 260, q: 0.5, dur: 0.07, gain: 0.18, delay: 0.07, buf: this.brown });
+    }
+    if (name === 'toss') this.noise({ f0: 500, f1: 1400, q: 1, dur: 0.16, attack: 0.05, gain: 0.07 }); // a stone flung through the air
     if (name === 'pickup') { this.tone(880, 1320, 0.08, 'sine', 0.06); this.tone(1320, 1760, 0.08, 'sine', 0.05, 0.07); }
     if (name === 'tick') this.tone(1800, 1400, 0.035, 'sine', 0.04);
     if (name === 'open') { this.tone(500, 900, 0.12, 'sine', 0.05); }

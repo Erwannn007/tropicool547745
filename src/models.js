@@ -473,7 +473,8 @@ function pickaxeModel() {
   const { L, HY } = PICK;
   const handle = lathe([[0, 0], [0.03, 0], [0.037, 0.012], [0.036, 0.04], [0.031, 0.07], ...Array.from({ length: 8 }, (_, i) => [0.031 - i * 0.0012, 0.12 + i * (L - 0.14) / 7]), [0.02, L], [0, L]], 10, 1);
   { const U = handle.attributes.uv; for (let i = 0; i < U.count; i++) U.setY(i, U.getY(i) * 3); }
-  const grip = lathe([[0.033, 0.07], [0.037, 0.078], ...Array.from({ length: 6 }, (_, i) => [0.036 + (i % 2) * 0.002, 0.1 + i * 0.03]), [0.037, 0.26], [0.032, 0.268]], 10, 2);
+  // leather wrap where the hand closes on the handle, a third of the way up
+  const grip = lathe([[0.032, 0.19], [0.036, 0.198], ...Array.from({ length: 6 }, (_, i) => [0.035 + (i % 2) * 0.002, 0.22 + i * 0.03]), [0.036, 0.38], [0.031, 0.388]], 10, 2);
   const cord = merge([0, 1, 2, 3].map((k) => [lathe([[0.024, 0], [0.031, 0.008], [0.031, 0.017], [0.024, 0.024]], 8, 2), M(0, HY - 0.135 + k * 0.021)]));
   // head: two tapered arms on an arc, meeting in a bevelled oval eye
   const arm = (dir, len, drop, r0, r1, section) => tube(
@@ -503,6 +504,69 @@ function pickaxeModel() {
     ],
   };
 }
+// ---------------------------------------------------------------- hands
+// The player's right hand in first person: a sun-tanned fist closed round a
+// handle (along +Y, radius ~0.036), or an open palm cupped upwards to carry a
+// stone. side = unit direction (perpendicular to Y) the palm and wrist face.
+// Signature detail: the woven fibre bracelet on the forearm.
+const SKIN = ['#6e3a2c', '#8a4e34', '#a8683f', '#c4824e', '#d89c64', '#eab67c'];
+T.skin = () => once('skin', () => pixTex(16, 16, (g, w, h) => {
+  const r = mulberry32(31);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, SKIN, x, y, 3.1 + (r() - 0.5) * 0.9 - (y > 12 ? 0.8 : 0));
+  for (let x = 0; x < w; x += 4) ramp(g, SKIN, x, 13, 1.4); // creases at the joints
+}));
+T.nail = () => once('nail', () => pixTex(4, 4, (g) => { g.fillStyle = '#f0c8a0'; g.fillRect(0, 0, 4, 4); g.fillStyle = '#fbe2c6'; g.fillRect(1, 1, 2, 1); }));
+export const HAND = { LIFT: 0.12 }; // the fist closes round the handle at y = 0.17 + LIFT
+function fistModel(side) {
+  const Y = V(0, 1, 0), S = side.clone().normalize(), F = Y.clone().cross(S).normalize();
+  const at = (theta, y, r) => S.clone().multiplyScalar(Math.cos(theta) * r).addScaledVector(F, Math.sin(theta) * r).add(V(0, y, 0));
+  const fingers = [];
+  [[0.222, 0.0125], [0.188, 0.0132], [0.154, 0.0128], [0.122, 0.0112]].forEach(([y, fr], k) => {
+    const a0 = 0.95 + k * 0.05, a1 = 5.55 - k * 0.12; // knuckle on the far side, tip pressed back into the palm
+    const curve = (t) => at(a0 + (a1 - a0) * t, y - t * 0.006, 0.036 + fr * (1.02 - 0.12 * t) + (t < 0.12 ? 0.006 * (1 - t / 0.12) : 0));
+    fingers.push([tube(curve, (t) => fr * (t < 0.1 ? 1.12 : t > 0.92 ? 0.85 : 1), { rings: 14, radial: 7, up: V(0, 1, 0) })]);
+  });
+  // palm and heel of the hand, round the handle on the wrist side
+  const palm = lathe([[0, -0.07], [0.03, -0.062], [0.042, -0.035], [0.045, 0.0], [0.042, 0.04], [0.03, 0.065], [0, 0.072]], 10, 1);
+  palm.scale(0.62, 1, 1.05);
+  const m = new THREE.Matrix4().makeBasis(S, Y, F.clone().negate()).setPosition(S.clone().multiplyScalar(0.052).add(V(0, 0.168, 0)));
+  palm.applyMatrix4(m);
+  // thumb wraps over the index finger
+  const th0 = at(-0.55, 0.19, 0.06), th1 = at(0.35, 0.248, 0.056), th2 = at(1.15, 0.246, 0.047);
+  const thumb = tube((t) => (t < 0.5 ? th0.clone().lerp(th1, t * 2) : th1.clone().lerp(th2, t * 2 - 1)), (t) => 0.0145 - t * 0.003, { rings: 10, radial: 7, up: S.clone() });
+  const nails = merge([[lathe([[0.007, 0], [0.008, 0.004], [0, 0.006]], 6, 1), new THREE.Matrix4().makeBasis(F.clone().negate(), S, Y).setPosition(th2.clone().addScaledVector(S, 0.012))]]);
+  const skin = merge([...fingers, [palm], [thumb]]);
+  skin.translate(0, HAND.LIFT, 0); nails.translate(0, HAND.LIFT, 0); // on the leather wrap
+  return {
+    parts: [
+      { geo: skin, tex: T.skin() },
+      { geo: nails, tex: T.nail() },
+    ],
+    wrist: S.clone().multiplyScalar(0.085).add(V(0, 0.15 + HAND.LIFT, 0)),
+  };
+}
+// palm up (+Y), fingers towards -Z curling up round whatever lies on it,
+// wrist at +Z
+function cupModel() {
+  const palm = lathe([[0, -0.016], [0.03, -0.015], [0.045, -0.006], [0.047, 0.004], [0.036, 0.013], [0, 0.015]], 12, 1);
+  palm.scale(1, 1, 1.15);
+  const fingers = [];
+  [[-0.032, 0.0118], [-0.011, 0.0126], [0.011, 0.0122], [0.031, 0.0108]].forEach(([x, fr], k) => {
+    const len = [0.08, 0.088, 0.083, 0.068][k];
+    const curve = (t) => V(x * (1 + t * 0.1), 0.004 + Math.sin(t * 1.25) * len * 0.62, -0.044 - Math.sin(t * 1.4) * len * 0.62);
+    fingers.push([tube(curve, (t) => fr * (t > 0.85 ? 0.85 : 1), { rings: 9, radial: 7, up: V(1, 0, 0) })]);
+  });
+  const thumb = tube((t) => V(-0.05 - t * 0.02, 0.006 + t * 0.04, 0.0 - t * 0.04), (t) => 0.015 - t * 0.003, { rings: 6, radial: 7, up: V(0, 0, 1) });
+  return { parts: [{ geo: merge([[palm], ...fingers, [thumb]]), tex: T.skin() }], wrist: V(0, -0.004, 0.05) };
+}
+// forearm along +Y from the wrist (0) to the elbow (1); stretched to fit
+function forearmModel() {
+  const arm = lathe([[0.026, 0], [0.03, 0.06], [0.036, 0.2], [0.043, 0.45], [0.046, 0.75], [0.044, 1]], 10, 1);
+  const band = lathe([[0.029, 0], [0.033, 0.004], [0.034, 0.014], [0.033, 0.024], [0.029, 0.028]], 12, 3);
+  return { parts: [{ geo: arm, tex: T.skin() }], band: { parts: [{ geo: band, tex: T.weave() }] } };
+}
+export const handModel = (kind, side) => once('m:hand:' + kind + (side ? side.toArray().map((v) => v.toFixed(2)).join() : ''), () => (kind === 'cup' ? cupModel() : kind === 'arm' ? forearmModel() : fistModel(side)));
+
 function stoneModel() { return { parts: [{ geo: rockGeo(64, 0.22), tex: T.stone() }] }; }
 
 function axeIcon() { return { parts: [{ geo: handleGeometry(), tex: T.gold() }, { geo: headGeometry(), tex: T.steel(), metal: 1, vcol: true }] }; }

@@ -324,12 +324,18 @@ export function makeStone(seed, detail = 3, r0 = 0.6) {
   return g;
 }
 
-function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, translucent = 0, rock = false, tint = 0.12, gain = 1, cut = false, stone = false, crack = false } = {}) {
+// crack: blows are local; uHits = up to MAX_HITS points in the stone's own
+// space (xyz) with how hard they were hit (w). obj: a loose moving piece
+// (fragment), textured by its own uvs so nothing swims as it tumbles, with
+// fresh pale fracture faces (aFresh) and a highlight (uHi) when aimed at.
+export const MAX_HITS = 8;
+function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, translucent = 0, rock = false, tint = 0.12, gain = 1, cut = false, stone = false, crack = false, obj = false } = {}) {
   return makeMaterial({
     side: alphaTest > 0 ? THREE.DoubleSide : THREE.FrontSide,
-    defines: { ...(rock ? { ROCK: 1 } : {}), ...(cut ? { CUT: 1 } : {}), ...(stone ? { STONE: 1 } : {}), ...(crack ? { CRACK: 1 } : {}) },
+    defines: { ...(rock ? { ROCK: 1 } : {}), ...(cut ? { CUT: 1 } : {}), ...(stone ? { STONE: 1 } : {}), ...(crack ? { CRACK: 1, MAX_HITS } : {}), ...(obj ? { OBJ: 1 } : {}) },
     uniforms: {
-      uCrack: { value: 0 },
+      uCrack: { value: 0 }, uHi: { value: 0 },
+      uHits: { value: Array.from({ length: MAX_HITS }, () => new THREE.Vector4(0, 0, 0, 0)) },
       uMap: { value: map }, uAlphaTest: { value: alphaTest }, uWind: { value: wind },
       uWrap: { value: wrap }, uTrans: { value: translucent }, uTint: { value: tint }, uGain: { value: gain },
     },
@@ -346,20 +352,36 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         varying float vCut;
       #endif
       #ifdef CRACK
+        uniform vec4 uHits[MAX_HITS];
+        varying vec3 vLocal;
+      #endif
+      #ifdef OBJ
+        attribute float aFresh;
+        varying float vFresh;
         varying vec3 vLocal;
       #endif
       void main() {
         #ifdef CUT
           vCut = aCut;
         #endif
+        vec3 pos = position;
         #ifdef CRACK
           vLocal = position;
+          // each blow knocks a real chip out: the surface sinks around it
+          for (int i = 0; i < MAX_HITS; i++) {
+            vec4 h = uHits[i];
+            float d = length(position - h.xyz);
+            pos -= normalize(position) * h.w * 0.07 * (1.0 - smoothstep(0.0, 0.1 + h.w * 0.06, d)); // towards the core: faces stay joined
+          }
+        #endif
+        #ifdef OBJ
+          vFresh = aFresh; vLocal = position;
         #endif
         mat4 m = modelMatrix;
         #ifdef USE_INSTANCING
           m = modelMatrix * instanceMatrix;
         #endif
-        vec4 w = m * vec4(position, 1.0);
+        vec4 w = m * vec4(pos, 1.0);
         vec2 origin = m[3].xz;
         float ph = hash12(floor(origin * 3.0)) * 6.28;
         float gust = 0.6 + 0.4 * sin(uTime * 0.35 + origin.x * 0.02);
@@ -369,7 +391,11 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         vUv = uv;
         vN = normalize(mat3(m) * normal);
         vWorld = w.xyz;
-        vRand = hash12(floor(origin * 7.0));
+        #ifdef OBJ
+          vRand = 0.5; // a moving piece keeps its colour
+        #else
+          vRand = hash12(floor(origin * 7.0));
+        #endif
         vBaseY = m[3].y;
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
@@ -384,10 +410,17 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
       #ifdef CUT
         varying float vCut;
       #endif
+      #ifdef OBJ
+        uniform float uHi;
+        varying float vFresh;
+        varying vec3 vLocal;
+      #endif
       #ifdef CRACK
         uniform float uCrack;
+        uniform vec4 uHits[MAX_HITS];
         varying vec3 vLocal;
-        // pixel-snapped 3D cells: borders of more and more cells split open
+        // pixel-snapped 3D cells: the cells around each blow split open, wider
+        // and wider as the blows add up (uCrack spreads them over the stone)
         float crackAt(vec3 q) {
           vec3 g = floor(q * 22.0) / 22.0 * 5.0, ip = floor(g), fp = fract(g);
           float d1 = 9.0, d2 = 9.0, id = 0.0;
@@ -398,12 +431,28 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
             if (d < d1) { d2 = d1; d1 = d; id = h.x; } else if (d < d2) d2 = d;
           }
           float e = sqrt(d2) - sqrt(d1);
-          float open = step(fract(id * 7.31), uCrack);
+          float reach = 0.0;
+          for (int i = 0; i < MAX_HITS; i++) {
+            vec4 h = uHits[i];
+            reach = max(reach, h.w * (1.0 - length(q - h.xyz) / (0.12 + h.w * 0.32 + uCrack * 0.35)));
+          }
+          float open = step(fract(id * 7.31) * 0.85 + 0.1, reach * 1.6 + uCrack * uCrack * 0.6);
           return open * (e < 0.07 ? 2.0 : e < 0.13 ? 1.0 : 0.0);
+        }
+        // bright freshly knocked stone right where the point bit
+        float chipAt(vec3 q) {
+          vec3 c = floor(q * 22.0) / 22.0;
+          float k = 0.0;
+          for (int i = 0; i < MAX_HITS; i++) {
+            vec4 h = uHits[i];
+            float d = length(c - h.xyz);
+            k = max(k, h.w * step(d, 0.05 + h.w * 0.05) * step(0.25, fract(sin(dot(c, vec3(12.9, 78.2, 37.7))) * 43758.5)));
+          }
+          return k;
         }
       #endif
       void main() {
-        #ifdef ROCK
+        #if defined(ROCK) && !defined(OBJ)
           vec3 an = abs(vN);
           vec2 tuv = an.y > max(an.x, an.z) ? vWorld.xz : (an.x > an.z ? vWorld.zy : vWorld.xy);
           vec4 tex = texture2D(uMap, tuv / 3.0);
@@ -417,7 +466,15 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         float low = 1.0 - smoothstep(0.4, 2.2, vWorld.y - d.r);
         float shadow = 1.0 - d.b * 0.55 * uShade * low;
         vec3 col = tex.rgb * (1.0 - uTint * 0.5 + vRand * uTint);
-        #ifdef STONE
+        #ifdef OBJ
+          // fracture faces: pale fresh basalt with quartz glints, a few levels
+          if (vFresh > 0.5) {
+            float g = hash12(floor(vLocal.xz * 40.0) + floor(vLocal.y * 40.0) * 7.0);
+            col = g < 0.12 ? vec3(0.97, 0.95, 0.9) : g < 0.55 ? vec3(0.71, 0.67, 0.62) : vec3(0.62, 0.58, 0.55);
+          }
+          col *= 1.0 + uHi * (0.22 + 0.1 * sin(uTime * 6.0));
+        #endif
+        #if defined(STONE) && !defined(OBJ)
           // lichen and moss in pixel clumps on the top of the stone
           float mossy = step(0.8, n.y) * step(0.78, hash12(floor(vWorld.xz * 4.0)) * 0.6 + hash12(floor(vWorld.xz * 16.0)) * 0.5);
           col = mix(col, hash12(floor(vWorld.xz * 16.0) + 3.0) < 0.5 ? vec3(0.36, 0.62, 0.17) : vec3(0.49, 0.74, 0.22), mossy);
@@ -425,6 +482,8 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         #ifdef CRACK
           float ck = crackAt(vLocal);
           col = ck > 1.5 ? vec3(0.17, 0.14, 0.2) : ck > 0.5 ? col * 1.22 : col; // dark split, lit lip
+          float chip = chipAt(vLocal);
+          if (chip > 0.0 && ck < 1.5) col = mix(col, vec3(0.86, 0.82, 0.75), 0.75); // pale bare stone
         #endif
         #ifdef CUT
           // fresh wood inside an axe notch: pale ramp, darker at the bottom of the cut
@@ -467,6 +526,7 @@ export class Vegetation {
     this.tex = tex;
     this.seed = seed;
     this.materials = mats;
+    this.ownMats = [];
 
     const perSide = { low: 16, medium: 22, high: 28 }[quality] ?? 22;
     const palms = [0, 1, 2, 3].map((i) => makePalm(seed * 7 + i * 101, perSide));
@@ -475,6 +535,7 @@ export class Vegetation {
     const ferns = [0, 1].map((i) => makeFern(seed * 17 + i * 19));
     const rocks = [0, 1, 2].map((i) => makeRock(seed * 19 + i * 7));
     const stones = this.stones = [0, 1, 2].map((i) => makeStone(seed * 23 + i * 13));
+    this.rocks = rocks;
     this.geometries = [...palms.flatMap((p) => [p.trunk, p.fronds, p.near]), ...trees.flatMap((t) => [t.trunk, t.leaves]), ...bushes, ...ferns, ...rocks, ...stones];
 
     const parts = {
@@ -539,6 +600,17 @@ export class Vegetation {
     return { geo: this.stones[p.v], material: foliageMaterial(this.tex.stone, { alphaTest: 0, wrap: 0.2, rock: true, tint: 0.3, stone: true, crack: true }) };
   }
 
+  // loose pieces of stone (fragments): one shared material, one lit up for
+  // the piece the player is aiming at
+  fragmentMaterials() {
+    if (!this.fragMats) {
+      const make = (hi) => { const m = foliageMaterial(this.tex.stone, { alphaTest: 0, wrap: 0.2, rock: true, tint: 0.3, stone: true, obj: true }); m.uniforms.uHi.value = hi; return m; };
+      this.fragMats = { base: make(0), hi: make(1) };
+      Object.values(this.fragMats).forEach((m) => this.ownMats.push(m));
+    }
+    return this.fragMats;
+  }
+
   setDistanceScale(k) { this.distScale = k; }
 
   update(cam) {
@@ -555,6 +627,7 @@ export class Vegetation {
     this.group.removeFromParent();
     this.geometries.forEach((g) => g.dispose());
     Object.values(this.materials).forEach((m) => m.dispose());
+    this.ownMats.forEach((m) => m.dispose());
     this.group.traverse((o) => o.isInstancedMesh && o.dispose());
   }
 }

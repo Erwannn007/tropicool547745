@@ -21,6 +21,7 @@ import { Lights } from './lights.js';
 import { Hands } from './hands.js';
 import { Mower } from './scythe.js';
 import { Quarry } from './pickaxe.js';
+import { Debris } from './debris.js';
 import { Placement, PLACEABLE } from './placement.js';
 import { initIcons } from './icons.js';
 import { Book } from './book.js';
@@ -143,12 +144,20 @@ const axe = new Axe(scene, camera, tex, {
   drops: (list) => giveItems(list),
 });
 const mower = new Mower(scene);
+// loose pieces of broken stone lying in the world (picked up by hand)
+const debris = new Debris(scene, { sound: (n) => audio.sfx(n), flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o) });
+let shatterTip = false;
 const quarry = new Quarry(scene, camera, {
   sound: (n) => audio.sfx(n),
   rumble: (s, ms) => input.rumble(s, ms),
   freeze: (s) => hands.view.freeze(s),
   flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
-  drops: (list) => giveItems(list),
+  shattered: () => {
+    if (shatterTip) return;
+    shatterTip = true;
+    const how = input.lastDevice === 'gamepad' ? '○' : input.lastDevice === 'touch' ? '✋' : 'G / clic droit';
+    setTimeout(() => toast(`Vise un morceau et saisis-le (${how})`, 3200), 900);
+  },
 });
 const placement = new Placement(scene, camera, lights, {
   sound: (n) => audio.sfx(n), message: toast,
@@ -156,7 +165,12 @@ const placement = new Placement(scene, camera, lights, {
 });
 const hands = new Hands(lights, {
   sound: (n) => audio.sfx(n),
-  mine: () => quarry.strike(),
+  aim: (reach) => quarry.aim(reach),
+  cast: (o, dir, max) => quarry.cast(o, dir, max),
+  hit: (c, dir) => quarry.hit(c, dir),
+  stoneTex: () => tex.stone,
+  throwNow: () => debris.throw(camera, player.vel),
+  carryDone: () => endCarry(),
   mow: (x, z, fx, fz, y) => {
     const r = mower.mow(x, z, fx, fz, y);
     if (r.mowed || r.fibres) audio.sfx('mow');
@@ -198,11 +212,50 @@ function openChest(o) {
 function aimedChest() { const o = placement.aimed(); return o?.items ? o : null; }
 
 const ACTION_ICON = { book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍' };
+let lastHeld;
 function onHeldChange(held) {
-  fishing.setEquipped(held?.id === 'rod');
-  axe.setEquipped(held?.id === 'axe');
-  hands.setHeld(held?.id ?? null);
-  $('#btn-fish').textContent = ACTION_ICON[held?.id] || '✋';
+  const id = held?.id ?? null;
+  const changed = id !== lastHeld;
+  lastHeld = id;
+  if (changed && debris.carried) letGo('drop'); // taking another tool: the stone is put down
+  const busy = !!hands.carried; // a stone in the hand: the tools wait
+  fishing.setEquipped(!busy && id === 'rod');
+  axe.setEquipped(!busy && id === 'axe');
+  hands.setHeld(id);
+  $('#btn-fish').textContent = busy ? '➶' : ACTION_ICON[id] || '✋';
+}
+
+// ---- a piece of stone in the hand: pick up, drop, throw, put in the bag
+function grabPiece(b) {
+  if (hands.carried || !debris.grab(b)) return;
+  fishing.setEquipped(false); axe.setEquipped(false);
+  hands.carry(b);
+  $('#btn-fish').textContent = '➶';
+}
+function letGo(how) {
+  const b = debris.carried;
+  if (!b) return;
+  if (how === 'stash') {
+    if (inventory.add(b.kind, b.value)) { toast('Inventaire plein'); audio.sfx('deny'); return; }
+    debris.stash();
+    toast(`+${b.value} ${itemDef(b.kind).name}`); audio.sfx('pickup');
+  } else { debris.drop(camera, player.vel); audio.sfx('toss'); }
+  endCarry();
+}
+function endCarry() {
+  hands.endCarry();
+  onHeldChange(inventory.held);
+}
+let grabUi = '';
+function grabHud() {
+  const carrying = !!hands.carried, piece = !carrying && state === 'play' ? debris.aimed : null;
+  const ui = carrying ? 'carry' : piece ? 'grab' : '';
+  if (ui === grabUi) return;
+  grabUi = ui;
+  $('#crosshair').className = ui;
+  $('#btn-grab').classList.toggle('hidden', !ui);
+  $('#btn-grab').textContent = carrying ? '⤓' : '✋';
+  $('#btn-stash').classList.toggle('hidden', !carrying);
 }
 const inventory = new Inventory({ sound: (n) => audio.sfx(n), toast, onChange: onHeldChange });
 onHeldChange(inventory.held);
@@ -275,14 +328,16 @@ function buildWorld() {
   fishing.setWorld(world);
   axe.setWorld(world, veg, player);
   mower.setWorld(world, veg);
-  quarry.setWorld(world, veg, player);
+  debris.setWorld(world, veg, player);
+  if (hands.carried) hands.endCarry();
+  quarry.setWorld(world, veg, player, debris);
   quarry.prewarm(renderer, camera);
   placement.setWorld(world, player);
   world.setShadowDir(globals.uSunDir.value);
   day.shadowDir.copy(globals.uSunDir.value);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, placement, lights };
+  window.__game = { player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, placement, lights };
   console.log(`[tropicool] world ${settings.world.seed} (${world.cfg.seed}) built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
     bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length, stones: world.props.stones.length,
@@ -474,6 +529,8 @@ $('#start-settings').onclick = () => startGame(true);
 const tbtn = (id, fn) => $(id).addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
 tbtn('#btn-fish', () => input.pressed.add('action'));
 tbtn('#btn-jump', () => input.pressed.add('jump'));
+tbtn('#btn-grab', () => input.pressed.add('grab'));
+tbtn('#btn-stash', () => input.pressed.add('stash'));
 tbtn('#btn-menu', () => openMenu('world'));
 tbtn('#btn-inv', () => openInventory());
 
@@ -482,10 +539,10 @@ function updateHint(show) {
   const dev = input.lastDevice;
   document.body.classList.toggle('touch', isTouch && dev === 'touch');
   const txt = dev === 'gamepad'
-    ? 'Stick G : marcher · Stick D : regarder · ✕ : sauter · □ / R2 : utiliser / poser · ◀ ▶ : tourner l’objet · L1/R1 : objet · △ : inventaire · Options : menu'
+    ? 'Stick G : marcher · Stick D : regarder · ✕ : sauter · □ / R2 : utiliser / poser / lancer · ○ : saisir / lâcher une pierre · R3 : la ranger · ◀ ▶ : tourner l’objet · L1/R1 : objet · △ : inventaire · Options : menu'
     : dev === 'touch'
-      ? 'Glisse à gauche pour marcher · à droite pour regarder · bouton rond : utiliser / poser · 🎒 inventaire et fabrication'
-      : 'ZQSD / WASD : marcher · Souris : regarder · Espace : sauter · Clic / F : utiliser / poser · R : tourner l’objet · 1-9 / molette : objet · E : inventaire · Échap : menu';
+      ? 'Glisse à gauche pour marcher · à droite pour regarder · bouton rond : utiliser / poser / lancer · ✋ saisir / lâcher une pierre · 🎒 inventaire et fabrication'
+      : 'ZQSD / WASD : marcher · Souris : regarder · Espace : sauter · Clic / F : utiliser / poser / lancer · G / clic droit : saisir / lâcher une pierre · V : la ranger · R : tourner l’objet · 1-9 / molette : objet · E : inventaire · Échap : menu';
   $('#hint').textContent = txt;
   $('#inv-help').textContent = dev === 'gamepad'
     ? '✕ prendre / poser · □ prendre la moitié / poser 1 · R1 transfert rapide · △ / ○ fermer'
@@ -592,15 +649,22 @@ function frame() {
     shoreTimer -= dt;
     if (shoreTimer < 0 && current) { shoreTimer = 0.5; audio.setShore(shoreness()); }
     const heldId = inventory.held?.id;
-    if (p.has('rotate') || (input.lastDevice === 'gamepad' && (p.has('left') || p.has('right')))) placement.rotOffset += (p.has('left') ? -1 : 1) * Math.PI / 4;
-    const chest = p.has('action') && heldId !== 'axe' ? aimedChest() : null;
+    const carrying = !!hands.carried, piece = carrying ? null : debris.aimed;
+    const turn = p.has('rotate') || (input.lastDevice === 'gamepad' && (p.has('left') || p.has('right')));
+    if (turn && carrying) hands.turnCarried();
+    else if (turn) placement.rotOffset += (p.has('left') ? -1 : 1) * Math.PI / 4;
+    if (p.has('grab')) { if (debris.carried) letGo('drop'); else if (piece) grabPiece(piece); }
+    if (p.has('stash') && debris.carried) letGo('stash');
+    const chest = p.has('action') && heldId !== 'axe' && !carrying ? aimedChest() : null;
     if (chest) openChest(chest);
+    else if (p.has('action') && carrying) hands.throwCarried();
     else if (p.has('action')) {
       if (heldId === 'rod') fishing.action(input);
       else if (heldId === 'axe') axe.action();
       else if (heldId === 'scythe' || heldId === 'pickaxe') hands.action();
       else if (heldId === 'book') openBook();
       else if (PLACEABLE[heldId]) { if (placement.place()) inventory.take(heldId, 1); }
+      else if (piece) grabPiece(piece);
       else if (!pickPlaced()) toast('Prends un outil dans ta barre');
     }
   } else if (state === 'book') {
@@ -636,7 +700,9 @@ function frame() {
     hands.update(dt, player, camera);
     mower.update(dt);
     quarry.update(dt);
-    placement.aim(state === 'play' ? inventory.held?.id : null);
+    debris.update(dt, state === 'play' ? camera : null);
+    grabHud();
+    placement.aim(state === 'play' && !hands.carried ? inventory.held?.id : null);
     placement.update(dt);
     current.grass.update(camera);
     current.veg.update(camera);

@@ -10,7 +10,7 @@ export class Input {
     this.move = { x: 0, y: 0 };
     this.look = { x: 0, y: 0 };
     this.sprint = false;
-    this.pressed = new Set(); // edge-triggered actions this frame: jump, action, menu, back, up, down, left, right
+    this.pressed = new Set(); // edge-triggered actions this frame: jump, action, grab, stash, menu, back, up, down, left, right
     this.keys = new Set();
     this.sensitivity = 1;
     this.enabled = false;
@@ -28,6 +28,8 @@ export class Input {
       if (e.code === 'Space') this.pressed.add('jump');
       if (e.code === 'KeyF') this.pressed.add('action');
       if (e.code === 'KeyR') this.pressed.add('rotate');
+      if (e.code === 'KeyG') this.pressed.add('grab');   // pick up / let go of a loose piece
+      if (e.code === 'KeyV') this.pressed.add('stash');  // put the piece in hand into the bag
       if (e.code === 'KeyE' || e.code === 'KeyI') this.pressed.add('inventory');
       if (/^Digit[1-9]$/.test(e.code)) this.pressed.add('slot' + e.code.slice(5));
       if (e.code === 'Escape' || e.code === 'Tab' || e.code === 'KeyM') { this.pressed.add('menu'); e.preventDefault(); }
@@ -55,7 +57,9 @@ export class Input {
       if (!this.enabled || e.pointerType === 'touch') return;
       if (document.pointerLockElement !== canvas) { try { canvas.requestPointerLock?.()?.catch?.(() => {}); } catch (_) { /* unsupported */ } return; }
       if (e.button === 0) this.pressed.add('action');
+      if (e.button === 2) this.pressed.add('grab');
     });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('mousemove', (e) => {
       if (document.pointerLockElement === canvas) {
         this.look.x += e.movementX * 0.0022 * this.sensitivity;
@@ -129,7 +133,8 @@ export class Input {
     const b = gp.buttons.map((x) => x.pressed || x.value > 0.5);
     const edge = (i) => b[i] && !this.prevButtons[i];
     if (edge(0)) this.pressed.add('jump'), this.pressed.add('confirm');
-    if (edge(1)) this.pressed.add('back');
+    if (edge(1)) this.pressed.add('back'), this.pressed.add('grab');
+    if (edge(11)) this.pressed.add('stash');
     if (edge(2) || edge(7)) this.pressed.add('action');
     if (edge(4)) this.pressed.add('prev');
     if (edge(5)) this.pressed.add('next');

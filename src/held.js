@@ -1,6 +1,9 @@
 // Generic first-person held object, same recipe as the axe (axeModel.js):
 // dedicated scene, banded materials, rendered into a ~220-row target and
 // upscaled with nearest filtering. Pose keyframes: { t, p, q, e }.
+// anim.pivot (model space): the keys turn about that point (the hand on the
+// handle) instead of the model origin. anim.contact: the impact is not timed,
+// the caller decides when the tool really meets something (hands.js).
 import * as THREE from 'three';
 import { ease } from './axeModel.js';
 
@@ -22,6 +25,10 @@ export class HeldView {
     quad.frustumCulled = false;
     this.quadScene.add(quad);
     this.item = null; this.anim = null; this.t = -1; this.hitStop = 0; this.raise = 1;
+    this.lag = new THREE.Vector2(); this.shake = 0;
+    this.extra = new THREE.Group(); // arms and the like, posed by the caller each frame
+    this.scene.add(this.extra);
+    this.camera.updateMatrixWorld();
 
     // wind trail behind a fast blade (anim.trail = { tip, inner, from, to })
     this.RIB = 28;
@@ -55,7 +62,7 @@ export class HeldView {
     if (this.t > this.anim.impact) this.queued = true;
     return false;
   }
-  freeze(s) { this.hitStop = s; }
+  freeze(s) { this.hitStop = s; this.shake = 1; }
 
   pose(t) {
     const { idle, keys } = this.anim;
@@ -64,21 +71,28 @@ export class HeldView {
       const k0 = keys[i - 1], k1 = keys[i];
       if (t <= k1.t) {
         const r = (t - k0.t) / (k1.t - k0.t), u = k1.e === 'lin' ? r : ease[k1.e || 'inOut'](r);
-        return { p: k0.p.map((v, j) => v + (k1.p[j] - v) * u), q: k0.q.clone().slerp(k1.q, u) };
+        const q = k0.q.clone().slerp(k1.q, u);
+        const pv = this.anim.pivot;
+        if (!pv) return { p: k0.p.map((v, j) => v + (k1.p[j] - v) * u), q };
+        // the hand travels on a straight line, the tool turns about it
+        const s = this.anim.scale || 1, at = (k) => new THREE.Vector3(...k.p).add(pv.clone().multiplyScalar(s).applyQuaternion(k.q));
+        const g = at(k0).lerp(at(k1), u).sub(pv.clone().multiplyScalar(s).applyQuaternion(q));
+        return { p: g.toArray(), q };
       }
     }
     return idle;
   }
 
   // returns true on the impact frame
-  update(dt, bob, moving) {
+  // look: how far the view turned this frame (radians, x = yaw, y = pitch)
+  update(dt, bob, moving, look) {
     if (!this.item) return false;
     let impact = false;
     const keys = this.anim.keys;
     if (this.t >= 0 && keys) {
       const before = this.t;
       if (this.hitStop > 0) this.hitStop -= dt; else this.t += dt;
-      if (before < this.anim.impact && this.t >= this.anim.impact) impact = true;
+      if (!this.anim.contact && before < this.anim.impact && this.t >= this.anim.impact) impact = true;
       if (this.t >= keys[keys.length - 1].t) {
         this.t = -1;
         if (this.queued) { this.queued = false; this.t = 0; this.onChain?.(); }
@@ -88,12 +102,20 @@ export class HeldView {
     const r = 1 - Math.pow(1 - this.raise, 3);
     const p = this.pose(this.t);
     const sway = moving ? 1 : 0.3, tm = performance.now() / 1000;
+    // the hands trail a little behind quick turns of the head, then catch up
+    const rate = 1 / Math.max(dt, 1 / 120), k = 1 - Math.exp(-dt * 12);
+    const tx = Math.max(-0.05, Math.min(0.05, -(look?.x || 0) * rate * 0.01));
+    const ty = Math.max(-0.04, Math.min(0.04, (look?.y || 0) * rate * 0.01));
+    this.lag.x += (tx - this.lag.x) * k; this.lag.y += (ty - this.lag.y) * k;
+    // the tool rings in the hand on an impact
+    this.shake = Math.max(0, this.shake - dt * 6);
+    const jit = Math.sin(tm * 95) * this.shake * this.shake * 0.007;
     this.holder.position.set(
-      p.p[0] + Math.sin(bob) * 0.014 * sway,
-      p.p[1] + Math.abs(Math.sin(bob * 2)) * 0.012 * sway + Math.sin(tm * 1.4) * 0.004 - (1 - r) * 0.5,
+      p.p[0] + Math.sin(bob) * 0.014 * sway + this.lag.x * 0.4 + jit,
+      p.p[1] + Math.abs(Math.sin(bob * 2)) * 0.012 * sway + Math.sin(tm * 1.4) * 0.004 - (1 - r) * 0.5 + this.lag.y * 0.4 - jit * 0.6,
       p.p[2],
     );
-    this.holder.quaternion.copy(p.q);
+    this.holder.quaternion.copy(p.q).premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(this.lag.y * 0.8, this.lag.x * 0.8, jit * 2, 'YXZ')));
     this.holder.scale.setScalar(this.anim.scale || 1); // reset: the previous item may have been scaled
     this.trail(dt);
     return impact;
