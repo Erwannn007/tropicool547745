@@ -44,7 +44,7 @@ function ringTrunk(b, curve, rings, r0, r1, radial, rnd, swayK, uvScale = 1) {
     }
     for (let i = 0; i < radial; i++) {
       const a = start + i * 2;
-      b.quad(a, a + 2, a + 3, a + 1);
+      b.quad(a, a + 1, a + 3, a + 2); // counter-clockwise seen from outside
     }
   }
 }

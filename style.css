@@ -256,3 +256,10 @@ body.inv-open #touch, body.inv-open #hotbar, body.inv-open #crosshair, body.inv-
 
 #boot-error { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
 #boot-error p { margin: 0; }
+
+/* first-person held sprite overlay (low-res, scaled up crisp) */
+#held-canvas {
+  position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: none;
+  image-rendering: pixelated; image-rendering: crisp-edges; pointer-events: none;
+}
+body.inv-open #held-canvas { display: none !important; }

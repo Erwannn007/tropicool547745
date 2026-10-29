@@ -1,7 +1,8 @@
-// Axe: held model with swing, chop palms / jungle trees (chips, shake, fall)
-// and turn them into wood + coconuts. Felled trees are remembered per world
-// and grow back after a while.
+// Axe: pixel-art first-person sprite (see axeSprite.js), chop palms / jungle
+// trees with notches carved into the trunk, chips, shake, fall, and drops.
+// Felled trees are remembered per world and grow back after a while.
 import * as THREE from 'three';
+import { AxeSprite } from './axeSprite.js';
 
 const HITS = { palms: 4, trees: 5 };
 const REGROW_MS = 20 * 60 * 1000;
@@ -23,41 +24,82 @@ function saveFelled(cfg, key) {
   try { localStorage.setItem(FKEY, JSON.stringify(all)); } catch (_) { /* private mode */ }
 }
 
+// Pixel-art notch: fresh pale wood rim, V-shaped cut (lit top face, shaded
+// bottom face, dark crease), jagged bark edge and splinters. 3 depth stages.
+function notchTexture(stage) {
+  const W = 32, H = 24;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  let seed = 11 + stage * 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const px = (x, y, col) => { g.fillStyle = col; g.fillRect(x, y, 1, 1); };
+  const depth = [0.55, 0.78, 1][stage];
+  const cx = W / 2 - 0.5, cy = H / 2 - 0.5;
+  const rx = 7 + 7 * depth, ry = 3 + 6 * depth;
+  const jag = Array.from({ length: 24 }, () => 0.82 + rnd() * 0.3);
+  const rim = ['#5a3a1c', '#f6e2b4', '#ecd29a', '#dcb97e'];
+  const top = ['#e0b676', '#cf9f5f', '#bb884a'];
+  const bot = ['#9a6638', '#845530', '#6e4426'];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const dx = (x - cx) / rx, dy = (y - cy) / ry;
+    const ang = Math.atan2(dy, dx);
+    const j = jag[Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 24) % 24];
+    const r = Math.hypot(dx, dy) / j;
+    if (r > 1.12) continue;
+    if (r > 1.0) { px(x, y, rim[0]); continue; }                          // bark edge
+    if (r > 0.78) { px(x, y, rim[1 + Math.floor(rnd() * 3)]); continue; } // chipped fresh wood
+    const v = (y - cy) / (ry * 0.78);                                     // -1 top .. 1 bottom
+    if (Math.abs(v) < 0.14 + 0.06 * depth) { px(x, y, '#3e2210'); continue; } // crease
+    const k = Math.min(2, Math.floor(Math.abs(v) * 3 + rnd() * 0.6));
+    px(x, y, v < 0 ? top[k] : bot[2 - k]);
+    if (rnd() < 0.08) px(x, y, v < 0 ? '#f0cc8c' : '#5e381e'); // fibres
+  }
+  for (let i = 0; i < 3 + stage * 2; i++) { // splinters sticking out of the rim
+    const a = rnd() * Math.PI * 2, len = 2 + Math.floor(rnd() * 3);
+    for (let k = 0; k < len; k++) {
+      const x = Math.round(cx + Math.cos(a) * (rx + 0.5 + k)), y = Math.round(cy + Math.sin(a) * (ry + 0.5 + k * 0.6));
+      if (x >= 0 && y >= 0 && x < W && y < H) px(x, y, k === len - 1 ? '#c99a5e' : '#f2d9a4');
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.NoColorSpace;
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+  return t;
+}
+
+// small plane bent to hug a trunk of radius r (edges pushed back)
+function notchGeometry(w, h, r) {
+  const g = new THREE.PlaneGeometry(w, h, 6, 1);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i);
+    p.setZ(i, -(r - Math.sqrt(Math.max(0, r * r - x * x))));
+  }
+  return g;
+}
+
 export class Axe {
   constructor(scene, camera, tex, hooks) {
     this.scene = scene; this.camera = camera; this.hooks = hooks;
-    this.swingT = -1;
+    this.sprite = new AxeSprite();
+    this.sprite.onChain = () => this.hooks.sound?.('swing');
     this.hits = new Map();
     this.shakes = [];
     this.falling = [];
-
-    // held model: wooden handle + steel head with a bright cutting edge
-    const g = new THREE.Group();
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.6, 0.04), new THREE.MeshBasicMaterial({ map: tex.wood, color: 0xffe2b0 }));
-    handle.position.y = 0.31;
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.16, 0.22), new THREE.MeshBasicMaterial({ color: 0x9aa4b2 }));
-    head.position.set(0, 0.54, -0.09);
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.24, 0.04), new THREE.MeshBasicMaterial({ color: 0xf2f6fb }));
-    edge.position.set(0, 0.54, -0.215);
-    const poll = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.09, 0.06), new THREE.MeshBasicMaterial({ color: 0x6a7280 }));
-    poll.position.set(0, 0.55, 0.02);
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.14, 0.052), new THREE.MeshBasicMaterial({ color: 0x8a5232 }));
-    grip.position.y = 0.08;
-    g.add(handle, head, edge, poll, grip);
-    this.model = g;
-    this.holder = new THREE.Group();
-    this.holder.add(g);
-    this.holder.position.set(0.36, -0.4, -0.62);
-    this.holder.scale.setScalar(0.8);
-    this.holder.visible = false;
-    camera.add(this.holder);
+    this.marks = [];
+    this.camShake = 0;
+    this.notchMats = [0, 1, 2].map((s) => new THREE.MeshBasicMaterial({
+      map: notchTexture(s), alphaTest: 0.5, color: 0xece4d6,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    }));
+    this.ray = new THREE.Raycaster();
 
     // wood chips / leaf bits
-    this.N = 48;
+    this.N = 64;
     const pg = new THREE.BufferGeometry();
     pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.N * 3).fill(-999), 3));
     pg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.N * 3), 3));
-    this.chips = new THREE.Points(pg, new THREE.PointsMaterial({ size: 0.08, vertexColors: true }));
+    this.chips = new THREE.Points(pg, new THREE.PointsMaterial({ size: 0.07, vertexColors: true }));
     this.chips.frustumCulled = false;
     this.vel = new Float32Array(this.N * 3);
     this.life = new Float32Array(this.N);
@@ -69,10 +111,11 @@ export class Axe {
     this.world = world; this.veg = veg; this.player = player;
     this.hits.clear();
     for (const f of this.falling) f.meshes.forEach((m) => m.removeFromParent());
-    this.falling = []; this.shakes = [];
+    for (const m of this.marks) { m.removeFromParent(); m.geometry.dispose(); }
+    this.falling = []; this.shakes = []; this.marks = [];
   }
 
-  setEquipped(on) { this.equipped = on; this.holder.visible = on; }
+  setEquipped(on) { this.equipped = on; this.sprite.setVisible(on); }
 
   // nearest standing trunk in front of the player, within reach
   target() {
@@ -95,10 +138,73 @@ export class Axe {
   }
 
   action() {
-    if (this.swingT >= 0) return;
-    this.swingT = 0;
-    this.struck = false;
-    this.hooks.sound?.('swing');
+    if (this.sprite.swing()) this.hooks.sound?.('swing');
+  }
+
+  // where on the trunk the blade bites: aim ray first, else a ray at chest height
+  trunkHit(p) {
+    const trunk = p.inst?.[0];
+    if (!trunk) return null;
+    const cam = this.camera.position;
+    const dir = new THREE.Vector3(); this.camera.getWorldDirection(dir);
+    const y = Math.min(Math.max(cam.y - 0.35, p.y + 0.6), p.y + 1.7);
+    const tries = [dir, new THREE.Vector3(p.x - cam.x, y - cam.y, p.z - cam.z).normalize()];
+    for (const d of tries) {
+      this.ray.set(cam, d); this.ray.far = 3.5;
+      const hit = this.ray.intersectObject(trunk.mesh, false).find((h) => h.instanceId === trunk.i);
+      if (hit && hit.point.y > p.y + 0.3) return hit;
+    }
+    return null;
+  }
+
+  // Trunk axis + widest radius of the ring that was hit. Two vertices of the
+  // hit face on the same ring row satisfy v = centre + normal * radius.
+  ringInfo(p, hit) {
+    const { mesh, i } = p.inst[0];
+    const g = mesh.geometry;
+    const P = g.attributes.position, Nn = g.attributes.normal, UV = g.attributes.uv;
+    const ids = [hit.face.a, hit.face.b, hit.face.c];
+    const m = new THREE.Matrix4(); mesh.getMatrixAt(i, m);
+    for (let x = 0; x < 3; x++) for (let y = x + 1; y < 3; y++) {
+      const a = ids[x], b = ids[y];
+      if (Math.abs(UV.getY(a) - UV.getY(b)) > 1e-3) continue;
+      const dn = Math.hypot(Nn.getX(a) - Nn.getX(b), Nn.getY(a) - Nn.getY(b), Nn.getZ(a) - Nn.getZ(b));
+      if (dn < 1e-3) continue;
+      const ra = Math.hypot(P.getX(a) - P.getX(b), P.getY(a) - P.getY(b), P.getZ(a) - P.getZ(b)) / dn;
+      const centre = new THREE.Vector3(P.getX(a) - Nn.getX(a) * ra, P.getY(a) - Nn.getY(a) * ra, P.getZ(a) - Nn.getZ(a) * ra).applyMatrix4(m);
+      // rings are wider at their base (v = 0) than at their top (v = 1)
+      const rMax = (UV.getY(a) < 0.5 ? ra : ra * 1.12 / 0.9) * p.s;
+      return { centre, r: rMax };
+    }
+    return null;
+  }
+
+  carve(p, hit) {
+    const info = this.ringInfo(p, hit);
+    if (!info) return;
+    const r = info.r + 0.015;
+    // radial direction from the trunk axis to the impact, kept nearly horizontal
+    const n = new THREE.Vector3(hit.point.x - info.centre.x, 0, hit.point.z - info.centre.z).normalize();
+    // deepen an existing notch close to this spot, otherwise start a new one
+    let mark = (p.marks || []).find((k) => k.userData.pos.distanceTo(hit.point) < 0.4);
+    if (mark) {
+      const st = Math.min(2, mark.userData.stage + 1);
+      mark.userData.stage = st;
+      mark.material = this.notchMats[st];
+      mark.geometry.dispose();
+      mark.geometry = notchGeometry(0.3 + 0.08 * st, 0.2 + 0.05 * st, mark.userData.r);
+      return;
+    }
+    mark = new THREE.Mesh(notchGeometry(0.3, 0.2, r), this.notchMats[0]);
+    mark.matrixAutoUpdate = false;
+    // concentric with the trunk: plane centre sits at radius r from the axis
+    const pos = new THREE.Vector3(info.centre.x, hit.point.y, info.centre.z).addScaledVector(n, r);
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    mark.matrix.compose(pos, q, new THREE.Vector3(1, 1, 1));
+    mark.userData = { pos: hit.point.clone(), stage: 0, r, base: mark.matrix.clone() };
+    this.scene.add(mark);
+    (p.marks ||= []).push(mark);
+    this.marks.push(mark);
   }
 
   strike() {
@@ -108,16 +214,32 @@ export class Axe {
     this.hits.set(p, n);
     const cam = this.camera.position;
     const d = Math.hypot(cam.x - p.x, cam.z - p.z) || 1;
-    const hx = p.x + (cam.x - p.x) / d * 0.3 * p.s, hz = p.z + (cam.z - p.z) / d * 0.3 * p.s;
-    this.burst(hx, p.y + 1.1, hz, 10, [0.55, 0.36, 0.18], 1.6);
-    this.burst(hx, p.y + 1.1, hz, 4, [0.85, 0.66, 0.4], 1.2);
+    // a shaking tree must be back at rest before we ray-cast against it
+    const sh = this.shakes.find((s) => s.p === p);
+    if (sh?.base) this.parts(p).forEach((part, k) => part.set(sh.base[k]));
+    const hit = this.trunkHit(p);
+    if (hit) this.carve(p, hit);
+    if (sh) sh.base = null; // re-capture including the new notch
+    const hp = hit ? hit.point : new THREE.Vector3(p.x + (cam.x - p.x) / d * 0.3 * p.s, p.y + 1.1, p.z + (cam.z - p.z) / d * 0.3 * p.s);
+    this.burst(hp.x, hp.y, hp.z, 12, [0.55, 0.36, 0.18], 1.8);
+    this.burst(hp.x, hp.y, hp.z, 6, [0.95, 0.82, 0.58], 1.4);
     this.hooks.sound?.('chop');
-    this.hooks.rumble?.(0.45, 90);
+    this.hooks.rumble?.(0.5, 90);
+    this.sprite.freeze(0.07);
+    this.camShake = 1;
     if (n >= HITS[p.type]) this.fell(p);
-    else {
-      const s = this.shakes.find((e) => e.p === p);
-      if (s) s.t = 0; else this.shakes.push({ p, t: 0, dir: [(p.x - cam.x) / d, (p.z - cam.z) / d] });
-    }
+    else if (sh) sh.t = 0;
+    else this.shakes.push({ p, t: 0, dir: [(p.x - cam.x) / d, (p.z - cam.z) / d] });
+  }
+
+  // everything that moves with a tree (trunk, crown, notches)
+  parts(p) {
+    const list = (p.inst || []).map(({ mesh, i }) => ({
+      get: (m) => mesh.getMatrixAt(i, m),
+      set: (m) => { mesh.setMatrixAt(i, m); mesh.instanceMatrix.needsUpdate = true; },
+    }));
+    for (const mk of p.marks || []) list.push({ get: (m) => m.copy(mk.userData.base), set: (m) => mk.matrix.copy(m) });
+    return list;
   }
 
   fell(p) {
@@ -136,6 +258,7 @@ export class Axe {
       mesh.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0));
       mesh.instanceMatrix.needsUpdate = true;
     }
+    for (const mk of p.marks || []) { meshes.push(mk); base.push(mk.userData.base.clone()); }
     const cam = this.camera.position;
     const away = new THREE.Vector3(p.x - cam.x, 0, p.z - cam.z).normalize();
     const axis = new THREE.Vector3(0, 1, 0).cross(away).normalize();
@@ -149,7 +272,8 @@ export class Axe {
   finishFall(f) {
     const { p } = f;
     f.meshes.forEach((m) => m.removeFromParent());
-    // poof of chips + leaves where the crown landed
+    for (const mk of p.marks || []) { mk.geometry.dispose(); this.marks.splice(this.marks.indexOf(mk), 1); }
+    p.marks = [];
     const tip = f.away.clone().multiplyScalar(5 * p.s);
     for (let k = 0; k < 4; k++) {
       const t = k / 3;
@@ -161,6 +285,7 @@ export class Axe {
       : [['wood:tree', 3 + Math.floor(rnd() * 3)]];
     this.hooks.sound?.('thud');
     this.hooks.rumble?.(0.8, 220);
+    this.camShake = 1.6;
     this.hooks.drops(drops.filter(([, n]) => n > 0));
   }
 
@@ -179,37 +304,33 @@ export class Axe {
   }
 
   update(dt) {
-    // swing animation: wind up, chop down (hit lands mid-swing), recover
-    const r = this.model.rotation;
-    const time = performance.now() / 1000;
-    if (this.swingT >= 0) {
-      this.swingT += dt;
-      const k = this.swingT / 0.38;
-      const a = k < 0.35 ? -(k / 0.35) * 0.6 : k < 0.6 ? -0.6 + ((k - 0.35) / 0.25) * 2.0 : 1.4 * (1 - (k - 0.6) / 0.4);
-      r.set(-0.35 - a, 0.15, 0.35 + a * 0.25);
-      if (!this.struck && k >= 0.55) { this.struck = true; this.strike(); }
-      if (k >= 1) this.swingT = -1;
-    } else {
-      r.set(-0.35 + Math.sin(time * 1.4) * 0.02, 0.15, 0.35);
+    const pl = this.player;
+    const moving = !!pl && pl.onGround && Math.hypot(pl.vel.x, pl.vel.z) > 0.5;
+    if (this.sprite.update(dt, pl ? pl.bob : 0, moving)) this.strike();
+
+    // impact camera shake (the player re-poses the camera every frame)
+    if (this.camShake > 0) {
+      const k = this.camShake * 0.012;
+      this.camera.rotation.z += (Math.random() - 0.5) * k;
+      this.camera.rotation.x += (Math.random() - 0.5) * k;
+      this.camShake = Math.max(0, this.camShake - dt * 7);
     }
 
     // hit shake on standing trees
     const m = new THREE.Matrix4(), rot = new THREE.Matrix4(), tr = new THREE.Matrix4(), inv = new THREE.Matrix4();
     for (const s of this.shakes) {
       s.t += dt;
+      const parts = this.parts(s.p);
+      if (!s.base) s.base = parts.map((part) => { const b = new THREE.Matrix4(); part.get(b); return b; });
       const ang = Math.sin(s.t * 40) * 0.035 * Math.max(0, 1 - s.t / 0.35);
-      if (!s.base) s.base = s.p.inst.map(({ mesh, i }) => { const b = new THREE.Matrix4(); mesh.getMatrixAt(i, b); return b; });
       const axis = new THREE.Vector3(-s.dir[1], 0, s.dir[0]);
       tr.makeTranslation(s.p.x, s.p.y, s.p.z); inv.makeTranslation(-s.p.x, -s.p.y, -s.p.z);
       rot.makeRotationAxis(axis, ang);
-      s.p.inst.forEach(({ mesh, i }, k) => {
-        m.copy(tr).multiply(rot).multiply(inv).multiply(s.base[k]);
-        mesh.setMatrixAt(i, m); mesh.instanceMatrix.needsUpdate = true;
-      });
+      parts.forEach((part, k) => part.set(m.copy(tr).multiply(rot).multiply(inv).multiply(s.base[k])));
     }
     this.shakes = this.shakes.filter((s) => {
       if (s.t < 0.35) return true;
-      s.p.inst.forEach(({ mesh, i }, k) => { mesh.setMatrixAt(i, s.base[k]); mesh.instanceMatrix.needsUpdate = true; });
+      this.parts(s.p).forEach((part, k) => part.set(s.base[k]));
       return false;
     });
 
