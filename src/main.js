@@ -398,11 +398,18 @@ function frame() {
 }
 
 buildWorld();
+window.__booted = true;
 fillMenu();
 updateHint(false);
 if (params.has('play')) startGame(false);
 frame();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // when a new version takes over, reload once so every file matches
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController && !reloaded && state === 'start') { reloaded = true; location.reload(); }
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => r.update()).catch(() => {});
 }

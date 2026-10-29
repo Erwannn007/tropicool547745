@@ -252,3 +252,6 @@ body.inv-open #touch, body.inv-open #hotbar, body.inv-open #crosshair, body.inv-
 }
 .inv-panel { width: max-content; max-width: 100%; }
 .inv-help { width: 0; min-width: 100%; }
+
+#boot-error { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+#boot-error p { margin: 0; }
