@@ -12,6 +12,7 @@ import { Player } from './player.js';
 import { Input } from './input.js';
 import { Fishing, SPECIES, rarityOf } from './fishing.js';
 import { Audio } from './audio.js';
+import { Inventory } from './inventory.js';
 
 const $ = (s) => document.querySelector(s);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -100,10 +101,36 @@ const lockPointer = () => { try { canvas.requestPointerLock?.()?.catch?.(() => {
 
 const fishing = new Fishing(scene, camera, tex, {
   message: toast,
-  caught: showCatch,
+  caught: (f) => {
+    showCatch(f);
+    if (inventory.add('fish:' + f.idx, 1)) setTimeout(() => toast('Inventaire plein — poisson relâché 🌊'), 600);
+  },
   bite: (on) => $('#bite').classList.toggle('on', on),
   sound: (n) => audio.sfx(n),
 });
+
+const inventory = new Inventory({
+  sound: (n) => audio.sfx(n),
+  toast,
+  onChange: (held) => fishing.setEquipped(!!held && held.id === 'rod'),
+});
+fishing.setEquipped(inventory.held?.id === 'rod');
+inventory.closeRequest = () => closeInventory();
+$('#inv-close').addEventListener('click', () => closeInventory());
+
+function openInventory() {
+  state = 'inventory';
+  inventory.padFocus = input.lastDevice === 'gamepad';
+  inventory.setOpen(true);
+  document.exitPointerLock?.();
+  audio.sfx('open');
+}
+function closeInventory() {
+  if (state !== 'inventory') return;
+  inventory.setOpen(false);
+  state = 'play';
+  if (!isTouch && input.lastDevice === 'keyboard') lockPointer();
+}
 
 // ---------------------------------------------------------------- world
 let current = null;
@@ -134,7 +161,7 @@ function buildWorld() {
   fishing.setWorld(world);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { player, camera, fishing, input };
+  window.__game = { player, camera, fishing, input, inventory };
   console.log(`[tropicool] world ${settings.world.seed} built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
     bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length,
@@ -147,7 +174,7 @@ function regenerate() {
 }
 
 // ---------------------------------------------------------------- menus
-let state = 'start'; // start | play | menu
+let state = 'start'; // start | play | menu | inventory
 const ranges = ['islands', 'size', 'relief', 'vegetation'];
 const fmt = { islands: (v) => v, size: (v) => `×${(+v).toFixed(2)}`, relief: (v) => `${Math.round(v * 100)}%`, vegetation: (v) => `${Math.round(v * 100)}%`, res: (v) => `${Math.round(v * 100)}%`, sens: (v) => (+v).toFixed(1), volume: (v) => `${Math.round(v * 100)}%` };
 function syncOutputs() {
@@ -247,18 +274,23 @@ const tbtn = (id, fn) => $(id).addEventListener('touchstart', (e) => { e.prevent
 tbtn('#btn-fish', () => input.pressed.add('action'));
 tbtn('#btn-jump', () => input.pressed.add('jump'));
 tbtn('#btn-menu', () => openMenu('world'));
-tbtn('#btn-journal', () => openMenu('journal'));
+tbtn('#btn-inv', () => openInventory());
 
 let hintTimer;
 function updateHint(show) {
   const dev = input.lastDevice;
   document.body.classList.toggle('touch', isTouch && dev === 'touch');
   const txt = dev === 'gamepad'
-    ? 'Stick G : marcher · Stick D : regarder · ✕ : sauter · □ / R2 : pêcher · △ : journal · Options : menu'
+    ? 'Stick G : marcher · Stick D : regarder · ✕ : sauter · □ / R2 : pêcher · L1/R1 : objet · △ : inventaire · Options : menu'
     : dev === 'touch'
-      ? 'Glisse à gauche pour marcher · à droite pour regarder · 🎣 pour pêcher'
-      : 'ZQSD / WASD : marcher · Souris : regarder · Espace : sauter · Clic / E : pêcher · Échap : menu';
+      ? 'Glisse à gauche pour marcher · à droite pour regarder · 🎣 pour pêcher · 🎒 inventaire'
+      : 'ZQSD / WASD : marcher · Souris : regarder · Espace : sauter · Clic / F : pêcher · 1-9 / molette : objet · E : inventaire · Échap : menu';
   $('#hint').textContent = txt;
+  $('#inv-help').textContent = dev === 'gamepad'
+    ? '✕ prendre / poser · □ prendre la moitié / poser 1 · R1 transfert rapide · △ / ○ fermer'
+    : dev === 'touch'
+      ? 'Touche : prendre / poser · Appui long : moitié / 1 · Double touche : transfert rapide'
+      : 'Clic : prendre / poser · Clic droit : moitié / 1 · Maj+clic : transfert rapide · Double-clic : regrouper · 1-9 : échanger avec la barre';
   $('#controls-help').textContent = txt;
   if (show) {
     $('#hint').style.opacity = 0.92;
@@ -310,11 +342,28 @@ function frame() {
   if (prevDev !== input.lastDevice) { frame.dev = input.lastDevice; updateHint(state === 'play'); }
 
   if (state === 'play') {
-    if (input.pressed.has('menu')) openMenu('world');
-    else if (input.pressed.has('journal')) openMenu('journal');
+    const p = input.pressed;
+    if (p.has('menu')) openMenu('world');
+    else if (p.has('inventory')) openInventory();
+    for (let k = 1; k <= 9; k++) if (p.has('slot' + k)) inventory.select(k - 1);
+    if (p.has('next')) inventory.select(inventory.selected + 1);
+    if (p.has('prev')) inventory.select(inventory.selected - 1);
     const look = input.consumeLook();
     player.update(dt, input, look);
-    if (input.pressed.has('action')) fishing.action(input);
+    if (p.has('action')) {
+      if (inventory.held?.id === 'rod') fishing.action(input);
+      else toast('Sélectionne la canne à pêche pour pêcher 🎣');
+    }
+  } else if (state === 'inventory') {
+    input.consumeLook();
+    const p = input.pressed;
+    if (p.has('inventory') || p.has('back') || p.has('menu')) closeInventory();
+    else {
+      if (input.lastDevice === 'gamepad' && !inventory.padFocus) { inventory.padFocus = true; inventory.render(); }
+      if (p.has('next')) p.add('quick');
+      inventory.handlePad(p);
+    }
+    player.update(dt, { move: { x: 0, y: 0 }, pressed: new Set(), sprint: false }, { x: 0, y: 0 }, true);
   } else {
     input.consumeLook();
     if (state === 'menu' && input.pressed.has('menu')) closeMenu();

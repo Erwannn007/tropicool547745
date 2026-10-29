@@ -34,12 +34,14 @@
     </div>
     <div id="fps"></div>
     <div id="hint"></div>
+    <div id="held-name"></div>
+    <div id="hotbar" class="glass"><div class="lens"></div><div class="slots"></div></div>
   </div>
 
   <div id="touch">
     <div id="stick"><div id="knob"></div></div>
     <button id="btn-menu" class="tbtn small" aria-label="Menu">☰</button>
-    <button id="btn-journal" class="tbtn small" aria-label="Journal">📖</button>
+    <button id="btn-inv" class="tbtn small" aria-label="Inventaire">🎒</button>
     <button id="btn-fish" class="tbtn big" aria-label="Pêcher">🎣</button>
     <button id="btn-jump" class="tbtn mid" aria-label="Sauter">⤒</button>
   </div>
@@ -100,6 +102,20 @@
       <button id="resume" class="primary">Reprendre</button>
       <p class="tiny" id="controls-help"></p>
     </div>
+  </div>
+
+ <div id="inventory" class="hidden">
+    <div class="inv-panel glass">
+      <div class="inv-head">
+        <span class="inv-title">Inventaire</span>
+        <button id="inv-close" class="glass-btn" aria-label="Fermer">✕</button>
+      </div>
+      <div id="inv-storage" class="grid"></div>
+      <div id="inv-hotbar" class="grid hot"></div>
+      <p class="inv-help" id="inv-help"></p>
+    </div>
+    <div id="inv-cursor" class="slot floating hidden"><img alt=""><span class="count"></span></div>
+    <div id="inv-tip" class="glass tip hidden"></div>
   </div>
 
   <div id="loading" class="screen hidden"><div class="panel"><p>Génération de l'archipel…</p></div></div>

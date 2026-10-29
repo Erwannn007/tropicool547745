@@ -62,5 +62,7 @@ export class Audio {
     if (name === 'bite') { this.tone(700, 500, 0.08, 'square', 0.05); this.tone(700, 500, 0.08, 'square', 0.05, 0.12); }
     if (name === 'catch') [523, 659, 784, 1046].forEach((f, i) => this.tone(f, f, 0.18, 'triangle', 0.09, i * 0.09));
     if (name === 'click') this.tone(1200, 900, 0.04, 'square', 0.03);
+    if (name === 'tick') this.tone(1800, 1400, 0.035, 'sine', 0.04);
+    if (name === 'open') { this.tone(500, 900, 0.12, 'sine', 0.05); }
   }
 }

@@ -80,7 +80,7 @@ body.touch #touch { display: block; }
 .tbtn.mid { width: 62px; height: 62px; font-size: 28px; right: calc(118px + env(safe-area-inset-right)); bottom: calc(30px + env(safe-area-inset-bottom)); }
 .tbtn.small { width: 46px; height: 46px; font-size: 20px; top: calc(12px + env(safe-area-inset-top)); }
 #btn-menu { right: calc(12px + env(safe-area-inset-right)); }
-#btn-journal { right: calc(66px + env(safe-area-inset-right)); }
+#btn-inv { right: calc(66px + env(safe-area-inset-right)); }
 
 /* screens & panels */
 .screen {
@@ -133,3 +133,122 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; background: var
 .jrow.unknown canvas { filter: brightness(0) opacity(.5); }
 .jrow.unknown .name { opacity: .6; }
 #loading p { margin: 0; font-size: 20px; text-align: center; }
+
+/* ================================================================ liquid glass */
+.glass {
+  position: relative;
+  background:
+    linear-gradient(160deg, rgba(255,255,255,.30) 0%, rgba(255,255,255,.08) 38%, rgba(255,255,255,.04) 62%, rgba(255,255,255,.16) 100%);
+  -webkit-backdrop-filter: blur(18px) saturate(185%) brightness(1.06);
+  backdrop-filter: blur(18px) saturate(185%) brightness(1.06);
+  border: 1px solid rgba(255,255,255,.38);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255,255,255,.75),          /* top specular rim */
+    inset 0 -1px 0 rgba(255,255,255,.22),           /* bottom caustic rim */
+    inset 1px 0 0 rgba(255,255,255,.18), inset -1px 0 0 rgba(255,255,255,.12),
+    inset 0 0 24px rgba(255,255,255,.10),           /* inner glow / thickness */
+    0 12px 32px rgba(0, 28, 70, .28), 0 2px 6px rgba(0, 28, 70, .18);
+}
+.glass::before { /* moving sheen highlight */
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background:
+    radial-gradient(120% 70% at 18% -10%, rgba(255,255,255,.45), rgba(255,255,255,0) 55%),
+    radial-gradient(90% 60% at 100% 120%, rgba(160,230,255,.22), rgba(255,255,255,0) 60%);
+  mix-blend-mode: screen;
+}
+
+/* in-game hotbar */
+#hotbar {
+  --hs: clamp(38px, 5.2vw, 54px); --hg: 6px; --hp: 8px;
+  position: absolute; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  padding: var(--hp); border-radius: calc(var(--hs) * 0.42 + var(--hp));
+  pointer-events: auto; touch-action: none;
+}
+#hotbar .slots { display: flex; gap: var(--hg); position: relative; z-index: 1; }
+#hotbar .lens { /* sliding liquid selector */
+  position: absolute; z-index: 2; pointer-events: none;
+  top: calc(var(--hp) - 4px); left: calc(var(--hp) - 4px);
+  width: calc(var(--hs) + 8px); height: calc(var(--hs) + 8px); border-radius: calc(var(--hs) * 0.42 + 4px);
+  transform: translateX(calc(var(--i, 0) * (var(--hs) + var(--hg))));
+  transition: transform .42s cubic-bezier(.34, 1.56, .64, 1);
+  border: 2px solid rgba(255,255,255,.95);
+  background: radial-gradient(80% 60% at 30% 15%, rgba(255,255,255,.35), rgba(255,255,255,.04) 60%);
+  box-shadow: 0 0 0 1px rgba(120,200,255,.45), 0 0 18px rgba(170,230,255,.75), inset 0 0 10px rgba(255,255,255,.45);
+}
+#held-name {
+  position: absolute; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom) + clamp(38px, 5.2vw, 54px) + 30px);
+  transform: translateX(-50%); font: 600 15px/1 -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  color: #fff; text-shadow: 0 1px 3px rgba(0,30,60,.6); opacity: 0; white-space: nowrap;
+}
+#held-name.show { animation: namefade 2.2s ease forwards; }
+@keyframes namefade { 0% { opacity: 0; transform: translate(-50%, 6px); } 12% { opacity: 1; transform: translate(-50%, 0); } 75% { opacity: 1; } 100% { opacity: 0; } }
+#hint { bottom: calc(10px + env(safe-area-inset-bottom) + clamp(38px, 5.2vw, 54px) + 56px); }
+#toast { bottom: calc(110px + env(safe-area-inset-bottom)); }
+
+/* slots */
+.slot {
+  --s: var(--hs, 48px);
+  position: relative; width: var(--s); height: var(--s); flex: none;
+  border-radius: calc(var(--s) * 0.32);
+  background: linear-gradient(180deg, rgba(10,40,80,.16), rgba(255,255,255,.10));
+  box-shadow: inset 0 1px 3px rgba(0,25,60,.35), inset 0 -1px 0 rgba(255,255,255,.35), 0 0 0 1px rgba(255,255,255,.14);
+  transition: background .15s, transform .25s cubic-bezier(.34,1.56,.64,1);
+}
+.slot img { position: absolute; inset: 12%; width: 76%; height: 76%; image-rendering: pixelated; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,20,50,.35)); }
+.slot .count {
+  position: absolute; right: 9%; bottom: 4%; font: 700 calc(var(--s) * 0.3)/1 var(--font); color: #fff;
+  text-shadow: 1.5px 1.5px 0 rgba(30,40,60,.85); pointer-events: none;
+}
+.slot .key { position: absolute; left: 10%; top: 6%; font: 600 9px/1 system-ui, sans-serif; color: rgba(255,255,255,.55); pointer-events: none; }
+body.touch .slot .key { display: none; }
+#hotbar .slot.active { transform: scale(1.04); }
+
+/* inventory screen */
+#inventory {
+  position: fixed; inset: 0; display: grid; place-items: center; padding: 12px;
+  background: radial-gradient(ellipse at center, rgba(0,30,70,.12), rgba(0,20,50,.38));
+  touch-action: none; z-index: 20; cursor: default;
+}
+.inv-panel {
+  --s: clamp(30px, min(7.4vw, calc((100dvh - 150px) / 4.6)), 58px); --g: clamp(4px, 0.7vw, 7px);
+  padding: clamp(12px, 2vw, 20px); border-radius: 30px;
+  display: flex; flex-direction: column; gap: calc(var(--g) * 2);
+  animation: glassIn .45s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes glassIn { from { opacity: 0; transform: scale(.88) translateY(14px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+.inv-head { display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 1; }
+.inv-title { font: 700 clamp(17px, 2.2vw, 22px)/1 -apple-system, 'SF Pro Display', system-ui, sans-serif; letter-spacing: .3px; text-shadow: 0 1px 2px rgba(0,30,60,.35); }
+.glass-btn {
+  width: 34px; height: 34px; padding: 0; border-radius: 50%; font-size: 15px; line-height: 1; color: #fff;
+  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.5);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 2px 6px rgba(0,30,60,.25);
+}
+.grid { display: grid; grid-template-columns: repeat(9, var(--s)); gap: var(--g); position: relative; z-index: 1; }
+.grid .slot { --s: inherit; width: var(--s); height: var(--s); }
+.grid.hot { margin-top: calc(var(--g) * 1.5); padding-top: calc(var(--g) * 2.5); border-top: 1px solid rgba(255,255,255,.28); }
+.grid .slot:hover { background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.30)); }
+.grid .slot.active { box-shadow: inset 0 1px 3px rgba(0,25,60,.35), 0 0 0 2px rgba(255,255,255,.7), 0 0 12px rgba(170,230,255,.6); }
+.grid .slot.pad-focus { transform: scale(1.1); background: rgba(255,255,255,.32); box-shadow: 0 0 0 2px #fff, 0 0 16px rgba(170,230,255,.9); z-index: 2; }
+.inv-help { margin: 0; font: 500 11.5px/1.35 system-ui, sans-serif; opacity: .85; text-align: center; position: relative; z-index: 1; }
+.slot.floating {
+  --s: clamp(30px, min(7.4vw, calc((100dvh - 150px) / 4.6)), 58px);
+  position: fixed; left: 0; top: 0; margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
+  background: none; box-shadow: none; pointer-events: none; z-index: 30;
+}
+.slot.floating img { filter: drop-shadow(0 6px 6px rgba(0,20,50,.45)); }
+.tip {
+  position: fixed; left: 0; top: 0; z-index: 31; pointer-events: none; padding: 8px 12px; border-radius: 14px;
+  display: flex; flex-direction: column; gap: 2px; font: 500 12px/1.2 system-ui, sans-serif; white-space: nowrap;
+}
+.tip b { font-size: 14px; position: relative; z-index: 1; }
+.tip span { opacity: .85; position: relative; z-index: 1; }
+body.inv-open #touch, body.inv-open #hotbar, body.inv-open #crosshair, body.inv-open #hint { display: none !important; }
+
+@media (orientation: portrait) {
+  #hotbar { --hs: clamp(30px, 9vw, 44px); --hg: 4px; --hp: 6px; }
+  .tbtn.big, .tbtn.mid { bottom: calc(90px + env(safe-area-inset-bottom)); }
+  .inv-panel { --s: clamp(26px, 9.2vw, 44px); --g: 4px; }
+  .slot.floating { --s: clamp(26px, 9.2vw, 44px); }
+}
+.inv-panel { width: max-content; max-width: 100%; }
+.inv-help { width: 0; min-width: 100%; }

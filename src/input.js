@@ -26,10 +26,16 @@ export class Input {
       this.keys.add(e.code);
       this.lastDevice = 'keyboard';
       if (e.code === 'Space') this.pressed.add('jump');
-      if (e.code === 'KeyE' || e.code === 'KeyF') this.pressed.add('action');
+      if (e.code === 'KeyF') this.pressed.add('action');
+      if (e.code === 'KeyE' || e.code === 'KeyI') this.pressed.add('inventory');
+      if (/^Digit[1-9]$/.test(e.code)) this.pressed.add('slot' + e.code.slice(5));
       if (e.code === 'Escape' || e.code === 'Tab' || e.code === 'KeyM') { this.pressed.add('menu'); e.preventDefault(); }
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
+    addEventListener('wheel', (e) => {
+      if (document.pointerLockElement !== canvas || !e.deltaY) return;
+      this.pressed.add(e.deltaY > 0 ? 'next' : 'prev');
+    }, { passive: true });
     addEventListener('blur', () => this.keys.clear());
 
     canvas.addEventListener('mousedown', (e) => {
@@ -111,13 +117,15 @@ export class Input {
     const edge = (i) => b[i] && !this.prevButtons[i];
     if (edge(0)) this.pressed.add('jump'), this.pressed.add('confirm');
     if (edge(1)) this.pressed.add('back');
-    if (edge(2) || edge(7) || edge(5)) this.pressed.add('action');
+    if (edge(2) || edge(7)) this.pressed.add('action');
+    if (edge(4)) this.pressed.add('prev');
+    if (edge(5)) this.pressed.add('next');
     if (edge(9) || edge(8)) this.pressed.add('menu');
     if (edge(12)) this.pressed.add('up');
     if (edge(13)) this.pressed.add('down');
     if (edge(14)) this.pressed.add('left');
     if (edge(15)) this.pressed.add('right');
-    if (edge(3)) this.pressed.add('journal');
+    if (edge(3)) this.pressed.add('inventory');
     const ax = gp.axes;
     const mx = dz(ax[0] || 0), my = dz(ax[1] || 0);
     const lx = dz(ax[2] || 0), ly = dz(ax[3] || 0);

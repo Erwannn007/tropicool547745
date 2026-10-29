@@ -82,6 +82,12 @@ export class Fishing {
 
   setWorld(world) { this.world = world; }
 
+  setEquipped(on) {
+    this.equipped = on;
+    this.rodHolder.visible = on;
+    if (!on && this.state !== 'idle') { this.state = 'idle'; this.bobber.visible = false; this.hooks.bite(false); }
+  }
+
   findCastTarget() {
     const cam = this.camera;
     const dir = new THREE.Vector3();
@@ -140,7 +146,7 @@ export class Fishing {
     saveJournal(this.journal);
     input.rumble(0.8, 260);
     this.hooks.sound?.('catch');
-    this.hooks.caught({ ...pick, size, isNew, record: record && !isNew, rarity: rarityOf(pick.w) });
+    this.hooks.caught({ ...pick, idx: SPECIES.indexOf(pick), size, isNew, record: record && !isNew, rarity: rarityOf(pick.w) });
     this.splashAt(this.bobber.position);
     this.reelIn();
   }
