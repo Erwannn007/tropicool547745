@@ -23,9 +23,90 @@ function rodIcon() {
   return c;
 }
 
+// 16x16 pixel icons from character maps; a dark outline is added around shapes
+function pixelIcon(rows, pal) {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+  const g = c.getContext('2d');
+  const at = (x, y) => (rows[y] && rows[y][x] && rows[y][x] !== '.' ? rows[y][x] : null);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const k = at(x, y);
+    if (k) { g.fillStyle = pal[k]; g.fillRect(x, y, 1, 1); }
+    else if (at(x - 1, y) || at(x + 1, y) || at(x, y - 1) || at(x, y + 1)) { g.fillStyle = 'rgba(28,22,26,.9)'; g.fillRect(x, y, 1, 1); }
+  }
+  return c;
+}
+
+const AXE = [
+  '................',
+  '..........ss....',
+  '.........smmw...',
+  '........dmmmlw..',
+  '.......dmmmmllw.',
+  '........dmmmmlw.',
+  '.......h.dmmmlw.',
+  '......hb..dmmw..',
+  '.....hb....ss...',
+  '....hb..........',
+  '...hb...........',
+  '..hb............',
+  '.gr.............',
+  'gr..............',
+  '................',
+  '................',
+];
+const LOG = [
+  '................',
+  '................',
+  '................',
+  '.........rrrr...',
+  '......bbrccccrr.',
+  '...bbbbrccrrcr..',
+  '.bbBbbbrcrccrcr.',
+  '.bBbbBbrcrcrcrc.',
+  '.bbbBbbrcrccrcr.',
+  '.bBbbbBrccrrcr..',
+  '.bbbbbbbrcccr...',
+  '..bbbbbbbrrr....',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+const COCO = [
+  '................',
+  '................',
+  '......nnnn......',
+  '....nNnnnnnn....',
+  '...nNNnnfnnnn...',
+  '..nnNnnnnfnnnn..',
+  '..nnnnennnnfnn..',
+  '..nnnenennnnnn..',
+  '..nnnnnnfnnnnn..',
+  '..nnfnnnnnnnnd..',
+  '...nnnnnnnnnd...',
+  '...dnnnnnnndd...',
+  '.....ddddddd....',
+  '................',
+  '................',
+  '................',
+];
+const ICONS = {
+  axe: () => pixelIcon(AXE, { s: '#5a6270', m: '#9aa4b2', l: '#c8d0dc', w: '#f2f6fb', d: '#454c58', h: '#c08a52', b: '#7a5030', g: '#5a2e1a', r: '#8a4a2a' }),
+  'wood:palm': () => pixelIcon(LOG, { b: '#9a7046', B: '#7a5432', r: '#c69a62', c: '#e6c48c' }),
+  'wood:tree': () => pixelIcon(LOG, { b: '#6a4428', B: '#4e301a', r: '#b07a48', c: '#d8a868' }),
+  coconut: () => pixelIcon(COCO, { n: '#7a4e2a', N: '#a8784a', f: '#5a3418', e: '#2a1a10', d: '#5a3820' }),
+};
+const NAMES = {
+  axe: ['Hache', 1, 'Outil'],
+  'wood:palm': ['Bois de palmier', 64, 'Matériau'],
+  'wood:tree': ['Bois tropical', 64, 'Matériau'],
+  coconut: ['Noix de coco', 64, 'Nourriture'],
+};
+
 const iconCache = new Map();
 export function itemDef(id) {
   if (id === 'rod') return { name: 'Canne à pêche', max: 1, sub: 'Outil', icon: () => rodIcon() };
+  if (NAMES[id]) { const [name, max, sub] = NAMES[id]; return { name, max, sub, icon: ICONS[id] }; }
   if (id.startsWith('fish:')) {
     const s = SPECIES[+id.slice(5)];
     return { name: s.name, max: 64, sub: 'Poisson', icon: () => fishIcon(s.c, s.name.length * 31) };
@@ -55,6 +136,7 @@ export class Inventory {
     this.padIndex = 0;
     this.load();
     if (!this.slots.some((s) => s && s.id === 'rod')) this.add('rod', 1);
+    if (!this.slots.some((s) => s && s.id === 'axe')) this.add('axe', 1);
     this.buildDOM();
     this.render();
   }

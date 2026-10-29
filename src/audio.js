@@ -62,6 +62,12 @@ export class Audio {
     if (name === 'bite') { this.tone(700, 500, 0.08, 'square', 0.05); this.tone(700, 500, 0.08, 'square', 0.05, 0.12); }
     if (name === 'catch') [523, 659, 784, 1046].forEach((f, i) => this.tone(f, f, 0.18, 'triangle', 0.09, i * 0.09));
     if (name === 'click') this.tone(1200, 900, 0.04, 'square', 0.03);
+    if (name === 'swing') this.tone(380, 180, 0.12, 'triangle', 0.025);
+    if (name === 'whiff') this.tone(300, 200, 0.08, 'sine', 0.02);
+    if (name === 'chop') { this.tone(190, 90, 0.09, 'square', 0.09); this.tone(1400, 700, 0.04, 'triangle', 0.05); }
+    if (name === 'creak') { this.tone(140, 90, 0.7, 'sawtooth', 0.035); }
+    if (name === 'thud') { this.tone(110, 38, 0.45, 'sine', 0.3); this.tone(220, 60, 0.2, 'square', 0.05); }
+    if (name === 'pickup') { this.tone(880, 1320, 0.08, 'sine', 0.06); this.tone(1320, 1760, 0.08, 'sine', 0.05, 0.07); }
     if (name === 'tick') this.tone(1800, 1400, 0.035, 'sine', 0.04);
     if (name === 'open') { this.tone(500, 900, 0.12, 'sine', 0.05); }
   }

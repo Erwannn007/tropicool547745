@@ -12,7 +12,8 @@ import { Player } from './player.js';
 import { Input } from './input.js';
 import { Fishing, SPECIES, rarityOf } from './fishing.js';
 import { Audio } from './audio.js';
-import { Inventory } from './inventory.js';
+import { Inventory, itemDef } from './inventory.js';
+import { Axe, loadFelled } from './axe.js';
 
 const $ = (s) => document.querySelector(s);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -109,12 +110,27 @@ const fishing = new Fishing(scene, camera, tex, {
   sound: (n) => audio.sfx(n),
 });
 
-const inventory = new Inventory({
+const axe = new Axe(scene, camera, tex, {
   sound: (n) => audio.sfx(n),
-  toast,
-  onChange: (held) => fishing.setEquipped(!!held && held.id === 'rod'),
+  rumble: (s, ms) => input.rumble(s, ms),
+  drops: (list) => {
+    const got = [];
+    for (const [id, n] of list) {
+      const left = inventory.add(id, n);
+      if (n - left > 0) got.push(`+${n - left} ${itemDef(id).name}`);
+      if (left) toast('Inventaire plein');
+    }
+    if (got.length) { toast(got.join(' · ')); audio.sfx('pickup'); }
+  },
 });
-fishing.setEquipped(inventory.held?.id === 'rod');
+const ACTION_ICON = { rod: '🎣', axe: '🪓' };
+function onHeldChange(held) {
+  fishing.setEquipped(held?.id === 'rod');
+  axe.setEquipped(held?.id === 'axe');
+  $('#btn-fish').textContent = ACTION_ICON[held?.id] || '✋';
+}
+const inventory = new Inventory({ sound: (n) => audio.sfx(n), toast, onChange: onHeldChange });
+onHeldChange(inventory.held);
 inventory.closeRequest = () => closeInventory();
 $('#inv-close').addEventListener('click', () => closeInventory());
 
@@ -146,7 +162,7 @@ function buildWorld() {
     current.world.texture.dispose();
   }
   const t0 = performance.now();
-  const world = generateWorld(settings.world);
+  const world = generateWorld(settings.world, loadFelled(settings.world));
   globals.uWorldTex.value = world.texture;
   globals.uWorldSize.value = world.size;
   const terrain = buildTerrain(world, tex, settings.quality);
@@ -159,9 +175,10 @@ function buildWorld() {
   player.setWorld(world, [...vegColliders(world), ...structures.colliders], structures.surfaces);
   player.spawn(world.spawn);
   fishing.setWorld(world);
+  axe.setWorld(world, veg, player);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { player, camera, fishing, input, inventory };
+  window.__game = { player, camera, fishing, input, inventory, axe };
   console.log(`[tropicool] world ${settings.world.seed} built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
     bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length,
@@ -281,10 +298,10 @@ function updateHint(show) {
   const dev = input.lastDevice;
   document.body.classList.toggle('touch', isTouch && dev === 'touch');
   const txt = dev === 'gamepad'
-    ? 'Stick G : marcher · Stick D : regarder · ✕ : sauter · □ / R2 : pêcher · L1/R1 : objet · △ : inventaire · Options : menu'
+    ? 'Stick G : marcher · Stick D : regarder · ✕ : sauter · □ / R2 : utiliser l’objet · L1/R1 : objet · △ : inventaire · Options : menu'
     : dev === 'touch'
-      ? 'Glisse à gauche pour marcher · à droite pour regarder · 🎣 pour pêcher · 🎒 inventaire'
-      : 'ZQSD / WASD : marcher · Souris : regarder · Espace : sauter · Clic / F : pêcher · 1-9 / molette : objet · E : inventaire · Échap : menu';
+      ? 'Glisse à gauche pour marcher · à droite pour regarder · 🎣/🪓 pour utiliser l’objet · 🎒 inventaire'
+      : 'ZQSD / WASD : marcher · Souris : regarder · Espace : sauter · Clic / F : utiliser l’objet · 1-9 / molette : objet · E : inventaire · Échap : menu';
   $('#hint').textContent = txt;
   $('#inv-help').textContent = dev === 'gamepad'
     ? '✕ prendre / poser · □ prendre la moitié / poser 1 · R1 transfert rapide · △ / ○ fermer'
@@ -351,8 +368,10 @@ function frame() {
     const look = input.consumeLook();
     player.update(dt, input, look);
     if (p.has('action')) {
-      if (inventory.held?.id === 'rod') fishing.action(input);
-      else toast('Sélectionne la canne à pêche pour pêcher 🎣');
+      const id = inventory.held?.id;
+      if (id === 'rod') fishing.action(input);
+      else if (id === 'axe') axe.action();
+      else toast('Prends la canne 🎣 ou la hache 🪓 dans ta barre');
     }
   } else if (state === 'inventory') {
     input.consumeLook();
@@ -375,6 +394,7 @@ function frame() {
 
   if (current) {
     fishing.update(dt, input);
+    axe.update(dt);
     current.grass.update(camera);
     current.veg.update(camera);
   }

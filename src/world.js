@@ -14,7 +14,7 @@ export const DEFAULT_CONFIG = {
   vegetation: 0.75,
 };
 
-export function generateWorld(cfg) {
+export function generateWorld(cfg, felled = new Set()) {
   const N = MAP_N, S = WORLD_SIZE, half = S / 2, cell = S / N;
   const rnd = mulberry32(cfg.seed);
   const sx = makeSimplex(cfg.seed);
@@ -226,11 +226,16 @@ export function generateWorld(cfg) {
       shadeMap[j * N + i] = Math.max(shadeMap[j * N + i], v);
     }
   };
-  for (const p of props.palms) paint(p.x, p.z, 7.5 * p.s, 3.6 * p.s, 0.75);
-  for (const p of props.trees) paint(p.x, p.z, 4.5 * p.s, 3.4 * p.s, 0.85);
-  for (const p of props.bushes) paint(p.x, p.z, 0.6 * p.s, 1.3 * p.s, 0.7);
-  for (const p of props.rocks) paint(p.x, p.z, 0.7 * p.s, 1.2 * p.s, 0.7);
-  paint(hut.x, hut.z, hut.floor - heightAt(hut.x, hut.z) + 3.2, 4.4, 0.85);
+  // every prop gets a stable key so felled trees can be remembered per world
+  for (const type of Object.keys(props)) props[type].forEach((p, i) => { p.type = type; p.key = `${type}:${i}`; p.gone = felled.has(p.key); });
+  const SHADOW = { palms: [7.5, 3.6, 0.75], trees: [4.5, 3.4, 0.85], bushes: [0.6, 1.3, 0.7], rocks: [0.7, 1.2, 0.7] };
+  const shadowOf = (p) => { const [h, r, k] = SHADOW[p.type]; return [p.x, p.z, h * p.s, r * p.s, k]; };
+  const hutShadow = [hut.x, hut.z, hut.floor - heightAt(hut.x, hut.z) + 3.2, 4.4, 0.85];
+  const paintAll = (filter) => {
+    for (const type of Object.keys(SHADOW)) for (const p of props[type]) if (!p.gone && (!filter || filter(shadowOf(p)))) paint(...shadowOf(p));
+    if (!filter || filter(hutShadow)) paint(...hutShadow);
+  };
+  paintAll();
 
   // ---- data texture (half float, linear-filterable in WebGL2) ---------
   const data = new Uint16Array(N * N * 4);
@@ -251,5 +256,22 @@ export function generateWorld(cfg) {
   const deckEnd = { x: pier.x0 + pier.dx * (pier.length - 1.5), z: pier.z0 + pier.dz * (pier.length - 1.5) };
   const spawn = { x: deckEnd.x, y: pier.deck, z: deckEnd.z, yaw: Math.atan2(pier.dx, pier.dz) };
 
-  return { cfg, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex };
+  // remove a prop (tree felled): clear its shadow, repaint neighbours, re-upload
+  function removeProp(p) {
+    if (p.gone) return;
+    p.gone = true;
+    const [x, z, h, r] = shadowOf(p);
+    const cx = x + sdx * h, cz = z + sdz * h;
+    const ri = Math.ceil(r / cell) + 2;
+    const ci = Math.floor((cx + half) / cell), cj = Math.floor((cz + half) / cell);
+    const clip = (i, j) => i >= 0 && j >= 0 && i < N && j < N;
+    for (let j = cj - ri; j <= cj + ri; j++) for (let i = ci - ri; i <= ci + ri; i++) if (clip(i, j)) shadeMap[j * N + i] = 0;
+    paintAll(([px, pz, ph, pr]) => Math.hypot(px + sdx * ph - cx, pz + sdz * ph - cz) < pr + r + 2);
+    for (let j = cj - ri; j <= cj + ri; j++) for (let i = ci - ri; i <= ci + ri; i++) {
+      if (clip(i, j)) data[(j * N + i) * 4 + 2] = toHalf(shadeMap[j * N + i]);
+    }
+    tex.needsUpdate = true;
+  }
+
+  return { cfg, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex, removeProp };
 }

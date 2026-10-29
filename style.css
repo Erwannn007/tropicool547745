@@ -161,14 +161,14 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; background: var
 #hotbar {
   --hs: clamp(38px, 5.2vw, 54px); --hg: 6px; --hp: 8px;
   position: absolute; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom)); transform: translateX(-50%);
-  padding: var(--hp); border-radius: calc(var(--hs) * 0.42 + var(--hp));
+  padding: var(--hp); border-radius: 12px;
   pointer-events: auto; touch-action: none;
 }
 #hotbar .slots { display: flex; gap: var(--hg); position: relative; z-index: 1; }
 #hotbar .lens { /* sliding liquid selector */
   position: absolute; z-index: 2; pointer-events: none;
   top: calc(var(--hp) - 4px); left: calc(var(--hp) - 4px);
-  width: calc(var(--hs) + 8px); height: calc(var(--hs) + 8px); border-radius: calc(var(--hs) * 0.42 + 4px);
+  width: calc(var(--hs) + 8px); height: calc(var(--hs) + 8px); border-radius: 9px;
   transform: translateX(calc(var(--i, 0) * (var(--hs) + var(--hg))));
   transition: transform .42s cubic-bezier(.34, 1.56, .64, 1);
   border: 2px solid rgba(255,255,255,.95);
@@ -183,7 +183,7 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; background: var
 #held-name.show { animation: namefade 2.2s ease forwards; }
 @keyframes namefade { 0% { opacity: 0; transform: translate(-50%, 6px); } 12% { opacity: 1; transform: translate(-50%, 0); } 75% { opacity: 1; } 100% { opacity: 0; } }
 #hint { bottom: calc(10px + env(safe-area-inset-bottom) + clamp(38px, 5.2vw, 54px) + 56px); }
-#toast { bottom: calc(110px + env(safe-area-inset-bottom)); }
+#toast { bottom: calc(10px + env(safe-area-inset-bottom) + clamp(38px, 5.2vw, 54px) + 88px); }
 
 /* slots */
 .slot {
@@ -201,6 +201,7 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; background: var
 }
 .slot .key { position: absolute; left: 10%; top: 6%; font: 600 9px/1 system-ui, sans-serif; color: rgba(255,255,255,.55); pointer-events: none; }
 body.touch .slot .key { display: none; }
+#hotbar .slot { border-radius: 6px; }
 #hotbar .slot.active { transform: scale(1.04); }
 
 /* inventory screen */

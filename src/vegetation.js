@@ -298,6 +298,7 @@ export class Vegetation {
     const buckets = new Map();
     for (const type of Object.keys(parts)) {
       for (const p of world.props[type]) {
+        if (p.gone) continue;
         const key = `${type}|${p.v}|${Math.floor(p.x / CELL)}|${Math.floor(p.z / CELL)}`;
         if (!buckets.has(key)) buckets.set(key, []);
         buckets.get(key).push(p);
@@ -313,6 +314,7 @@ export class Vegetation {
           if (type === 'rocks') s.set(p.s * 1.2, p.s, p.s * 0.95); else s.setScalar(p.s);
           m4.compose(t.set(p.x, p.y, p.z), q, s);
           im.setMatrixAt(i, m4);
+          (p.inst ||= []).push({ mesh: im, i });
         });
         im.computeBoundingSphere();
         im.matrixAutoUpdate = false;
@@ -342,8 +344,8 @@ export class Vegetation {
 
 export function colliders(world) {
   const list = [];
-  for (const p of world.props.palms) list.push({ x: p.x, z: p.z, r: 0.32 * p.s });
-  for (const p of world.props.trees) list.push({ x: p.x, z: p.z, r: 0.35 * p.s });
+  for (const p of world.props.palms) if (!p.gone) list.push({ x: p.x, z: p.z, r: 0.32 * p.s, prop: p });
+  for (const p of world.props.trees) if (!p.gone) list.push({ x: p.x, z: p.z, r: 0.35 * p.s, prop: p });
   for (const p of world.props.rocks) if (p.y + p.s * 0.6 > world.heightAt(p.x, p.z) + 0.4) list.push({ x: p.x, z: p.z, r: 0.95 * p.s });
   return list;
 }

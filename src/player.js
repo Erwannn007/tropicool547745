@@ -27,6 +27,11 @@ export class Player {
     }
   }
 
+  removeCollider(prop) {
+    const list = this.grid.get(`${Math.floor(prop.x / 8)},${Math.floor(prop.z / 8)}`);
+    if (list) { const i = list.findIndex((c) => c.prop === prop); if (i >= 0) list.splice(i, 1); }
+  }
+
   spawn(s) {
     this.pos.set(s.x, s.y, s.z);
     this.vel.set(0, 0, 0);
