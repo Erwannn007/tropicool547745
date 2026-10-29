@@ -1,6 +1,13 @@
 # Charte graphique de Tropicool
 
-Version visuelle complète (palettes, captures, frise d'animation) : https://claude.ai/artifact/XgWHgZpmxmy9fsHYqBMetA
+Cette charte est **obligatoire** pour tout élément visuel ajouté ou modifié (modèle, texture, effet, animation, icône), que le travail soit fait par une personne ou une IA. Version visuelle avec captures (privée, accessible au propriétaire) : https://claude.ai/artifact/XgWHgZpmxmy9fsHYqBMetA
+
+## La référence, décrite
+Les images de référence du projet sont des captures de jeux indé pixel-art 3D (non incluses dans le dépôt). Ce qu'il faut en retenir :
+- un monde 3D lisse et lumineux, ciel bleu intense, gros cumulus blancs, eau turquoise transparente, herbe vert lime très dense ;
+- des objets **modelés** (pas de voxels), recouverts de **textures pixel art** nettes ;
+- l'objet tenu en main est **affiché en gros pixels** (basse résolution agrandie sans lissage) : long manche doré épais depuis le coin bas-droite, petite tête d'acier clair au tranchant blanc ;
+- ombrage en **aplats** (quelques niveaux), couleurs saturées et chaudes, aucun contour noir.
 
 **Principe : modelé en 3D, peint en pixels.** Chaque objet est une vraie forme 3D, habillée de textures pixel art, et s'affiche en gros pixels nets. La hache (`src/axeModel.js`) est l'étalon : tout nouvel élément doit tenir la comparaison à côté d'elle.
 
@@ -44,3 +51,14 @@ Anticipation, temps mort, geste rapide, impact marqué (arrêt d'environ 70 ms, 
 
 ## À remettre en conformité
 Canne à pêche et bouchon, buissons et arbres (cartes de feuilles plates), fougères (bandes plates), toit de la paillote (pyramide à 4 faces).
+
+## Recettes techniques (réutiliser, ne pas réinventer)
+Three.js r160, sans build. Les couleurs sont écrites directement en espace d'affichage : textures en `THREE.NoColorSpace`, sortie du renderer en `LinearSRGBColorSpace`, donc pas de conversion sRGB à prévoir.
+
+- **Peindre une texture pixel art** : classe `Pix` dans `src/textures.js` (`set(x, y, rgb)`, puis `.texture()` qui règle `Nearest` + mipmaps). Une texture = une fonction `xxxTexture(seed)` avec sa rampe en tête de fonction. Pour une texture locale, voir `pixTex()` dans `src/axeModel.js`.
+- **Matériau du monde** : `makeMaterial()` dans `src/shaders.js` injecte les uniformes globaux (soleil, brouillard, `worldData()` pour la hauteur et l'ombre au sol) et `lightDiffuse()`. Les végétaux utilisent `foliageMaterial()` (`src/vegetation.js`) : vent, translucidité, ombre peinte, mode `ROCK`.
+- **Géométrie modelée** : la classe `Builder` (`src/vegetation.js`) produit position, normale, uv et `aSway` (amplitude du vent). Exemples à suivre : `ringTrunk()` (tronc à anneaux fermés), `leafletFrond()` (feuille en vraie géométrie), `headGeometry()` / `handleGeometry()` (`src/axeModel.js`, profil extrudé chanfreiné et effilé). Orientation des triangles : sens antihoraire vu de l'extérieur.
+- **Objet tenu en main** : copier le schéma de `AxeModel` : scène dédiée, `bandedMaterial()` (ombre en 4 niveaux et reflet net), rendu dans une cible basse résolution (`size.y / 220`) puis quad agrandi en `Nearest`, poses en images-clés avec `basis(direction du manche, direction de la lame)`.
+- **Feuillage proche** : vraie géométrie jusqu'à ~75 m, version légère au-delà (champ `lod: 'near' | 'far'` dans `Vegetation`). Jamais de carte plate visible de près.
+- **Particules** : `THREE.Points` en carrés (voir `burst()` dans `src/axe.js`), couleurs tirées des rampes.
+- **Vérifier** : capture d'écran du jeu sous plusieurs angles (profil, dessus, dessous) avant de livrer ; un élément qui ressemble à une image plate quand on tourne autour n'est pas conforme.

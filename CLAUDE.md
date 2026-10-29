@@ -1,0 +1,2 @@
+@AGENTS.md
+@ART_STYLE.md
