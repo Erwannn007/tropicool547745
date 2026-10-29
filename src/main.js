@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { globals } from './shaders.js';
+import { globals, heldLight } from './shaders.js';
 import * as T from './textures.js';
 import { generateWorld, DEFAULT_CONFIG } from './world.js';
 import { buildTerrain } from './terrain.js';
@@ -12,8 +12,15 @@ import { Player } from './player.js';
 import { Input } from './input.js';
 import { Fishing, SPECIES, rarityOf } from './fishing.js';
 import { Audio } from './audio.js';
-import { Inventory, itemDef } from './inventory.js';
+import { Inventory } from './inventory.js';
+import { itemDef } from './items.js';
 import { Axe, loadFelled } from './axe.js';
+import { DayCycle, fmtHour } from './daycycle.js';
+import { Lights } from './lights.js';
+import { Hands } from './hands.js';
+import { Mower } from './scythe.js';
+import { Placement, PLACEABLE } from './placement.js';
+import { initIcons } from './icons.js';
 
 const $ = (s) => document.querySelector(s);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -28,13 +35,18 @@ const defaults = {
   sens: 1.0,
   volume: 0.6,
   showfps: false,
+  hour: 9.5,
+  dayspeed: 'normal',
+  weather: 'auto',
 };
 let settings;
 try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SKEY) || '{}') }; } catch (_) { settings = { ...defaults }; }
 settings.world = { ...DEFAULT_CONFIG, ...settings.world };
 const save = () => { try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch (_) { /* ignore */ } };
 const params = new URLSearchParams(location.search);
-if (params.has('seed')) settings.world.seed = +params.get('seed') || settings.world.seed;
+if (params.has('seed')) settings.world.seed = params.get('seed').trim() || settings.world.seed;
+if (params.has('hour')) settings.hour = (+params.get('hour') || 0) % 24;
+if (params.has('weather')) settings.weather = params.get('weather');
 
 // ---------------------------------------------------------------- renderer
 const canvas = $('#game');
@@ -54,6 +66,7 @@ function resize() {
 }
 addEventListener('resize', resize);
 resize();
+initIcons(renderer);
 
 const tex = {
   grass: T.grassTexture(), sand: T.sandTexture(), rock: T.rockTexture(), trunk: T.trunkTexture(),
@@ -71,6 +84,10 @@ scene.add(water);
 
 const player = new Player(camera);
 player.sound = audio;
+
+const lights = new Lights();
+const day = new DayCycle(scene, { hour: settings.hour, speed: settings.dayspeed, weather: settings.weather });
+day.onShadowDir = (dir) => current?.world.setShadowDir(dir);
 
 // ---------------------------------------------------------------- UI hooks
 let toastTimer;
@@ -114,20 +131,46 @@ const fishing = new Fishing(scene, camera, tex, {
 const axe = new Axe(scene, camera, tex, {
   sound: (n) => audio.sfx(n),
   rumble: (s, ms) => input.rumble(s, ms),
-  drops: (list) => {
-    const got = [];
-    for (const [id, n] of list) {
-      const left = inventory.add(id, n);
-      if (n - left > 0) got.push(`+${n - left} ${itemDef(id).name}`);
-      if (left) toast('Inventaire plein');
-    }
-    if (got.length) { toast(got.join(' · ')); audio.sfx('pickup'); }
+  drops: (list) => giveItems(list),
+});
+const mower = new Mower(scene);
+const placement = new Placement(scene, camera, lights, {
+  sound: (n) => audio.sfx(n), message: toast,
+  flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
+});
+const hands = new Hands(lights, {
+  sound: (n) => audio.sfx(n),
+  mow: (x, z, fx, fz, y) => {
+    const r = mower.mow(x, z, fx, fz, y);
+    if (r.mowed || r.fibres) audio.sfx('mow');
+    if (r.fibres) giveItems([['fibre', r.fibres]]);
   },
 });
-const ACTION_ICON = { rod: '🎣', axe: '🪓' };
+function giveItems(list) {
+  const got = [];
+  for (const [id, n] of list) {
+    const left = inventory.add(id, n);
+    if (n - left > 0) got.push(`+${n - left} ${itemDef(id).name}`);
+    if (left) toast('Inventaire plein');
+  }
+  if (got.length) { toast(got.join(' · ')); audio.sfx('pickup'); }
+}
+// take a placed object back (axe blow or empty hand)
+function pickPlaced() {
+  const o = placement.aimed();
+  if (!o) return false;
+  const id = placement.pickUp(o);
+  audio.sfx('place');
+  giveItems([[id, 1]]);
+  return true;
+}
+axe.hooks.hitPlaced = pickPlaced;
+
+const ACTION_ICON = { rod: '🎣', axe: '🪓', scythe: '🌾', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍' };
 function onHeldChange(held) {
   fishing.setEquipped(held?.id === 'rod');
   axe.setEquipped(held?.id === 'axe');
+  hands.setHeld(held?.id ?? null);
   $('#btn-fish').textContent = ACTION_ICON[held?.id] || '✋';
 }
 const inventory = new Inventory({ sound: (n) => audio.sfx(n), toast, onChange: onHeldChange });
@@ -177,10 +220,14 @@ function buildWorld() {
   player.spawn(world.spawn);
   fishing.setWorld(world);
   axe.setWorld(world, veg, player);
+  mower.setWorld(world, veg);
+  placement.setWorld(world, player);
+  world.setShadowDir(globals.uSunDir.value);
+  day.shadowDir.copy(globals.uSunDir.value);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { player, camera, fishing, input, inventory, axe };
-  console.log(`[tropicool] world ${settings.world.seed} built in ${(performance.now() - t0) | 0} ms`, {
+  window.__game = { player, camera, fishing, input, inventory, axe, day, hands, mower, placement, lights };
+  console.log(`[tropicool] world ${settings.world.seed} (${world.cfg.seed}) built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
     bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length,
   });
@@ -194,7 +241,7 @@ function regenerate() {
 // ---------------------------------------------------------------- menus
 let state = 'start'; // start | play | menu | inventory
 const ranges = ['islands', 'size', 'relief', 'vegetation'];
-const fmt = { islands: (v) => v, size: (v) => `×${(+v).toFixed(2)}`, relief: (v) => `${Math.round(v * 100)}%`, vegetation: (v) => `${Math.round(v * 100)}%`, res: (v) => `${Math.round(v * 100)}%`, sens: (v) => (+v).toFixed(1), volume: (v) => `${Math.round(v * 100)}%` };
+const fmt = { hour: (v) => fmtHour(+v), islands: (v) => v, size: (v) => `×${(+v).toFixed(2)}`, relief: (v) => `${Math.round(v * 100)}%`, vegetation: (v) => `${Math.round(v * 100)}%`, res: (v) => `${Math.round(v * 100)}%`, sens: (v) => (+v).toFixed(1), volume: (v) => `${Math.round(v * 100)}%` };
 function syncOutputs() {
   document.querySelectorAll('output[data-for]').forEach((o) => { const id = o.dataset.for; o.textContent = fmt[id]($('#' + id).value); });
 }
@@ -207,6 +254,9 @@ function fillMenu() {
   $('#sens').value = settings.sens;
   $('#volume').value = settings.volume;
   $('#showfps').checked = settings.showfps;
+  $('#hour').value = day.hour.toFixed(1);
+  $('#dayspeed').value = settings.dayspeed;
+  $('#weather').value = settings.weather;
   syncOutputs();
 }
 document.querySelectorAll('#menu input, #menu select').forEach((el) => el.addEventListener('input', () => {
@@ -217,12 +267,20 @@ document.querySelectorAll('#menu input, #menu select').forEach((el) => el.addEve
   settings.autores = $('#autores').checked;
   if (el.id === 'res') { settings.res = +$('#res').value; resScale = settings.res; resize(); }
   if (el.id === 'quality') { settings.quality = $('#quality').value; save(); regenerate(); }
+  if (el.id === 'hour') { day.hour = +$('#hour').value; settings.hour = day.hour; }
+  if (el.id === 'dayspeed') { settings.dayspeed = day.speed = $('#dayspeed').value; }
+  if (el.id === 'weather') { settings.weather = day.weather = $('#weather').value; if (day.weather === 'auto') day.raining = false; }
   save();
 }));
-$('#dice').onclick = () => { $('#seed').value = 1 + Math.floor(Math.random() * 999998); };
+// random seeds read like island names
+const SEED_A = ['lagon', 'corail', 'mangue', 'coco', 'récif', 'ananas', 'perle', 'tortue', 'hibiscus', 'vanille', 'cocotier', 'raie', 'goyave', 'galet', 'lune'];
+const SEED_B = ['bleu', 'doré', 'turquoise', 'secret', 'paisible', 'sauvage', 'endormi', 'rose', 'lointain', 'caché', 'salé', 'tiède'];
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+$('#dice').onclick = () => { $('#seed').value = `${pick(SEED_A)}-${pick(SEED_B)}${Math.random() < 0.4 ? '-' + (2 + Math.floor(Math.random() * 98)) : ''}`; };
+$('#seed').addEventListener('keydown', (e) => e.stopPropagation());
 $('#generate').onclick = () => {
   for (const k of ranges) settings.world[k] = +$('#' + k).value;
-  settings.world.seed = Math.max(1, Math.floor(+$('#seed').value || 1));
+  settings.world.seed = $('#seed').value.trim().slice(0, 32) || '1';
   save();
   regenerate();
   closeMenu();
@@ -299,10 +357,10 @@ function updateHint(show) {
   const dev = input.lastDevice;
   document.body.classList.toggle('touch', isTouch && dev === 'touch');
   const txt = dev === 'gamepad'
-    ? 'Stick G : marcher · Stick D : regarder · ✕ : sauter · □ / R2 : utiliser l’objet · L1/R1 : objet · △ : inventaire · Options : menu'
+    ? 'Stick G : marcher · Stick D : regarder · ✕ : sauter · □ / R2 : utiliser / poser · ◀ ▶ : tourner l’objet · L1/R1 : objet · △ : inventaire · Options : menu'
     : dev === 'touch'
-      ? 'Glisse à gauche pour marcher · à droite pour regarder · 🎣/🪓 pour utiliser l’objet · 🎒 inventaire'
-      : 'ZQSD / WASD : marcher · Souris : regarder · Espace : sauter · Clic / F : utiliser l’objet · 1-9 / molette : objet · E : inventaire · Échap : menu';
+      ? 'Glisse à gauche pour marcher · à droite pour regarder · bouton rond : utiliser / poser · 🎒 inventaire et fabrication'
+      : 'ZQSD / WASD : marcher · Souris : regarder · Espace : sauter · Clic / F : utiliser / poser · R : tourner l’objet · 1-9 / molette : objet · E : inventaire · Échap : menu';
   $('#hint').textContent = txt;
   $('#inv-help').textContent = dev === 'gamepad'
     ? '✕ prendre / poser · □ prendre la moitié / poser 1 · R1 transfert rapide · △ / ○ fermer'
@@ -361,6 +419,28 @@ function shoreness() {
   if (w.heightAt(x, z) < 0.2) wet += 0.3;
   return Math.min(1, wet) * Math.max(0.35, 1 - Math.max(0, y - 4) / 14);
 }
+// clock, placement hint, ambience levels (a few times a second)
+let hudAcc = 0, lastPeriod = '', hourSave = 0;
+function hudTick(dt) {
+  hudAcc += dt;
+  if (hudAcc < 0.25) return;
+  const [, name, icon] = day.period;
+  $('#clock-icon').textContent = day.rain > 0.5 ? '🌧' : icon;
+  $('#clock-name').textContent = name;
+  $('#clock-time').textContent = fmtHour(day.hour);
+  if (name !== lastPeriod) {
+    if (lastPeriod && state === 'play') { const c = $('#clock'); c.classList.remove('change'); void c.offsetWidth; c.classList.add('change'); }
+    lastPeriod = name;
+  }
+  const t = placement.target;
+  $('#place-tip').textContent = state === 'play' && t && !t.ok ? t.why : '';
+  audio.setRain(day.rain * 0.9);
+  audio.setNight(globals.uNight.value);
+  audio.setFire(Math.max(0, 1 - placement.nearestFire() / 9) * 0.8 + (hands.id === 'torch' ? 0.25 : 0));
+  if ((hourSave += hudAcc) > 10) { hourSave = 0; settings.hour = +day.hour.toFixed(2); save(); }
+  hudAcc = 0;
+}
+
 const clock = new THREE.Clock();
 let fpsAcc = 0, fpsFrames = 0, slowAcc = 0, fastAcc = 0;
 function frame() {
@@ -383,11 +463,14 @@ function frame() {
     player.update(dt, input, look);
     shoreTimer -= dt;
     if (shoreTimer < 0 && current) { shoreTimer = 0.5; audio.setShore(shoreness()); }
+    const heldId = inventory.held?.id;
+    if (p.has('rotate') || (input.lastDevice === 'gamepad' && (p.has('left') || p.has('right')))) placement.rotOffset += (p.has('left') ? -1 : 1) * Math.PI / 4;
     if (p.has('action')) {
-      const id = inventory.held?.id;
-      if (id === 'rod') fishing.action(input);
-      else if (id === 'axe') axe.action();
-      else toast('Prends la canne 🎣 ou la hache 🪓 dans ta barre');
+      if (heldId === 'rod') fishing.action(input);
+      else if (heldId === 'axe') axe.action();
+      else if (heldId === 'scythe') hands.action();
+      else if (PLACEABLE[heldId]) { if (placement.place()) inventory.take(heldId, 1); }
+      else if (!pickPlaced()) toast('Prends un outil dans ta barre');
     }
   } else if (state === 'inventory') {
     input.consumeLook();
@@ -408,17 +491,32 @@ function frame() {
   if (state === 'start') { player.yaw += dt * 0.04; }
   input.endFrame();
 
+  day.update(state === 'start' ? dt * 0.3 : dt, camera, renderer);
   if (current) {
     fishing.update(dt, input);
     axe.update(dt);
+    hands.update(dt, player, camera);
+    mower.update(dt);
+    placement.aim(state === 'play' ? inventory.held?.id : null);
+    placement.update(dt);
     current.grass.update(camera);
     current.veg.update(camera);
   }
+  lights.update(camera.position, globals.uTime.value);
+  // fire light on the held items
+  const warm = lights.at(camera.position.x, camera.position.y - 0.4, camera.position.z);
+  heldLight.value.r += warm * 0.9; heldLight.value.g += warm * 0.5; heldLight.value.b += warm * 0.15;
+  fishing.rod.traverse((m) => { // the rod uses plain colours: tint them by the same light
+    if (!m.material) return;
+    m.material.userData.base ??= m.material.color.clone();
+    m.material.color.copy(m.material.userData.base).multiply(heldLight.value);
+  });
   sky.userData.update(camera);
   water.position.set(Math.round(camera.position.x), 0, Math.round(camera.position.z));
   globals.uCamPos.value.copy(camera.position);
   renderer.render(scene, camera);
-  if (state !== 'inventory') axe.render(renderer, camera);
+  if (state !== 'inventory') { axe.render(renderer, camera); hands.render(renderer, camera); }
+  hudTick(dt);
 
   // fps + dynamic resolution
   fpsAcc += dt; fpsFrames++;

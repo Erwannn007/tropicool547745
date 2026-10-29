@@ -63,8 +63,8 @@ function simpleMaterial(map, { tint = 1, alphaTest = 0 } = {}) {
         if (uAT > 0.0 && t.a < uAT) discard;
         vec4 d = worldData(vWorld.xz);
         vec3 n = normalize(gl_FrontFacing ? vN : -vN);
-        float shadow = 1.0 - d.b * 0.5 * step(n.y, 0.5);
-        vec3 col = t.rgb * uK * lightDiffuse(n, 0.2, shadow);
+        float shadow = 1.0 - d.b * 0.5 * uShade * step(n.y, 0.5);
+        vec3 col = t.rgb * uK * lightAt(n, 0.2, shadow, vWorld);
         gl_FragColor = vec4(applyFog(col, vWorld), 1.0);
       }`,
   });

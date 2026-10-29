@@ -26,7 +26,10 @@ const UP = new THREE.Vector3(0, 1, 0);
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 // Tube along a curve made of separate stepped rings (palm trunk look).
-function ringTrunk(b, curve, rings, r0, r1, radial, rnd, swayK, uvScale = 1) {
+// `sub` rows per ring and `split` columns per face subdivide the faces without
+// changing the shape (used for the trunk being chopped, so the axe can carve
+// real notches into it).
+function ringTrunk(b, curve, rings, r0, r1, radial, rnd, swayK, uvScale = 1, sub = 1, split = 1) {
   const rot = rnd() * 0.5;
   const frame = (k) => {
     const ta = k / rings, tb = (k + 1) / rings;
@@ -37,29 +40,38 @@ function ringTrunk(b, curve, rings, r0, r1, radial, rnd, swayK, uvScale = 1) {
     const dir = (i) => { const a = (i / radial) * Math.PI * 2 + rot; return S.clone().multiplyScalar(Math.cos(a)).addScaledVector(B, Math.sin(a)); };
     return { ta, tb, ca, cb, T, dir, ra: (r0 + (r1 - r0) * ta) * 1.12, rb: (r0 + (r1 - r0) * tb) * 0.9 };
   };
+  const cols = radial * split;
   for (let k = 0; k < rings; k++) {
     const f = frame(k);
     const start = b.count;
-    for (let i = 0; i <= radial; i++) {
-      const dir = f.dir(i);
-      b.v(f.ca.clone().addScaledVector(dir, f.ra), dir, i / radial * uvScale, 0, f.ta * f.ta * swayK);
-      b.v(f.cb.clone().addScaledVector(dir, f.rb), dir, i / radial * uvScale, 1, f.tb * f.tb * swayK);
+    for (let c = 0; c <= cols; c++) {
+      const i0 = Math.min(radial - 1, Math.floor(c / split)), u = c / split - i0;
+      const d0 = f.dir(i0), d1 = f.dir(i0 + 1);
+      const n = d0.clone().lerp(d1, u).normalize();
+      const lo = f.ca.clone().addScaledVector(d0, f.ra).lerp(f.ca.clone().addScaledVector(d1, f.ra), u);
+      const hi = f.cb.clone().addScaledVector(d0, f.rb).lerp(f.cb.clone().addScaledVector(d1, f.rb), u);
+      for (let j = 0; j <= sub; j++) {
+        const s = j / sub, t = f.ta + (f.tb - f.ta) * s;
+        b.v(lo.clone().lerp(hi, s), n, c / cols * uvScale, s, t * t * swayK);
+      }
     }
-    for (let i = 0; i < radial; i++) {
-      const a = start + i * 2;
-      b.quad(a, a + 1, a + 3, a + 2); // counter-clockwise seen from outside
+    for (let c = 0; c < cols; c++) for (let j = 0; j < sub; j++) {
+      const a = start + c * (sub + 1) + j, a2 = a + sub + 1;
+      b.quad(a, a + 1, a2 + 1, a2); // counter-clockwise seen from outside
     }
     // downward-facing lip closing the step to the wider base of the next ring
     if (k < rings - 1) {
       const g = frame(k + 1), down = f.T.clone().negate();
       const s0 = b.count, sw = f.tb * f.tb * swayK;
-      for (let i = 0; i <= radial; i++) {
-        const n = f.dir(i).multiplyScalar(0.4).add(down).normalize();
-        b.v(f.cb.clone().addScaledVector(f.dir(i), f.rb), n, i / radial * uvScale, 0.93, sw);
-        b.v(g.ca.clone().addScaledVector(g.dir(i), g.ra), n, i / radial * uvScale, 0.97, sw);
+      for (let c = 0; c <= cols; c++) {
+        const i0 = Math.min(radial - 1, Math.floor(c / split)), u = c / split - i0;
+        const d0 = f.dir(i0), d1 = f.dir(i0 + 1), e0 = g.dir(i0), e1 = g.dir(i0 + 1);
+        const n = d0.clone().lerp(d1, u).normalize().multiplyScalar(0.4).add(down).normalize();
+        b.v(f.cb.clone().addScaledVector(d0, f.rb).lerp(f.cb.clone().addScaledVector(d1, f.rb), u), n, c / cols * uvScale, 0.93, sw);
+        b.v(g.ca.clone().addScaledVector(e0, g.ra).lerp(g.ca.clone().addScaledVector(e1, g.ra), u), n, c / cols * uvScale, 0.97, sw);
       }
-      for (let i = 0; i < radial; i++) {
-        const a = s0 + i * 2;
+      for (let c = 0; c < cols; c++) {
+        const a = s0 + c * 2;
         b.quad(a, a + 1, a + 3, a + 2);
       }
     }
@@ -175,14 +187,15 @@ function leafCards(b, center, radius, cards, size, rnd, sway, squashY = 0.75) {
   }
 }
 
-function makePalm(seed, perSide) {
-  const rnd = mulberry32(seed);
+// palm trunk + coconuts; same random sequence whatever the detail level
+function palmTrunk(rnd, sub = 1, split = 1) {
   const H = 6.8 + rnd() * 3.2;
   const la = rnd() * Math.PI * 2, lean = (0.12 + rnd() * 0.3) * H;
   const bend = 0.6 + rnd() * 0.8;
   const curve = (t) => V(Math.cos(la) * lean * Math.pow(t, 1 + bend), H * t, Math.sin(la) * lean * Math.pow(t, 1 + bend));
   const trunk = new Builder();
-  ringTrunk(trunk, curve, 11, 0.27, 0.17, 8, rnd, 0.35);
+  ringTrunk(trunk, curve, 11, 0.27, 0.17, 8, rnd, 0.35, 1, sub, split);
+  const wood = trunk.count; // vertices below this index belong to the trunk (carvable)
   const top = curve(1);
   // coconuts
   for (let i = 0; i < 4; i++) {
@@ -197,6 +210,12 @@ function makePalm(seed, perSide) {
     }
     for (let k = 0; k < pp.count; k += 3) trunk.tri(start + k, start + k + 1, start + k + 2);
   }
+  return { trunk, top, H, curve, wood, r0: 0.27, r1: 0.17 };
+}
+
+function makePalm(seed, perSide) {
+  const rnd = mulberry32(seed);
+  const { trunk, top, H } = palmTrunk(rnd);
   // crown: 16-20 fronds in tiers - young upright spears, mature arching
   // fronds, old drooping ones, sometimes a dry frond hanging under the crown
   const n = 16 + Math.floor(rnd() * 5);
@@ -218,14 +237,18 @@ function makePalm(seed, perSide) {
   return { trunk: trunk.build(), fronds: fronds.build(), near: near.build(), height: H };
 }
 
-function makeTree(seed) {
-  const rnd = mulberry32(seed);
+function treeTrunk(rnd, sub = 1, split = 1) {
   const H = 3.6 + rnd() * 1.6;
   const la = rnd() * 6.28, lean = 0.4 + rnd() * 0.6;
   const curve = (t) => V(Math.cos(la) * lean * t * t, H * t, Math.sin(la) * lean * t * t);
   const trunk = new Builder();
-  ringTrunk(trunk, curve, 4, 0.28, 0.16, 7, rnd, 0.1, 2);
-  const top = curve(1);
+  ringTrunk(trunk, curve, 4, 0.28, 0.16, 7, rnd, 0.1, 2, sub, split);
+  return { trunk, top: curve(1), H, curve, wood: trunk.count, r0: 0.28, r1: 0.16 };
+}
+
+function makeTree(seed) {
+  const rnd = mulberry32(seed);
+  const { trunk, top } = treeTrunk(rnd);
   const leaves = new Builder();
   const clumps = 4 + Math.floor(rnd() * 3);
   for (let i = 0; i < clumps; i++) {
@@ -280,10 +303,10 @@ function makeRock(seed) {
   return g;
 }
 
-function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, translucent = 0, rock = false, tint = 0.12, gain = 1 } = {}) {
+function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, translucent = 0, rock = false, tint = 0.12, gain = 1, cut = false } = {}) {
   return makeMaterial({
     side: alphaTest > 0 ? THREE.DoubleSide : THREE.FrontSide,
-    defines: rock ? { ROCK: 1 } : {},
+    defines: { ...(rock ? { ROCK: 1 } : {}), ...(cut ? { CUT: 1 } : {}) },
     uniforms: {
       uMap: { value: map }, uAlphaTest: { value: alphaTest }, uWind: { value: wind },
       uWrap: { value: wrap }, uTrans: { value: translucent }, uTint: { value: tint }, uGain: { value: gain },
@@ -296,7 +319,14 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
       varying vec3 vWorld;
       varying float vRand;
       varying float vBaseY;
+      #ifdef CUT
+        attribute float aCut;
+        varying float vCut;
+      #endif
       void main() {
+        #ifdef CUT
+          vCut = aCut;
+        #endif
         mat4 m = modelMatrix;
         #ifdef USE_INSTANCING
           m = modelMatrix * instanceMatrix;
@@ -323,6 +353,9 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
       varying vec3 vWorld;
       varying float vRand;
       varying float vBaseY;
+      #ifdef CUT
+        varying float vCut;
+      #endif
       void main() {
         #ifdef ROCK
           vec3 an = abs(vN);
@@ -336,9 +369,19 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         if (!gl_FrontFacing && uAlphaTest > 0.0) n = normalize(mix(-n, vec3(0.0, 1.0, 0.0), 0.5));
         vec4 d = worldData(vWorld.xz);
         float low = 1.0 - smoothstep(0.4, 2.2, vWorld.y - d.r);
-        float shadow = 1.0 - d.b * 0.55 * low;
+        float shadow = 1.0 - d.b * 0.55 * uShade * low;
         vec3 col = tex.rgb * (1.0 - uTint * 0.5 + vRand * uTint);
-        vec3 lit = lightDiffuse(n, uWrap, shadow);
+        #ifdef CUT
+          // fresh wood inside an axe notch: pale ramp, darker at the bottom of the cut
+          if (vCut > 0.04) {
+            float g = hash12(floor(vec2(vUv.x * 96.0, vWorld.y * 28.0)));
+            vec3 fresh = g < 0.33 ? vec3(0.95, 0.84, 0.64) : g < 0.75 ? vec3(0.89, 0.76, 0.54) : vec3(0.85, 0.71, 0.48);
+            if (vCut > 0.82) fresh = vec3(0.66, 0.48, 0.28);
+            else if (vCut > 0.62) fresh *= 0.86;
+            col = mix(col, fresh, step(0.12, vCut));
+          }
+        #endif
+        vec3 lit = lightAt(n, uWrap, shadow, vWorld);
         // light passing through leaves when the sun is behind them
         vec3 V = normalize(uCamPos - vWorld);
         float back = pow(max(dot(-V, uSunDir), 0.0), 3.0) * uTrans;
@@ -363,7 +406,9 @@ export class Vegetation {
       bush: foliageMaterial(tex.leaf2, { alphaTest: 0.5, wrap: 0.6, translucent: 0.3, tint: 0.3 }),
       fern: foliageMaterial(tex.fern, { alphaTest: 0.5, wrap: 0.7, translucent: 0.3, tint: 0.3, wind: 0.6 }),
       rock: foliageMaterial(tex.rock, { alphaTest: 0, wrap: 0.15, rock: true, tint: 0.25 }),
+      trunkCut: foliageMaterial(tex.trunk, { alphaTest: 0, wrap: 0.3, tint: 0.2, cut: true }),
     };
+    this.seed = seed;
     this.materials = mats;
 
     const perSide = { low: 16, medium: 22, high: 28 }[quality] ?? 22;
@@ -411,6 +456,20 @@ export class Vegetation {
         this.cells.push({ mesh: im, x: (+cx + 0.5) * CELL, z: (+cz + 0.5) * CELL, range: range[type], lod });
       }
     }
+  }
+
+  // Finely subdivided copy of a prop's trunk, for carving axe notches into it.
+  // Same shape as the instanced trunk (faces are split, not reshaped).
+  detailTrunk(p) {
+    const seed = this.seed;
+    const t = p.type === 'palms' ? palmTrunk(mulberry32(seed * 7 + p.v * 101), 14, 4) : treeTrunk(mulberry32(seed * 11 + p.v * 37), 22, 4);
+    const geo = t.trunk.build();
+    geo.setAttribute('aCut', new THREE.BufferAttribute(new Float32Array(t.trunk.count), 1));
+    return {
+      geo, H: t.H, curve: t.curve, wood: t.wood, r0: t.r0, r1: t.r1,
+      basePos: geo.attributes.position.array.slice(), baseNor: geo.attributes.normal.array.slice(),
+      material: this.materials.trunkCut,
+    };
   }
 
   setDistanceScale(k) { this.distScale = k; }

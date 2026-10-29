@@ -41,6 +41,25 @@ export class Player {
     }
   }
 
+  addCollider(c) {
+    const k = `${Math.floor(c.x / 8)},${Math.floor(c.z / 8)}`;
+    if (!this.grid.has(k)) this.grid.set(k, []);
+    this.grid.get(k).push(c);
+  }
+  removeColliderObj(c) {
+    const list = this.grid.get(`${Math.floor(c.x / 8)},${Math.floor(c.z / 8)}`);
+    const i = list ? list.indexOf(c) : -1;
+    if (i >= 0) list.splice(i, 1);
+  }
+  // is a circle at (x, z) overlapping a trunk, rock, post or placed object?
+  blocked(x, z, r) {
+    const cx = Math.floor(x / 8), cz = Math.floor(z / 8);
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      for (const c of this.grid.get(`${cx + i},${cz + j}`) || []) if (Math.hypot(c.x - x, c.z - z) < c.r + r) return true;
+    }
+    return false;
+  }
+
   removeCollider(prop) {
     const list = this.grid.get(`${Math.floor(prop.x / 8)},${Math.floor(prop.z / 8)}`);
     if (list) { const i = list.findIndex((c) => c.prop === prop); if (i >= 0) list.splice(i, 1); }

@@ -2,7 +2,7 @@
 // follow the shore, breeze in the leaves, several kinds of birds placed around
 // the listener, faint insects, footsteps per ground type + SFX.
 export class Audio {
-  constructor() { this.ctx = null; this.volume = 0.7; this.shore = 0.5; this.timers = []; }
+  constructor() { this.ctx = null; this.volume = 0.7; this.shore = 0.5; this.timers = []; this.night = 0; this.fire = 0; }
 
   start() {
     if (this.ctx) { this.ctx.resume(); return; }
@@ -44,6 +44,18 @@ export class Audio {
     loop(this.white, 0.012, 'bandpass', 2600, 0.5, 0.07, 0.009, this.natureBus); // leaves in the breeze
     loop(this.brown, 0.05, 'lowpass', 1400, 0.2, 0.05, 0.035, this.natureBus);  // soft wind
 
+    // rain: a hiss bed + low patter, faded by setRain()
+    this.rainBus = ctx.createGain(); this.rainBus.gain.value = 0; this.rainBus.connect(this.master);
+    loop(this.white, 0.05, 'bandpass', 3800, 0.35, 0.3, 0.012, this.rainBus);
+    loop(this.brown, 0.18, 'lowpass', 900, 0.4, 0.2, 0.05, this.rainBus);
+    this.every(0.05, 0.16, () => { if (this.rainBus.gain.value > 0.05) this.noise({ type: 'highpass', f0: 2500 + Math.random() * 3000, q: 0.8, dur: 0.02, gain: 0.03 * this.rainBus.gain.value, out: this.spot((Math.random() - 0.5) * 1.8, Math.random() * 0.6) }); });
+    this.every(25, 60, () => { if (this.rainBus.gain.value > 0.6) this.thunder(); });
+    // fire crackle near camp fires and torches
+    this.fireBus = ctx.createGain(); this.fireBus.gain.value = 0; this.fireBus.connect(this.master);
+    loop(this.brown, 0.12, 'lowpass', 500, 0.5, 0.4, 0.05, this.fireBus);
+    this.every(0.04, 0.22, () => { if (this.fire > 0.03) this.noise({ type: 'highpass', f0: 1500 + Math.random() * 3500, q: 1.5, dur: 0.012 + Math.random() * 0.02, attack: 0.001, gain: 0.09 * this.fire, out: this.fireBus }); });
+    this.every(0.3, 0.9, () => { if (this.night > 0.5) this.crickets(); });
+
     this.every(5.5, 9, () => this.swell());
     this.every(0.7, 2.4, () => this.lap());
     this.every(1.6, 4.5, () => this.birdCall());
@@ -57,6 +69,22 @@ export class Audio {
       this.timers.push(setTimeout(tick, (min + Math.random() * (max - min)) * 1000));
     };
     this.timers.push(setTimeout(tick, Math.random() * max * 1000));
+  }
+
+  setRain(k) { if (this.rainBus) this.rainBus.gain.setTargetAtTime(k, this.ctx.currentTime, 1.5); }
+  setFire(k) { this.fire = k; if (this.fireBus) this.fireBus.gain.setTargetAtTime(k, this.ctx.currentTime, 0.4); }
+  setNight(k) { this.night = k; if (this.natureBus) this.natureBus.gain.setTargetAtTime(0.9 - k * 0.3, this.ctx.currentTime, 2); }
+
+  thunder() {
+    const d = Math.random() * 0.6;
+    this.noise({ type: 'lowpass', f0: 220, f1: 60, q: 0.4, dur: 3.5, attack: 0.25, gain: 0.35, delay: d, buf: this.brown });
+    this.noise({ type: 'lowpass', f0: 500, f1: 120, q: 0.4, dur: 1.2, attack: 0.02, gain: 0.12, delay: d + 0.1, buf: this.brown });
+  }
+  // night: crickets chirping in pairs
+  crickets() {
+    const out = this.spot((Math.random() - 0.5) * 1.8, 0.2 + Math.random() * 0.5, this.natureBus);
+    const f = 4200 + Math.random() * 600;
+    for (let i = 0; i < 3; i++) this.tone(f, f * 0.98, 0.03, 'sine', 0.01 * this.night, i * 0.06, out);
   }
 
   setVolume(v) { this.volume = v; if (this.master) this.master.gain.value = v; }
@@ -283,6 +311,24 @@ export class Audio {
     if (name === 'catch') [523, 659, 784, 1046].forEach((f, i) => this.tone(f, f, 0.18, 'triangle', 0.09, i * 0.09));
     if (name === 'click') this.tone(1200, 900, 0.04, 'square', 0.03);
     if (name === 'swing') this.noise({ f0: 500, f1: 1800, q: 1.2, dur: 0.2, attack: 0.1, gain: 0.07, delay: 0.12 });
+    if (name === 'swish') { // scythe through the air, then grass shearing
+      this.noise({ f0: 700, f1: 2600, q: 0.9, dur: 0.28, attack: 0.12, gain: 0.08, delay: 0.1 });
+    }
+    if (name === 'mow') {
+      this.noise({ type: 'highpass', f0: 3200, f1: 5200, q: 0.6, dur: 0.22, attack: 0.01, gain: 0.08 });
+      this.noise({ f0: 1800, f1: 900, q: 0.8, dur: 0.18, gain: 0.06, delay: 0.02 });
+      for (let i = 0; i < 4; i++) this.noise({ type: 'highpass', f0: 4000 + Math.random() * 2000, q: 1, dur: 0.015, gain: 0.04, delay: 0.02 + i * 0.03 });
+    }
+    if (name === 'place') {
+      this.tone(160, 110, 0.12, 'triangle', 0.14);
+      this.noise({ type: 'lowpass', f0: 500, q: 0.5, dur: 0.14, gain: 0.18, buf: this.brown });
+      this.noise({ f0: 2400, f1: 1200, q: 0.8, dur: 0.12, gain: 0.03, delay: 0.03 });
+    }
+    if (name === 'deny') { this.tone(300, 220, 0.09, 'square', 0.025); this.tone(240, 180, 0.12, 'square', 0.025, 0.09); }
+    if (name === 'craft') {
+      [0, 0.08, 0.16].forEach((d) => this.tone(200 + d * 600, 150, 0.06, 'triangle', 0.1, d));
+      [784, 988, 1318].forEach((f, i) => this.tone(f, f, 0.12, 'triangle', 0.05, 0.26 + i * 0.07));
+    }
     if (name === 'whiff') this.noise({ f0: 1600, f1: 600, q: 1.2, dur: 0.14, attack: 0.03, gain: 0.05 });
     if (name === 'pickup') { this.tone(880, 1320, 0.08, 'sine', 0.06); this.tone(1320, 1760, 0.08, 'sine', 0.05, 0.07); }
     if (name === 'tick') this.tone(1800, 1400, 0.035, 'sine', 0.04);

@@ -1,12 +1,14 @@
 // Shared GLSL chunks + global uniforms. All colours are authored directly in
 // display space (renderer output is left linear, textures use NoColorSpace).
+// Sun, sky, fog and rain values are animated by the day cycle (daycycle.js).
 import * as THREE from 'three';
 
 export const sunDir = new THREE.Vector3(-0.45, 0.72, -0.53).normalize();
+export const MAX_LIGHTS = 8;
 
 export const globals = {
   uTime: { value: 0 },
-  uSunDir: { value: sunDir },
+  uSunDir: { value: sunDir.clone() },   // direction of the main light (sun by day, moon by night)
   uSunColor: { value: new THREE.Color(1.0, 0.97, 0.88) },
   uSkyAmb: { value: new THREE.Color(0.55, 0.68, 0.86) },
   uGroundAmb: { value: new THREE.Color(0.38, 0.42, 0.30) },
@@ -17,6 +19,16 @@ export const globals = {
   uWorldTex: { value: null },
   uWaterLevel: { value: 0 },
   uGust: { value: new THREE.Vector4(0, 0, -100, 0) }, // x, z, start time, strength: felled-tree shockwave
+  uShade: { value: 1 },      // strength of the painted canopy shadows (weak at night / under rain)
+  uRain: { value: 0 },       // 0..1 rain intensity
+  uWet: { value: 0 },        // 0..1 how soaked the ground is
+  uNight: { value: 0 },      // 0 day .. 1 deep night
+  uGlintDir: { value: sunDir.clone() },          // what the lagoon reflects: the real sun, or the moon at night
+  uGlintCol: { value: new THREE.Color(1, 0.97, 0.88) },
+  // point lights (torches, camp fires): xyz + radius, rgb + unused
+  uLightPos: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4()) },
+  uLightCol: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4()) },
+  uLightN: { value: 0 },
 };
 
 export const commonGLSL = /* glsl */`
@@ -31,6 +43,15 @@ uniform vec3 uCamPos;
 uniform float uWorldSize;
 uniform sampler2D uWorldTex;
 uniform float uWaterLevel;
+uniform float uShade;
+uniform float uRain;
+uniform float uWet;
+uniform float uNight;
+uniform vec3 uGlintDir;
+uniform vec3 uGlintCol;
+uniform vec4 uLightPos[${MAX_LIGHTS}];
+uniform vec4 uLightCol[${MAX_LIGHTS}];
+uniform int uLightN;
 
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -64,6 +85,24 @@ vec3 lightDiffuse(vec3 n, float wrap, float shadow) {
   vec3 amb = mix(uGroundAmb, uSkyAmb, n.y * 0.5 + 0.5);
   return amb * 0.62 + uSunColor * ndl * 0.78 * shadow;
 }
+// warm pools of light around torches and camp fires, in a few flat steps
+vec3 pointLights(vec3 wpos, vec3 n) {
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < ${MAX_LIGHTS}; i++) {
+    if (i >= uLightN) break;
+    vec3 d = uLightPos[i].xyz - wpos;
+    float l = length(d);
+    float a = clamp(1.0 - l / uLightPos[i].w, 0.0, 1.0);
+    float ndl = clamp(dot(n, d / max(l, 0.001)) * 0.55 + 0.45, 0.0, 1.0);
+    acc += uLightCol[i].rgb * (a * a * ndl);
+  }
+  float m = max(acc.r, max(acc.g, acc.b));
+  float q = floor(m * 5.0 + 0.35) / 5.0;
+  return acc * (q / max(m, 0.0001));
+}
+vec3 lightAt(vec3 n, float wrap, float shadow, vec3 wpos) {
+  return lightDiffuse(n, wrap, shadow) + pointLights(wpos, n);
+}
 `;
 
 export function makeMaterial({ uniforms = {}, vertex, fragment, ...rest }) {
@@ -74,3 +113,6 @@ export function makeMaterial({ uniforms = {}, vertex, fragment, ...rest }) {
     ...rest,
   });
 }
+
+// Light reaching the first-person held items (multiplies their banded shading).
+export const heldLight = { value: new THREE.Color(1, 1, 1) };

@@ -1,15 +1,17 @@
-// Axe: 3D voxel pixel-art viewmodel (see axeModel.js), chop palms / jungle
-// trees with notches carved into the trunk, chips, shake, fall, and drops.
+// Axe: modelled pixel-art viewmodel (see axeModel.js), chop palms / jungle
+// trees: each blow carves a real wedge into the trunk geometry (fresh pale
+// wood inside), chips, shake, fall, and drops.
 // Felled trees are remembered per world and grow back after a while.
 import * as THREE from 'three';
 import { AxeModel } from './axeModel.js';
 import { globals } from './shaders.js';
+import { seedNumber } from './world.js';
 
 const HITS = { palms: 4, trees: 5 };
 const REGROW_MS = 20 * 60 * 1000;
 const FKEY = 'tropicool.felled.v1';
 
-const worldKey = (cfg) => `${cfg.seed}|${cfg.islands}|${cfg.size}|${cfg.relief}|${cfg.vegetation}`;
+export const worldKey = (cfg) => `${seedNumber(cfg.seed)}|${cfg.islands}|${cfg.size}|${cfg.relief}|${cfg.vegetation}`;
 function loadAll() { try { return JSON.parse(localStorage.getItem(FKEY)) || {}; } catch (_) { return {}; } }
 
 // keys of trees still felled (not yet regrown) for this world config
@@ -18,46 +20,15 @@ export function loadFelled(cfg) {
   const list = (all[worldKey(cfg)] || []).filter((e) => now - e.t < REGROW_MS);
   return new Set(list.map((e) => e.k));
 }
-function saveFelled(cfg, key) {
+export function saveFelled(cfg, key) {
   const all = loadAll(), wk = worldKey(cfg), now = Date.now();
   all[wk] = (all[wk] || []).filter((e) => now - e.t < REGROW_MS);
   all[wk].push({ k: key, t: now });
   try { localStorage.setItem(FKEY, JSON.stringify(all)); } catch (_) { /* private mode */ }
 }
 
-// Cut mark: a smooth eye-shaped wedge of fresh wood (plain colours, no pixel
-// noise), a slightly darker crease in the middle. 3 depth stages.
-function notchTexture(stage) {
-  const W = 128, H = 96;
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const g = c.getContext('2d');
-  const depth = [0.55, 0.78, 1][stage];
-  const rx = W * (0.26 + 0.22 * depth), ry = H * (0.16 + 0.26 * depth);
-  const eye = (sx, sy, col) => {
-    g.fillStyle = col; g.beginPath();
-    g.moveTo(W / 2 - rx * sx, H / 2);
-    g.quadraticCurveTo(W / 2, H / 2 - ry * sy * 2, W / 2 + rx * sx, H / 2);
-    g.quadraticCurveTo(W / 2, H / 2 + ry * sy * 2, W / 2 - rx * sx, H / 2);
-    g.fill();
-  };
-  eye(1, 1, '#f2d7a2');               // fresh wood
-  eye(0.92, 0.5, '#d9b47a');          // inner faces in shade
-  eye(0.8, 0.12 + 0.08 * depth, '#a97a45'); // crease
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.NoColorSpace;
-  return t;
-}
-
-// small plane bent to hug a trunk of radius r (edges pushed back)
-function notchGeometry(w, h, r) {
-  const g = new THREE.PlaneGeometry(w, h, 6, 1);
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i);
-    p.setZ(i, -(r - Math.sqrt(Math.max(0, r * r - x * x))));
-  }
-  return g;
-}
+const DEPTH = [0.3, 0.46, 0.6, 0.7, 0.78]; // notch depth per blow, fraction of the trunk radius
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 export class Axe {
   constructor(scene, camera, tex, hooks) {
@@ -67,12 +38,8 @@ export class Axe {
     this.hits = new Map();
     this.shakes = [];
     this.falling = [];
-    this.marks = [];
+    this.chopped = []; // trees whose trunk was swapped for a carvable copy
     this.camShake = 0;
-    this.notchMats = [0, 1, 2].map((s) => new THREE.MeshBasicMaterial({
-      map: notchTexture(s), alphaTest: 0.5,
-      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
-    }));
     this.ray = new THREE.Raycaster();
 
     // wood chips / leaf bits
@@ -114,8 +81,8 @@ export class Axe {
     this.world = world; this.veg = veg; this.player = player;
     this.hits.clear();
     for (const f of this.falling) f.meshes.forEach((m) => m.removeFromParent());
-    for (const m of this.marks) { m.removeFromParent(); m.geometry.dispose(); }
-    this.falling = []; this.shakes = []; this.marks = [];
+    for (const p of this.chopped) if (p.chop) { p.chop.mesh.removeFromParent(); p.chop.geo.dispose(); p.chop = null; }
+    this.falling = []; this.shakes = []; this.chopped = [];
   }
 
   setEquipped(on) { this.equipped = on; this.sprite.setVisible(on); }
@@ -149,73 +116,84 @@ export class Axe {
     if (this.sprite.swing()) this.hooks.sound?.('swing');
   }
 
+  // swap the instanced trunk for a finely subdivided copy we can carve
+  detach(p) {
+    if (p.chop || !p.inst?.[0]) return;
+    const { mesh: im, i } = p.inst[0];
+    const m = new THREE.Matrix4(); im.getMatrixAt(i, m);
+    const d = this.veg.detailTrunk(p);
+    const mesh = new THREE.Mesh(d.geo, d.material);
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(m); mesh.matrixWorld.copy(m);
+    this.scene.add(mesh);
+    im.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0));
+    im.instanceMatrix.needsUpdate = true;
+    p.chop = { ...d, mesh, base: m.clone(), inv: m.clone().invert(), notches: [] };
+    this.chopped.push(p);
+  }
+
   // where on the trunk the blade bites: aim ray first, else a ray at chest height
   trunkHit(p) {
-    const trunk = p.inst?.[0];
-    if (!trunk) return null;
+    const mesh = p.chop?.mesh;
+    if (!mesh) return null;
     const cam = this.camera.position;
     const dir = new THREE.Vector3(); this.camera.getWorldDirection(dir);
     const y = Math.min(Math.max(cam.y - 0.35, p.y + 0.6), p.y + 1.7);
     const tries = [dir, new THREE.Vector3(p.x - cam.x, y - cam.y, p.z - cam.z).normalize()];
     for (const d of tries) {
       this.ray.set(cam, d); this.ray.far = 3.5;
-      const hit = this.ray.intersectObject(trunk.mesh, false).find((h) => h.instanceId === trunk.i);
+      const hit = this.ray.intersectObject(mesh, false)[0];
       if (hit && hit.point.y > p.y + 0.3) return hit;
     }
     return null;
   }
 
-  // Trunk axis + widest radius of the ring that was hit. Two vertices of the
-  // hit face on the same ring row satisfy v = centre + normal * radius.
-  ringInfo(p, hit) {
-    const { mesh, i } = p.inst[0];
-    const g = mesh.geometry;
-    const P = g.attributes.position, Nn = g.attributes.normal, UV = g.attributes.uv;
-    const ids = [hit.face.a, hit.face.b, hit.face.c];
-    const m = new THREE.Matrix4(); mesh.getMatrixAt(i, m);
-    for (let x = 0; x < 3; x++) for (let y = x + 1; y < 3; y++) {
-      const a = ids[x], b = ids[y];
-      if (Math.abs(UV.getY(a) - UV.getY(b)) > 1e-3) continue;
-      const dn = Math.hypot(Nn.getX(a) - Nn.getX(b), Nn.getY(a) - Nn.getY(b), Nn.getZ(a) - Nn.getZ(b));
-      if (dn < 1e-3) continue;
-      const ra = Math.hypot(P.getX(a) - P.getX(b), P.getY(a) - P.getY(b), P.getZ(a) - P.getZ(b)) / dn;
-      const centre = new THREE.Vector3(P.getX(a) - Nn.getX(a) * ra, P.getY(a) - Nn.getY(a) * ra, P.getZ(a) - Nn.getZ(a) * ra).applyMatrix4(m);
-      // rings are wider at their base (v = 0) than at their top (v = 1)
-      const rMax = (UV.getY(a) < 0.5 ? ra : ra * 1.12 / 0.9) * p.s;
-      return { centre, r: rMax };
-    }
-    return null;
-  }
-
+  // Each blow deepens the nearest notch (or starts one): a wedge with a
+  // slanted upper face and a nearly flat lower face, cut into the vertices.
   carve(p, hit) {
-    const info = this.ringInfo(p, hit);
-    if (!info) return;
-    const r = info.r + 0.015;
-    // radial direction from the trunk axis to the impact, kept nearly horizontal
-    const n = new THREE.Vector3(hit.point.x - info.centre.x, 0, hit.point.z - info.centre.z).normalize();
-    // deepen an existing notch close to this spot, otherwise start a new one
-    let mark = (p.marks || []).find((k) => k.userData.pos.distanceTo(hit.point) < 0.4);
-    if (mark) {
-      const st = Math.min(2, mark.userData.stage + 1);
-      mark.userData.stage = st;
-      mark.material = this.notchMats[st];
-      mark.geometry.dispose();
-      mark.geometry = notchGeometry(0.3 + 0.08 * st, 0.2 + 0.05 * st, mark.userData.r);
-      return;
+    const c = p.chop;
+    const L = hit.point.clone().applyMatrix4(c.inv);
+    const ctr = c.curve(Math.max(0, Math.min(1, L.y / c.H)));
+    const dx = L.x - ctr.x, dz = L.z - ctr.z, dl = Math.hypot(dx, dz) || 1;
+    const dir = [dx / dl, dz / dl];
+    let n = c.notches.find((k) => Math.abs(k.y - L.y) < 0.24 && k.d[0] * dir[0] + k.d[1] * dir[1] > 0.4);
+    if (n) n.stage = Math.min(DEPTH.length - 1, n.stage + 1);
+    else c.notches.push(n = { y: L.y, d: dir, stage: 0 });
+
+    const P = c.geo.attributes.position, N = c.geo.attributes.normal, A = c.geo.attributes.aCut;
+    const bp = c.basePos, bn = c.baseNor;
+    for (let v = 0; v < c.wood; v++) {
+      const x = bp[v * 3], y = bp[v * 3 + 1], z = bp[v * 3 + 2];
+      const cc = c.curve(Math.max(0, Math.min(1, y / c.H)));
+      let rx = x - cc.x, rz = z - cc.z;
+      const rl = Math.hypot(rx, rz) || 1e-4; rx /= rl; rz /= rl;
+      let best = 0, nx = bn[v * 3], ny = bn[v * 3 + 1], nz = bn[v * 3 + 2], cut = 0;
+      for (const k of c.notches) {
+        const ang = smooth(0.2, 0.72, rx * k.d[0] + rz * k.d[1]);
+        if (ang <= 0) continue;
+        const r = c.r0 + (c.r1 - c.r0) * (y / c.H);
+        const D = r * DEPTH[k.stage], hu = D * 1.15, hl = D * 0.32;
+        const dy = y - k.y;
+        const kk = dy >= 0 ? 1 - dy / hu : 1 + dy / hl;
+        if (kk <= 0) continue;
+        const disp = Math.min(rl * 0.92, D * kk * ang);
+        if (disp <= best) continue;
+        best = disp; cut = kk * ang;
+        // face normals: upper face looks out and down, lower face out and up
+        const fy = dy >= 0 ? -D / hu : D / hl, fl = Math.hypot(1, fy);
+        const fx = rx / fl, fyy = fy / fl, fz = rz / fl;
+        nx = bn[v * 3] + (fx - bn[v * 3]) * ang; ny = bn[v * 3 + 1] + (fyy - bn[v * 3 + 1]) * ang; nz = bn[v * 3 + 2] + (fz - bn[v * 3 + 2]) * ang;
+      }
+      P.setXYZ(v, x - rx * best, y, z - rz * best);
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      N.setXYZ(v, nx / nl, ny / nl, nz / nl);
+      A.setX(v, cut);
     }
-    mark = new THREE.Mesh(notchGeometry(0.3, 0.2, r), this.notchMats[0]);
-    mark.matrixAutoUpdate = false;
-    // concentric with the trunk: plane centre sits at radius r from the axis
-    const pos = new THREE.Vector3(info.centre.x, hit.point.y, info.centre.z).addScaledVector(n, r);
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
-    mark.matrix.compose(pos, q, new THREE.Vector3(1, 1, 1));
-    mark.userData = { pos: hit.point.clone(), stage: 0, r, base: mark.matrix.clone() };
-    this.scene.add(mark);
-    (p.marks ||= []).push(mark);
-    this.marks.push(mark);
+    P.needsUpdate = N.needsUpdate = A.needsUpdate = true;
   }
 
   strike() {
+    if (this.hooks.hitPlaced?.()) { this.sprite.freeze(0.05); this.camShake = 0.6; return; } // knock a placed object loose
     const p = this.target();
     if (!p) { this.hooks.sound?.('whiff'); return; }
     const n = (this.hits.get(p) || 0) + 1;
@@ -225,9 +203,10 @@ export class Axe {
     // a shaking tree must be back at rest before we ray-cast against it
     const sh = this.shakes.find((s) => s.p === p);
     if (sh?.base) this.parts(p).forEach((part, k) => part.set(sh.base[k]));
+    this.detach(p);
     const hit = this.trunkHit(p);
     if (hit) this.carve(p, hit);
-    if (sh) sh.base = null; // re-capture including the new notch
+    if (sh) sh.base = null; // re-capture
     const hp = hit ? hit.point : new THREE.Vector3(p.x + (cam.x - p.x) / d * 0.3 * p.s, p.y + 1.1, p.z + (cam.z - p.z) / d * 0.3 * p.s);
     this.burst(hp.x, hp.y, hp.z, 12, [0.55, 0.36, 0.18], 1.8);
     this.burst(hp.x, hp.y, hp.z, 6, [0.95, 0.82, 0.58], 1.4);
@@ -240,13 +219,14 @@ export class Axe {
     else this.shakes.push({ p, t: 0, dir: [(p.x - cam.x) / d, (p.z - cam.z) / d] });
   }
 
-  // everything that moves with a tree (trunk, crown, notches)
+  // everything that moves with a tree (crown instances + the carved trunk)
   parts(p) {
-    const list = (p.inst || []).map(({ mesh, i }) => ({
+    const list = (p.inst || []).filter((_, k) => !(p.chop && k === 0)).map(({ mesh, i }) => ({
       get: (m) => mesh.getMatrixAt(i, m),
       set: (m) => { mesh.setMatrixAt(i, m); mesh.instanceMatrix.needsUpdate = true; },
     }));
-    for (const mk of p.marks || []) list.push({ get: (m) => m.copy(mk.userData.base), set: (m) => mk.matrix.copy(m) });
+    const c = p.chop;
+    if (c) list.push({ get: (m) => m.copy(c.base), set: (m) => { c.mesh.matrix.copy(m); c.mesh.matrixWorld.copy(m); } });
     return list;
   }
 
@@ -255,7 +235,8 @@ export class Axe {
     this.shakes = this.shakes.filter((s) => s.p !== p);
     const meshes = [], base = [];
     const m = new THREE.Matrix4();
-    for (const { mesh, i } of p.inst || []) {
+    for (const [k, { mesh, i }] of (p.inst || []).entries()) {
+      if (p.chop && k === 0) continue; // trunk already replaced by the carved copy
       mesh.getMatrixAt(i, m);
       if (!mesh.visible) { mesh.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0)); mesh.instanceMatrix.needsUpdate = true; continue; } // inactive LOD
       const tmp = new THREE.Mesh(mesh.geometry, mesh.material);
@@ -267,7 +248,7 @@ export class Axe {
       mesh.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0));
       mesh.instanceMatrix.needsUpdate = true;
     }
-    for (const mk of p.marks || []) { meshes.push(mk); base.push(mk.userData.base.clone()); }
+    if (p.chop) { meshes.push(p.chop.mesh); base.push(p.chop.base.clone()); }
     const cam = this.camera.position;
     const away = new THREE.Vector3(p.x - cam.x, 0, p.z - cam.z).normalize();
     const axis = new THREE.Vector3(0, 1, 0).cross(away).normalize();
@@ -281,8 +262,7 @@ export class Axe {
   finishFall(f) {
     const { p } = f;
     f.meshes.forEach((m) => m.removeFromParent());
-    for (const mk of p.marks || []) { mk.geometry.dispose(); this.marks.splice(this.marks.indexOf(mk), 1); }
-    p.marks = [];
+    if (p.chop) { p.chop.geo.dispose(); p.chop = null; this.chopped.splice(this.chopped.indexOf(p), 1); }
     const tip = f.away.clone().multiplyScalar(5 * p.s);
     for (let k = 0; k < 4; k++) {
       const t = k / 3;

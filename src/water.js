@@ -57,12 +57,31 @@ export function buildWater() {
         float lines = smoothstep(0.86, 0.97, 1.0 - abs(c1 - c2) * 3.0);
         col += lines * 0.22 * (1.0 - smoothstep(25.0, 120.0, dist));
 
-        // sun glints
+        // sky colour follows the time of day (sunset, night)
+        col *= (uSkyAmb * 0.9 + uSunColor * 0.35) / vec3(0.845, 0.95, 1.08); // = 1 at noon
+
+        // sun (or moon) glints: a glittering path that stretches when the light is low
         vec3 R = reflect(-V, n);
-        float spec = pow(max(dot(R, uSunDir), 0.0), 160.0);
-        float sparkle = step(0.72, hash12(px + floor(uTime * 6.0))) * spec;
-        col += (spec * 0.6 + sparkle * 2.0) * uSunColor;
+        float low = 1.0 - smoothstep(0.04, 0.5, uGlintDir.y);
+        float spec = pow(max(dot(R, uGlintDir), 0.0), mix(160.0, 30.0, low));
+        float sparkle = step(0.72 - low * 0.14, hash12(px + floor(uTime * 6.0))) * spec;
+        col += (spec * (0.6 + low * 0.6) + sparkle * (2.0 + low * 1.5)) * uGlintCol;
         alpha = min(1.0, alpha + spec * 0.6);
+
+        // rain: expanding pixel rings, one drop per cell at random times
+        if (uRain > 0.01 && dist < 45.0) {
+          vec2 rc = floor(p * 1.4);
+          for (int k = 0; k < 2; k++) {
+            vec2 cell = rc + vec2(float(k) * 17.0, 0.0);
+            vec2 h = hash22(cell);
+            float t = fract(uTime * (0.7 + h.y * 0.6) + h.x);
+            vec2 c = (rc + 0.2 + h * 0.6) / 1.4;
+            float r = length(p - c);
+            float ring = step(abs(r - t * 0.42), 0.035) * (1.0 - t) * step(h.x, uRain);
+            col += vec3(0.85, 0.95, 1.0) * ring * 0.45;
+          }
+          col = mix(col, col * vec3(0.8, 0.86, 0.9), uRain * 0.3);
+        }
 
         // shore foam
         float foamLine = 0.12 + 0.1 * sin(uTime * 1.3 + p.x * 0.35 + p.y * 0.25) + (hash12(px) - 0.5) * 0.08;
@@ -72,7 +91,8 @@ export function buildWater() {
 
         // shading from palms & hut onto the water
         float sh = worldData(p).b;
-        col *= 1.0 - sh * 0.35;
+        col *= 1.0 - sh * 0.35 * uShade;
+        col += pointLights(vWorld, vec3(0.0, 1.0, 0.0)) * 0.6 * uNight;
 
         gl_FragColor = vec4(applyFog(col, vWorld), alpha);
       }`,

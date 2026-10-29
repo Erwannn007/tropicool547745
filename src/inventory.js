@@ -1,129 +1,14 @@
 // Inventory: 9-slot hotbar + 27 storage slots, block-game style stack rules
 // (pick up / place / split / shift-move / double-click collect / number-key
-// swap), rendered as "liquid glass" DOM. Mouse, touch and gamepad.
-import { SPECIES } from './fishing.js';
-import { fishIcon } from './textures.js';
+// swap), crafting list, pixel panels matching the game menus. Item icons are
+// rendered from the 3D models (icons.js). Mouse, touch and gamepad.
+import { itemDef, RECIPES, CAT_COLOR } from './items.js';
+import { iconURL } from './icons.js';
 
 const HOTBAR = 9, SIZE = 36;
 const KEY = 'tropicool.inventory.v1';
-
-// ---------------------------------------------------------------- items
-function rodIcon() {
-  const c = document.createElement('canvas'); c.width = 16; c.height = 16;
-  const g = c.getContext('2d');
-  const px = (x, y, col) => { g.fillStyle = col; g.fillRect(x, y, 1, 1); };
-  for (let i = 0; i < 13; i++) { // diagonal rod, handle bottom-left
-    const x = 1 + i, y = 14 - i;
-    px(x, y, i < 4 ? '#c89a5a' : i < 5 ? '#2b2f3a' : '#9a6a3a');
-    if (i < 10) px(x + 1, y, i < 4 ? '#8a6232' : '#6e4a27');
-  }
-  px(3, 11, '#2b2f3a'); px(4, 12, '#4a5060'); // reel
-  for (let y = 2; y < 11; y++) px(14, y, '#e8f0f8'); // line
-  px(14, 11, '#ff3b2f'); px(13, 12, '#ff3b2f'); px(14, 12, '#ffffff'); // bobber
-  return c;
-}
-
-// 16x16 pixel icons from character maps; a dark outline is added around shapes
-function pixelIcon(rows, pal) {
-  const c = document.createElement('canvas'); c.width = 16; c.height = 16;
-  const g = c.getContext('2d');
-  const at = (x, y) => (rows[y] && rows[y][x] && rows[y][x] !== '.' ? rows[y][x] : null);
-  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
-    const k = at(x, y);
-    if (k) { g.fillStyle = pal[k]; g.fillRect(x, y, 1, 1); }
-    else if (at(x - 1, y) || at(x + 1, y) || at(x, y - 1) || at(x, y + 1)) { g.fillStyle = 'rgba(28,22,26,.9)'; g.fillRect(x, y, 1, 1); }
-  }
-  return c;
-}
-
-const AXE = [
-  '................',
-  '..........ss....',
-  '.........smmw...',
-  '........dmmmlw..',
-  '.......dmmmmllw.',
-  '........dmmmmlw.',
-  '.......h.dmmmlw.',
-  '......hb..dmmw..',
-  '.....hb....ss...',
-  '....hb..........',
-  '...hb...........',
-  '..hb............',
-  '.gr.............',
-  'gr..............',
-  '................',
-  '................',
-];
-const LOG = [
-  '................',
-  '................',
-  '................',
-  '.........rrrr...',
-  '......bbrccccrr.',
-  '...bbbbrccrrcr..',
-  '.bbBbbbrcrccrcr.',
-  '.bBbbBbrcrcrcrc.',
-  '.bbbBbbrcrccrcr.',
-  '.bBbbbBrccrrcr..',
-  '.bbbbbbbrcccr...',
-  '..bbbbbbbrrr....',
-  '................',
-  '................',
-  '................',
-  '................',
-];
-const COCO = [
-  '................',
-  '................',
-  '......nnnn......',
-  '....nNnnnnnn....',
-  '...nNNnnfnnnn...',
-  '..nnNnnnnfnnnn..',
-  '..nnnnennnnfnn..',
-  '..nnnenennnnnn..',
-  '..nnnnnnfnnnnn..',
-  '..nnfnnnnnnnnd..',
-  '...nnnnnnnnnd...',
-  '...dnnnnnnndd...',
-  '.....ddddddd....',
-  '................',
-  '................',
-  '................',
-];
-const ICONS = {
-  axe: () => pixelIcon(AXE, { s: '#5a6270', m: '#9aa4b2', l: '#c8d0dc', w: '#f2f6fb', d: '#454c58', h: '#c08a52', b: '#7a5030', g: '#5a2e1a', r: '#8a4a2a' }),
-  'wood:palm': () => pixelIcon(LOG, { b: '#9a7046', B: '#7a5432', r: '#c69a62', c: '#e6c48c' }),
-  'wood:tree': () => pixelIcon(LOG, { b: '#6a4428', B: '#4e301a', r: '#b07a48', c: '#d8a868' }),
-  coconut: () => pixelIcon(COCO, { n: '#7a4e2a', N: '#a8784a', f: '#5a3418', e: '#2a1a10', d: '#5a3820' }),
-};
-const NAMES = {
-  axe: ['Hache', 1, 'Outil'],
-  'wood:palm': ['Bois de palmier', 64, 'Matériau'],
-  'wood:tree': ['Bois tropical', 64, 'Matériau'],
-  coconut: ['Noix de coco', 64, 'Nourriture'],
-};
-
-const iconCache = new Map();
-export function itemDef(id) {
-  if (id === 'rod') return { name: 'Canne à pêche', max: 1, sub: 'Outil', icon: () => rodIcon() };
-  if (NAMES[id]) { const [name, max, sub] = NAMES[id]; return { name, max, sub, icon: ICONS[id] }; }
-  if (id.startsWith('fish:')) {
-    const s = SPECIES[+id.slice(5)];
-    return { name: s.name, max: 64, sub: 'Poisson', icon: () => fishIcon(s.c, s.name.length * 31) };
-  }
-  return { name: id, max: 64, sub: '', icon: () => document.createElement('canvas') };
-}
-function iconURL(id) {
-  if (!iconCache.has(id)) {
-    const src = itemDef(id).icon();
-    // centre on a square canvas so every icon shares the same pixel grid
-    const c = document.createElement('canvas'); c.width = c.height = 32;
-    c.getContext('2d').drawImage(src, (32 - src.width * (src.width <= 16 ? 2 : 1)) / 2, (32 - src.height * (src.width <= 16 ? 2 : 1)) / 2,
-      src.width * (src.width <= 16 ? 2 : 1), src.height * (src.width <= 16 ? 2 : 1));
-    iconCache.set(id, c.toDataURL());
-  }
-  return iconCache.get(id);
-}
+const KIT = 2; // starter-kit version: new tools are handed out once to existing saves
+export { itemDef };
 
 // ---------------------------------------------------------------- model
 export class Inventory {
@@ -134,9 +19,10 @@ export class Inventory {
     this.cursor = null; // stack held by the pointer while the inventory is open
     this.open = false;
     this.padIndex = 0;
+    this.kit = 0;
     this.load();
-    if (!this.slots.some((s) => s && s.id === 'rod')) this.add('rod', 1);
-    if (!this.slots.some((s) => s && s.id === 'axe')) this.add('axe', 1);
+    for (const id of ['rod', 'axe', 'scythe']) if (!this.count(id) && !(id === 'scythe' && this.kit >= KIT)) this.add(id, 1);
+    if (this.kit < KIT) { this.add('torch', 4); this.add('transat', 1); this.add('campfire', 1); this.kit = KIT; this.save(); }
     this.buildDOM();
     this.render();
   }
@@ -144,12 +30,42 @@ export class Inventory {
   load() {
     try {
       const d = JSON.parse(localStorage.getItem(KEY));
-      if (d && Array.isArray(d.slots) && d.slots.length === SIZE) { this.slots = d.slots; this.selected = d.selected | 0; }
+      if (d && Array.isArray(d.slots) && d.slots.length === SIZE) { this.slots = d.slots; this.selected = d.selected | 0; this.kit = d.kit | 0; }
     } catch (_) { /* fresh inventory */ }
   }
-  save() { try { localStorage.setItem(KEY, JSON.stringify({ slots: this.slots, selected: this.selected })); } catch (_) { /* private mode */ } }
+  save() { try { localStorage.setItem(KEY, JSON.stringify({ slots: this.slots, selected: this.selected, kit: this.kit })); } catch (_) { /* private mode */ } }
 
   get held() { return this.slots[this.selected]; }
+  count(id) { return this.slots.reduce((n, s) => n + (s && s.id === id ? s.n : 0), 0) + (this.cursor?.id === id ? this.cursor.n : 0); }
+
+  // take n items out (selected stack first)
+  take(id, n = 1) {
+    const order = [this.selected, ...this.slots.keys()];
+    for (const i of order) {
+      const s = this.slots[i];
+      if (!s || s.id !== id || n <= 0) continue;
+      const k = Math.min(n, s.n); s.n -= k; n -= k;
+      if (s.n <= 0) this.slots[i] = null;
+    }
+    this.changed();
+    return n === 0;
+  }
+  canCraft(r) { return r.need.every(([id, n]) => this.count(id) >= n); }
+  craft(k) {
+    const r = RECIPES[k];
+    if (!r) return;
+    if (!this.canCraft(r)) { this.sound?.('deny'); this.toast?.('Il manque des matériaux'); return; }
+    for (const [id, n] of r.need) {
+      let left = n;
+      if (this.cursor?.id === id) { const t = Math.min(left, this.cursor.n); this.cursor.n -= t; left -= t; if (this.cursor.n <= 0) this.cursor = null; }
+      if (left) this.take(id, left);
+    }
+    const left = this.add(r.out, r.n);
+    if (left) { this.cursor = { id: r.out, n: left }; }
+    this.sound?.('craft');
+    this.flash = r.out;
+    this.changed();
+  }
 
   // add to existing stacks first (hotbar, then storage), then empty slots
   add(id, n = 1) {
@@ -260,13 +176,22 @@ export class Inventory {
   // ---- gamepad -------------------------------------------------------
   handlePad(pressed) {
     let i = this.padIndex;
+    if (i >= SIZE) { // crafting column
+      const k = i - SIZE, n = RECIPES.length;
+      if (pressed.has('up')) i = SIZE + (k + n - 1) % n;
+      if (pressed.has('down')) i = SIZE + (k + 1) % n;
+      if (pressed.has('left')) i = HOTBAR + 8;
+      if (i !== this.padIndex) { this.padIndex = i; this.render(); this.hideTip(); }
+      if (pressed.has('confirm')) this.craft(k);
+      return;
+    }
     const row = i < HOTBAR ? 3 : Math.floor((i - HOTBAR) / 9), col = i < HOTBAR ? i : (i - HOTBAR) % 9;
     const at = (r, c) => (r === 3 ? c : HOTBAR + r * 9 + c);
     if (pressed.has('left')) i = at(row, (col + 8) % 9);
-    if (pressed.has('right')) i = at(row, (col + 1) % 9);
+    if (pressed.has('right')) i = col === 8 ? SIZE + Math.min(row, RECIPES.length - 1) : at(row, col + 1);
     if (pressed.has('up')) i = at((row + 3) % 4, col);
     if (pressed.has('down')) i = at((row + 1) % 4, col);
-    if (i !== this.padIndex) { this.padIndex = i; this.render(); this.showTipFor(i, this.slotEls[i]); }
+    if (i !== this.padIndex) { this.padIndex = i; this.render(); if (i < SIZE) this.showTipFor(i, this.slotEls[i]); else this.hideTip(); }
     if (pressed.has('confirm')) this.leftClick(i);
     if (pressed.has('action')) this.rightClick(i);
     if (pressed.has('quick')) this.quickMove(i);
@@ -290,6 +215,21 @@ export class Inventory {
     for (let i = HOTBAR; i < SIZE; i++) storage.appendChild(mk(i));
     for (let i = 0; i < HOTBAR; i++) hot.appendChild(mk(i));
 
+    // crafting list
+    this.craftEls = RECIPES.map((r, k) => {
+      const el = document.createElement('div');
+      el.className = 'recipe';
+      const out = itemDef(r.out);
+      el.innerHTML = `<div class="r-out"><img alt="" src="${iconURL(r.out)}">${r.n > 1 ? `<span>×${r.n}</span>` : ''}</div>
+        <div class="r-body"><div class="r-name">${out.name}</div><div class="r-need">${r.need.map(([id, n]) => `<span class="need" data-id="${id}" data-n="${n}"><img alt="" src="${iconURL(id)}">${n}</span>`).join('')}</div></div>
+        <button class="r-btn" tabindex="-1">Créer</button>`;
+      el.querySelector('.r-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.craft(k); });
+      el.addEventListener('pointerenter', () => this.showRecipeTip(k, el));
+      el.addEventListener('pointerleave', () => this.hideTip());
+      $('#craft-list').appendChild(el);
+      return el;
+    });
+
     // in-game hotbar (separate elements)
     this.hudSlots = [];
     for (let i = 0; i < HOTBAR; i++) {
@@ -302,6 +242,7 @@ export class Inventory {
     }
     this.lens = this.hotbarEl.querySelector('.lens');
     this.nameEl = $('#held-name');
+    this.subEl = $('#inv-sub');
     this.cursorEl = $('#inv-cursor');
     this.tipEl = $('#inv-tip');
 
@@ -386,16 +327,21 @@ export class Inventory {
     const s = this.slots[i];
     if (!s || this.cursor) { this.hideTip(); return; }
     const d = itemDef(s.id);
-    let extra = d.sub;
-    if (s.id.startsWith('fish:')) {
-      const sp = SPECIES[+s.id.slice(5)];
-      extra += ` · ${sp.d[0]}–${sp.d[1]} m`;
-    }
-    this.tipEl.innerHTML = `<b>${d.name}</b><span>${extra}</span>`;
+    this.tipEl.innerHTML = `<b>${d.name}</b><em style="color:${CAT_COLOR[d.cat] || '#fff'}">${d.cat}${s.n > 1 ? ` · ×${s.n}` : ''}</em><span>${d.desc}</span>`;
+    this.placeTip(el, x, y);
+  }
+  showRecipeTip(k, el) {
+    const d = itemDef(RECIPES[k].out);
+    this.tipEl.innerHTML = `<b>${d.name}</b><em style="color:${CAT_COLOR[d.cat] || '#fff'}">${d.cat}</em><span>${d.desc}</span>`;
+    this.placeTip(el);
+  }
+  placeTip(el, x, y) {
     this.tipEl.classList.remove('hidden');
-    const r = el.getBoundingClientRect();
-    const tx = x ?? r.right, ty = y ?? r.top;
-    this.tipEl.style.transform = `translate(${Math.min(innerWidth - 200, tx + 14)}px, ${Math.max(8, ty - 44)}px)`;
+    const r = el.getBoundingClientRect(), tw = this.tipEl.offsetWidth, th = this.tipEl.offsetHeight;
+    let tx = (x ?? r.right) + 14, ty = (y ?? r.top) - th - 6;
+    if (tx + tw > innerWidth - 8) tx = (x ?? r.left) - tw - 14;
+    if (ty < 8) ty = (y ?? r.bottom) + 18;
+    this.tipEl.style.transform = `translate(${Math.max(8, tx)}px, ${Math.max(8, Math.min(innerHeight - th - 8, ty))}px)`;
   }
   hideTip() { this.tipEl?.classList.add('hidden'); }
 
@@ -403,11 +349,12 @@ export class Inventory {
     const img = el.firstChild, cnt = el.children[1];
     if (s) {
       const url = iconURL(s.id);
+      el.dataset.cat = itemDef(s.id).cat;
       if (img.dataset.id !== s.id) { img.src = url; img.dataset.id = s.id; }
       img.style.visibility = 'visible';
       cnt.textContent = s.n > 1 ? s.n : '';
     } else {
-      img.style.visibility = 'hidden'; img.dataset.id = '';
+      img.style.visibility = 'hidden'; img.dataset.id = ''; el.dataset.cat = '';
       cnt.textContent = '';
     }
   }
@@ -426,6 +373,17 @@ export class Inventory {
     this.lens.style.setProperty('--i', this.selected);
     this.paint(this.cursorEl, this.cursor);
     this.cursorEl.classList.toggle('hidden', !this.cursor);
+    // crafting availability
+    this.craftEls?.forEach((el, k) => {
+      const ok = this.canCraft(RECIPES[k]);
+      el.classList.toggle('ok', ok);
+      el.classList.toggle('pad-focus', this.open && this.padFocus && this.padIndex === SIZE + k);
+      el.querySelectorAll('.need').forEach((n) => n.classList.toggle('miss', this.count(n.dataset.id) < +n.dataset.n));
+      if (this.flash === RECIPES[k].out) { el.classList.remove('done'); void el.offsetWidth; el.classList.add('done'); }
+    });
+    this.flash = null;
+    const used = this.slots.filter(Boolean).length;
+    if (this.subEl) this.subEl.textContent = `${used} / ${SIZE}`;
     if (showName) {
       const h = this.held;
       this.nameEl.textContent = h ? itemDef(h.id).name : '';

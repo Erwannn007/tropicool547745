@@ -25,14 +25,18 @@ function bladeGeometry(blockSize, count, seed) {
   return g;
 }
 
+// Mowed grass (scythe): one texel per metre, 1 = freshly cut, fades as it regrows.
+export const cutMap = { value: null };
+
 function grassMaterial(innerR, outerR, widthMul) {
   return makeMaterial({
     side: THREE.DoubleSide,
-    uniforms: { uInner: { value: innerR }, uOuter: { value: outerR }, uWidth: { value: widthMul } },
+    uniforms: { uInner: { value: innerR }, uOuter: { value: outerR }, uWidth: { value: widthMul }, uCut: cutMap },
     vertex: /* glsl */`
       attribute vec3 aOffset;
       uniform float uInner, uOuter, uWidth;
       uniform vec4 uGust;
+      uniform sampler2D uCut;
       varying vec3 vCol;
       varying vec3 vWorld;
       varying float vY;
@@ -55,6 +59,10 @@ function grassMaterial(innerR, outerR, widthMul) {
 
         float height = (0.28 + r1 * 0.32 + patchN * 0.28) * smoothstep(0.3, 0.9, d.g);
         height *= 1.0 + smoothstep(uOuter * 0.5, uOuter, dist) * 0.6; // far blades a bit bigger
+        // mowed: short stubble (a few blades are spared so the cut looks hand-made)
+        float cut = texture2D(uCut, (root.xz + uWorldSize * 0.5) / uWorldSize).r;
+        cut = step(r2 * 0.35 + 0.3, cut) * cut;
+        height *= mix(1.0, 0.13 + r1 * 0.06, cut);
         float width = (0.06 + r2 * 0.045) * uWidth * (1.0 + dist * 0.012);
         float ang = r2 * 6.2831;
         vec2 dir = vec2(cos(ang), sin(ang));
@@ -82,11 +90,13 @@ function grassMaterial(innerR, outerR, widthMul) {
         vec3 baseC = vec3(0.13, 0.42, 0.08);
         vec3 midC = mix(vec3(0.30, 0.70, 0.13), vec3(0.42, 0.78, 0.16), patchN);
         vec3 tipC = mix(vec3(0.60, 0.92, 0.26), vec3(0.74, 0.97, 0.36), r1);
+        tipC = mix(tipC, vec3(0.80, 0.86, 0.38), cut); // fresh cut ends: paler, straw-tinted
         vec3 c = y < 0.5 ? mix(baseC, midC, y * 2.0) : mix(midC, tipC, (y - 0.5) * 2.0);
         c *= 0.9 + r2 * 0.2;
-        float shadow = 1.0 - d.b * 0.6 * step(0.2, d.b);
+        float shadow = 1.0 - d.b * 0.6 * uShade * step(0.2, d.b);
         vec3 n = normalize(vec3(dir.y * 0.3, 1.0, -dir.x * 0.3));
-        c *= lightDiffuse(n, 0.5, shadow) * 1.05;
+        c *= (lightDiffuse(n, 0.5, shadow) + pointLights(p, n) * 0.7) * 1.05;
+        c *= 1.0 - uWet * 0.12;
         vCol = c;
         gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
       }`,

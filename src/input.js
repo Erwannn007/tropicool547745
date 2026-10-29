@@ -27,6 +27,7 @@ export class Input {
       this.lastDevice = 'keyboard';
       if (e.code === 'Space') this.pressed.add('jump');
       if (e.code === 'KeyF') this.pressed.add('action');
+      if (e.code === 'KeyR') this.pressed.add('rotate');
       if (e.code === 'KeyE' || e.code === 'KeyI') this.pressed.add('inventory');
       if (/^Digit[1-9]$/.test(e.code)) this.pressed.add('slot' + e.code.slice(5));
       if (e.code === 'Escape' || e.code === 'Tab' || e.code === 'KeyM') { this.pressed.add('menu'); e.preventDefault(); }

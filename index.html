@@ -14,29 +14,39 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261029174321">
+  <link rel="stylesheet" href="style.css?v=20261029182718">
   <script type="importmap">
 {
   "imports": {
-    "three": "./vendor/three.module.js?v=20261029174321",
-    "./src/audio.js": "./src/audio.js?v=20261029174321",
-    "./src/axe.js": "./src/axe.js?v=20261029174321",
-    "./src/axeModel.js": "./src/axeModel.js?v=20261029174321",
-    "./src/fishing.js": "./src/fishing.js?v=20261029174321",
-    "./src/grass.js": "./src/grass.js?v=20261029174321",
-    "./src/input.js": "./src/input.js?v=20261029174321",
-    "./src/inventory.js": "./src/inventory.js?v=20261029174321",
-    "./src/main.js": "./src/main.js?v=20261029174321",
-    "./src/noise.js": "./src/noise.js?v=20261029174321",
-    "./src/player.js": "./src/player.js?v=20261029174321",
-    "./src/shaders.js": "./src/shaders.js?v=20261029174321",
-    "./src/sky.js": "./src/sky.js?v=20261029174321",
-    "./src/structures.js": "./src/structures.js?v=20261029174321",
-    "./src/terrain.js": "./src/terrain.js?v=20261029174321",
-    "./src/textures.js": "./src/textures.js?v=20261029174321",
-    "./src/vegetation.js": "./src/vegetation.js?v=20261029174321",
-    "./src/water.js": "./src/water.js?v=20261029174321",
-    "./src/world.js": "./src/world.js?v=20261029174321"
+    "three": "./vendor/three.module.js?v=20261029182718",
+    "./src/audio.js": "./src/audio.js?v=20261029182718",
+    "./src/axe.js": "./src/axe.js?v=20261029182718",
+    "./src/axeModel.js": "./src/axeModel.js?v=20261029182718",
+    "./src/daycycle.js": "./src/daycycle.js?v=20261029182718",
+    "./src/dress.js": "./src/dress.js?v=20261029182718",
+    "./src/fishing.js": "./src/fishing.js?v=20261029182718",
+    "./src/grass.js": "./src/grass.js?v=20261029182718",
+    "./src/hands.js": "./src/hands.js?v=20261029182718",
+    "./src/held.js": "./src/held.js?v=20261029182718",
+    "./src/icons.js": "./src/icons.js?v=20261029182718",
+    "./src/input.js": "./src/input.js?v=20261029182718",
+    "./src/inventory.js": "./src/inventory.js?v=20261029182718",
+    "./src/items.js": "./src/items.js?v=20261029182718",
+    "./src/lights.js": "./src/lights.js?v=20261029182718",
+    "./src/main.js": "./src/main.js?v=20261029182718",
+    "./src/models.js": "./src/models.js?v=20261029182718",
+    "./src/noise.js": "./src/noise.js?v=20261029182718",
+    "./src/placement.js": "./src/placement.js?v=20261029182718",
+    "./src/player.js": "./src/player.js?v=20261029182718",
+    "./src/scythe.js": "./src/scythe.js?v=20261029182718",
+    "./src/shaders.js": "./src/shaders.js?v=20261029182718",
+    "./src/sky.js": "./src/sky.js?v=20261029182718",
+    "./src/structures.js": "./src/structures.js?v=20261029182718",
+    "./src/terrain.js": "./src/terrain.js?v=20261029182718",
+    "./src/textures.js": "./src/textures.js?v=20261029182718",
+    "./src/vegetation.js": "./src/vegetation.js?v=20261029182718",
+    "./src/water.js": "./src/water.js?v=20261029182718",
+    "./src/world.js": "./src/world.js?v=20261029182718"
   }
 }
   </script>
@@ -57,9 +67,11 @@
       </div>
     </div>
     <div id="fps"></div>
+    <div id="clock"><span id="clock-icon"></span><span id="clock-name"></span><span id="clock-time"></span></div>
+    <div id="place-tip"></div>
     <div id="hint"></div>
     <div id="held-name"></div>
-    <div id="hotbar" class="glass"><div class="lens"></div><div class="slots"></div></div>
+    <div id="hotbar" class="px-bar"><div class="lens"></div><div class="slots"></div></div>
   </div>
 
   <div id="touch">
@@ -97,8 +109,8 @@
           <input type="range" id="relief" min="0" max="1" step="0.05"></label>
         <label>Végétation <output data-for="vegetation"></output>
           <input type="range" id="vegetation" min="0" max="1" step="0.05"></label>
-        <label>Graine
-          <span class="row"><input type="number" id="seed" min="1" max="999999"><button id="dice" aria-label="Graine aléatoire">🎲</button></span></label>
+        <label>Graine <span class="hint-inline">lettres, mots ou chiffres</span>
+          <span class="row"><input type="text" id="seed" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ex. lagon-turquoise"><button id="dice" aria-label="Graine aléatoire">🎲</button></span></label>
         <button id="generate" class="primary">Générer l'archipel</button>
       </section>
 
@@ -117,6 +129,20 @@
         <label>Volume <output data-for="volume"></output>
           <input type="range" id="volume" min="0" max="1" step="0.05"></label>
         <label class="check"><input type="checkbox" id="showfps"> Afficher les FPS</label>
+        <label>Heure <output data-for="hour"></output>
+          <input type="range" id="hour" min="0" max="23.9" step="0.1"></label>
+        <label>Cycle jour / nuit
+          <select id="dayspeed">
+            <option value="normal">Normal (24 min)</option>
+            <option value="slow">Lent (48 min)</option>
+            <option value="frozen">Figé</option>
+          </select></label>
+        <label>Météo
+          <select id="weather">
+            <option value="auto">Variable</option>
+            <option value="clear">Toujours beau</option>
+            <option value="rain">Pluie</option>
+          </select></label>
       </section>
 
       <section data-panel="journal" class="hidden">
@@ -128,18 +154,25 @@
     </div>
   </div>
 
- <div id="inventory" class="hidden">
-    <div class="inv-panel glass">
-      <div class="inv-head">
-        <span class="inv-title">Inventaire</span>
-        <button id="inv-close" class="glass-btn" aria-label="Fermer">✕</button>
+  <div id="inventory" class="hidden">
+    <div class="inv-wrap">
+      <div class="inv-panel px-panel">
+        <div class="inv-head">
+          <span class="inv-title">Sac à dos</span><span class="inv-sub" id="inv-sub"></span>
+          <button id="inv-close" class="px-btn" aria-label="Fermer">✕</button>
+        </div>
+        <div id="inv-storage" class="grid"></div>
+        <div class="inv-label">Barre d’action</div>
+        <div id="inv-hotbar" class="grid hot"></div>
+        <p class="inv-help" id="inv-help"></p>
       </div>
-      <div id="inv-storage" class="grid"></div>
-      <div id="inv-hotbar" class="grid hot"></div>
-      <p class="inv-help" id="inv-help"></p>
+      <div class="craft-panel px-panel">
+        <div class="inv-head"><span class="inv-title">Fabrication</span></div>
+        <div id="craft-list"></div>
+      </div>
     </div>
     <div id="inv-cursor" class="slot floating hidden"><img alt=""><span class="count"></span></div>
-    <div id="inv-tip" class="glass tip hidden"></div>
+    <div id="inv-tip" class="tip px-panel hidden"></div>
   </div>
 
   <div id="loading" class="screen hidden"><div class="panel"><p>Génération de l'archipel…</p></div></div>
@@ -147,7 +180,7 @@
   <script>
     // Startup guard: if the game fails to boot, say so and offer a clean reload
     // (clears the offline cache + service worker) instead of a frozen menu.
-    window.TROPICOOL_VERSION = '20261029174321';
+    window.TROPICOOL_VERSION = '20261029182718';
     window.__bootFail = function (msg) {
       if (window.__booted || document.getElementById('boot-error')) return;
       var p = document.querySelector('#start .panel');
@@ -166,6 +199,6 @@
     addEventListener('unhandledrejection', function (e) { window.__bootFail((e.reason && e.reason.message) || 'erreur de chargement'); });
     setTimeout(function () { if (!window.__booted) window.__bootFail('Chargement trop long (connexion ?)'); }, 20000);
   </script>
-  <script type="module" src="src/main.js?v=20261029174321"></script>
+  <script type="module" src="src/main.js?v=20261029182718"></script>
 </body>
 </html>

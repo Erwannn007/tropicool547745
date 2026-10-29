@@ -3,9 +3,10 @@
 // with pixel textures and banded lighting, rendered into a low-resolution
 // target and upscaled with nearest filtering so it reads as big crisp pixels.
 import * as THREE from 'three';
+import { heldLight } from './shaders.js';
 
 // ---------------------------------------------------------------- textures
-function pixTex(w, h, paint) {
+export function pixTex(w, h, paint) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
   paint(g, w, h);
@@ -19,7 +20,7 @@ function pixTex(w, h, paint) {
 function rng(seed) { return () => ((seed = (seed * 16807) % 2147483647) / 2147483647); }
 
 // golden hickory: warm base, streaky grain, a couple of knots
-const handleTex = () => pixTex(16, 96, (g, w, h) => {
+export const handleTex = () => pixTex(16, 96, (g, w, h) => {
   const r = rng(5);
   const pal = ['#a8701e', '#c48a28', '#d9a234', '#e8b444', '#f4c95e'];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -39,7 +40,7 @@ const handleTex = () => pixTex(16, 96, (g, w, h) => {
 });
 
 // steel: soft brushed noise; colour/bevel comes from vertex colours
-const steelTex = () => pixTex(32, 32, (g, w, h) => {
+export const steelTex = () => pixTex(32, 32, (g, w, h) => {
   const r = rng(9);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const v = 0.9 + r() * 0.12 + ((x + y * 3) % 9 === 0 ? -0.06 : 0);
@@ -56,7 +57,7 @@ const handleCurve = new THREE.CatmullRomCurve3([
   new THREE.Vector3(-0.006, 0.58, 0), new THREE.Vector3(0.004, HANDLE_LEN, 0),
 ]);
 
-function handleGeometry() {
+export function handleGeometry() {
   const rings = 28, radial = 10;
   const pos = [], nor = [], uv = [], idx = [];
   for (let i = 0; i <= rings; i++) {
@@ -92,7 +93,7 @@ function handleGeometry() {
 }
 
 // bearded head profile, blade towards -X, thinned to a sharp edge
-function headGeometry() {
+export function headGeometry() {
   const s = new THREE.Shape();
   s.moveTo(0.062, 0.038);                           // poll, top
   s.lineTo(0.062, -0.038);                          // poll, bottom
@@ -131,11 +132,11 @@ function headGeometry() {
   return g;
 }
 
-function bandedMaterial(map, { metal = 0, vertexColors = false, alpha = 1 } = {}) {
+export function bandedMaterial(map, { metal = 0, vertexColors = false, alpha = 1, light = heldLight, side = THREE.FrontSide } = {}) {
   return new THREE.ShaderMaterial({
-    transparent: alpha < 1, depthWrite: alpha >= 1,
+    transparent: alpha < 1, depthWrite: alpha >= 1, side,
     defines: vertexColors ? { VCOL: 1 } : {},
-    uniforms: { uMap: { value: map }, uMetal: { value: metal }, uAlpha: { value: alpha } },
+    uniforms: { uMap: { value: map }, uMetal: { value: metal }, uAlpha: { value: alpha }, uLight: light },
     vertexShader: /* glsl */`
       varying vec2 vUv; varying vec3 vN; varying vec3 vView; varying vec3 vCol;
       #ifdef VCOL
@@ -154,10 +155,10 @@ function bandedMaterial(map, { metal = 0, vertexColors = false, alpha = 1 } = {}
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */`
-      uniform sampler2D uMap; uniform float uMetal; uniform float uAlpha;
+      uniform sampler2D uMap; uniform float uMetal; uniform float uAlpha; uniform vec3 uLight;
       varying vec2 vUv; varying vec3 vN; varying vec3 vView; varying vec3 vCol;
       void main() {
-        vec3 n = normalize(vN);
+        vec3 n = normalize(gl_FrontFacing ? vN : -vN);
         vec3 L = normalize(vec3(-0.45, 0.75, 0.5));      // warm sun, upper left (view space)
         float d = max(dot(n, L), 0.0);
         float band = d > 0.66 ? 1.0 : d > 0.33 ? 0.72 : d > 0.08 ? 0.5 : 0.36; // flat pixel-art bands
@@ -167,20 +168,20 @@ function bandedMaterial(map, { metal = 0, vertexColors = false, alpha = 1 } = {}
         vec3 V = normalize(vView);
         float spec = pow(max(dot(reflect(-L, n), V), 0.0), 22.0);
         c += uMetal * step(0.7, spec) * 0.45;             // hard pixel glint
-        gl_FragColor = vec4(c, uAlpha);
+        gl_FragColor = vec4(c * uLight, uAlpha);
       }`,
   });
 }
 
 // pose from handle direction + blade direction (both in camera space)
-function basis(D, Bl) {
+export function basis(D, Bl) {
   const Y = new THREE.Vector3(...D).normalize();
   const X = new THREE.Vector3(...Bl).normalize().negate(); // blade lies along local -X
   X.addScaledVector(Y, -X.dot(Y)).normalize();
   const Z = new THREE.Vector3().crossVectors(X, Y).normalize();
   return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
 }
-const ease = {
+export const ease = {
   inOut: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
   out: (t) => 1 - Math.pow(1 - t, 3),
   in: (t) => t * t * t,

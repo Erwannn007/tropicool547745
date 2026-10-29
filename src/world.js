@@ -14,7 +14,18 @@ export const DEFAULT_CONFIG = {
   vegetation: 0.75,
 };
 
+// A seed can be any text: digits keep their numeric value (old worlds stay the
+// same), anything else is hashed (FNV-1a) to a stable number.
+export function seedNumber(seed) {
+  const t = String(seed ?? '').trim();
+  if (/^\d{1,9}$/.test(t)) return Math.max(1, +t);
+  let h = 0x811c9dc5;
+  for (const ch of t.toLowerCase()) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+  return 1 + (h % 2000000000);
+}
+
 export function generateWorld(cfg, felled = new Set()) {
+  cfg = { ...cfg, label: String(cfg.seed), seed: seedNumber(cfg.seed) };
   const N = MAP_N, S = WORLD_SIZE, half = S / 2, cell = S / N;
   const rnd = mulberry32(cfg.seed);
   const sx = makeSimplex(cfg.seed);
@@ -211,7 +222,11 @@ export function generateWorld(cfg, felled = new Set()) {
   }
 
   // ---- baked canopy shadows -------------------------------------------
-  const sdx = -sunDir.x / sunDir.y, sdz = -sunDir.z / sunDir.y;
+  // shadows are painted along the light direction; the day cycle re-paints
+  // them as the sun moves (elevation clamped so evening shadows stay sane)
+  let sdx = 0, sdz = 0;
+  const aimShadows = (dir) => { const y = Math.max(0.42, dir.y); sdx = -dir.x / y; sdz = -dir.z / y; };
+  aimShadows(sunDir);
   const paint = (x, z, h, radius, strength) => {
     const cx = x + sdx * h, cz = z + sdz * h;
     const ri = Math.ceil(radius / cell) + 1;
@@ -273,5 +288,14 @@ export function generateWorld(cfg, felled = new Set()) {
     tex.needsUpdate = true;
   }
 
-  return { cfg, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex, removeProp };
+  // re-paint every canopy shadow for a new light direction
+  function setShadowDir(dir) {
+    aimShadows(dir);
+    shadeMap.fill(0);
+    paintAll();
+    for (let k = 0; k < N * N; k++) data[k * 4 + 2] = toHalf(shadeMap[k]);
+    tex.needsUpdate = true;
+  }
+
+  return { cfg, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex, removeProp, setShadowDir };
 }

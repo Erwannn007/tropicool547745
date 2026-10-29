@@ -60,9 +60,18 @@ export function buildTerrain(world, tex, quality) {
         float rsel = step(0.5 + dith * 0.4, d.a);
         col = mix(col, rockc, rsel);
 
+        // rain: soaked ground is darker and a little cooler
+        col *= 1.0 - uWet * mix(0.22, 0.12, gsel) * vec3(1.0, 0.97, 0.9);
+
         vec3 n = normalize(vNormal);
-        float shadow = 1.0 - d.b * 0.62 * step(0.18 + dith * 0.3, d.b);
-        col *= lightDiffuse(n, 0.25, shadow) * 1.04;
+        float shadow = 1.0 - d.b * 0.62 * uShade * step(0.18 + dith * 0.3, d.b);
+        col *= lightAt(n, 0.25, shadow, vWorld) * 1.04;
+        // wet sheen: the sky glints on soaked sand and rock
+        if (uWet > 0.0) {
+          vec3 V = normalize(uCamPos - vWorld);
+          float sp = pow(max(dot(reflect(-uSunDir, n), V), 0.0), 40.0);
+          col += uSunColor * step(0.5, sp) * 0.12 * uWet * (1.0 - gsel);
+        }
         gl_FragColor = vec4(applyFog(col, vWorld), 1.0);
       }`,
   });
