@@ -10,6 +10,7 @@ export const ITEMS = {
   torch: { name: 'Torche tiki', max: 16, cat: 'Objet à poser', desc: 'Éclaire autour de toi. Utilise-la pour la planter dans le sol.', place: 'torch' },
   transat: { name: 'Transat', max: 4, cat: 'Objet à poser', desc: 'Chaise longue en teck et toile rayée, serviette roulée.', place: 'transat' },
   parasol: { name: 'Parasol en paille', max: 4, cat: 'Objet à poser', desc: 'Grand parasol de palmes séchées à franges.', place: 'parasol' },
+  chest: { name: 'Coffre', max: 4, cat: 'Objet à poser', desc: 'Coffre en teck cerclé de laiton : 18 places pour ranger ton butin. Utilise-le pour l’ouvrir.', place: 'chest' },
   campfire: { name: 'Feu de camp', max: 8, cat: 'Objet à poser', desc: 'Cercle de pierres et bûches : chaleur et lumière la nuit.', place: 'campfire' },
   'wood:palm': { name: 'Bois de palmier', max: 64, cat: 'Matériau', desc: 'Tronçon fibreux à anneaux.' },
   'wood:tree': { name: 'Bois tropical', max: 64, cat: 'Matériau', desc: 'Bois dur et sombre des arbres de la jungle.' },
@@ -22,6 +23,7 @@ export const RECIPES = [
   { out: 'campfire', n: 1, need: [['wood:tree', 2], ['wood:palm', 2], ['fibre', 1]] },
   { out: 'transat', n: 1, need: [['wood:tree', 3], ['fibre', 6]] },
   { out: 'parasol', n: 1, need: [['wood:palm', 2], ['fibre', 10]] },
+  { out: 'chest', n: 1, need: [['wood:tree', 4], ['wood:palm', 2], ['fibre', 2]] },
   { out: 'book', n: 1, need: [['fibre', 6], ['wood:palm', 1]] },
 ];
 

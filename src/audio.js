@@ -328,6 +328,20 @@ export class Audio {
       this.noise({ f0: 1800, f1: 3800, q: 0.6, dur: 0.22, attack: 0.06, gain: 0.05 });
       this.noise({ type: 'highpass', f0: 4000, q: 0.5, dur: 0.08, gain: 0.02, delay: 0.14 });
     }
+    if (name === 'chestOpen') { // latch click, then the old hinge creaking
+      this.tone(1900, 1500, 0.03, 'square', 0.03);
+      this.noise({ type: 'highpass', f0: 3000, q: 1, dur: 0.02, gain: 0.05 });
+      this.tone(210, 340, 0.42, 'sawtooth', 0.016, 0.06, this.master, 0.08);
+      this.noise({ type: 'bandpass', f0: 900, f1: 1500, q: 7, dur: 0.4, attack: 0.08, gain: 0.05, delay: 0.06 });
+      this.noise({ type: 'lowpass', f0: 400, q: 0.5, dur: 0.25, gain: 0.05, delay: 0.1, buf: this.brown });
+    }
+    if (name === 'chestClose') this.noise({ type: 'bandpass', f0: 1200, f1: 700, q: 6, dur: 0.22, attack: 0.04, gain: 0.04 }); // hinge going back
+    if (name === 'chestShut') { // heavy lid lands on the box
+      this.tone(120, 70, 0.22, 'sine', 0.3);
+      this.noise({ type: 'lowpass', f0: 700, f1: 200, q: 0.6, dur: 0.2, attack: 0.002, gain: 0.3, buf: this.brown });
+      this.noise({ type: 'bandpass', f0: 380, q: 5, dur: 0.12, gain: 0.12 });
+      this.tone(2300, 2000, 0.05, 'triangle', 0.02, 0.03); // brass rattle
+    }
     if (name === 'deny') { this.tone(300, 220, 0.09, 'square', 0.025); this.tone(240, 180, 0.12, 'square', 0.025, 0.09); }
     if (name === 'craft') {
       [0, 0.08, 0.16].forEach((d) => this.tone(200 + d * 600, 150, 0.06, 'triangle', 0.1, d));

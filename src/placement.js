@@ -14,6 +14,7 @@ export const PLACEABLE = {
   torch: { circles: [[0, 0, 0.13]], foot: [[0, 0], [0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]], slope: 0.5, ring: 0.28, pick: 0.35, light: { y: 1.74, radius: 7.5, col: [1.0, 0.58, 0.26] }, embers: 1.74 },
   transat: { circles: [[0.45, 0, 0.36], [-0.45, 0, 0.36]], foot: [[0.95, 0.33], [0.95, -0.33], [-0.88, 0.33], [-0.88, -0.33], [0, 0]], slope: 0.32, ring: 1.0, pick: 0.8, h: 0.5 },
   parasol: { circles: [[0, 0, 0.14]], foot: [[0, 0], [0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]], slope: 0.5, ring: 0.45, clear: 1.1, pick: 0.45, h: 1.2 },
+  chest: { circles: [[0.22, 0, 0.3], [-0.22, 0, 0.3]], foot: [[0.43, 0.27], [0.43, -0.27], [-0.43, 0.27], [-0.43, -0.27], [0, 0]], slope: 0.3, ring: 0.58, pick: 0.55, h: 0.35, slots: 18 },
   campfire: { circles: [[0, 0, 0.6]], foot: [[0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5], [0, 0]], slope: 0.35, ring: 0.68, pick: 0.7, light: { y: 0.7, radius: 10, col: [1.0, 0.52, 0.2] }, embers: 0.6, h: 0.4 },
 };
 
@@ -57,17 +58,17 @@ export class Placement {
     this.world = world; this.player = player;
     let list = [];
     try { list = (JSON.parse(localStorage.getItem(PKEY)) || {})[worldKey(world.cfg)] || []; } catch (_) { /* none */ }
-    for (const e of list) if (PLACEABLE[e.id]) this.spawn(e.id, e.x, e.y, e.z, e.yaw);
+    for (const e of list) if (PLACEABLE[e.id]) this.spawn(e.id, e.x, e.y, e.z, e.yaw, e.items);
   }
   save() {
     try {
       const all = JSON.parse(localStorage.getItem(PKEY)) || {};
-      all[worldKey(this.world.cfg)] = this.objects.map((o) => ({ id: o.id, x: +o.x.toFixed(2), y: +o.y.toFixed(2), z: +o.z.toFixed(2), yaw: +o.yaw.toFixed(3) }));
+      all[worldKey(this.world.cfg)] = this.objects.map((o) => ({ id: o.id, x: +o.x.toFixed(2), y: +o.y.toFixed(2), z: +o.z.toFixed(2), yaw: +o.yaw.toFixed(3), ...(o.items ? { items: o.items } : {}) }));
       localStorage.setItem(PKEY, JSON.stringify(all));
     } catch (_) { /* private mode */ }
   }
 
-  spawn(id, x, y, z, yaw) {
+  spawn(id, x, y, z, yaw, items) {
     const def = PLACEABLE[id];
     const mesh = dress(MODELS[id](), 'world');
     mesh.position.set(x, y, z); mesh.rotation.y = yaw;
@@ -75,6 +76,11 @@ export class Placement {
     mesh.traverse((m) => { m.matrixAutoUpdate = false; });
     this.group.add(mesh);
     const o = { id, x, y, z, yaw, mesh, colliders: [] };
+    if (def.slots) { // a chest: its own storage and a lid on a hinge
+      o.items = Array.from({ length: def.slots }, (_, k) => items?.[k] ?? null);
+      o.lid = mesh.children.find((c) => c.userData.hinge);
+      o.lidA = 0; o.lidOpen = false;
+    }
     for (const [cx, cz, r] of def.circles) {
       const [lx, lz] = local(cx, cz, yaw);
       const c = { x: x + lx, z: z + lz, r, placed: o };
@@ -235,6 +241,18 @@ export class Placement {
       }
       col.needsUpdate = true;
     }
+    // chest lids swing with a little overshoot when opening
+    for (const o of this.objects) {
+      if (!o.lid) continue;
+      const target = o.lidOpen ? 1.25 : 0;
+      if (Math.abs(o.lidA - target) < 0.002 && !o.lidV) continue;
+      o.lidV = (o.lidV || 0) + ((target - o.lidA) * 90 - (o.lidV || 0) * 14) * dt;
+      o.lidA += o.lidV * dt;
+      if (!o.lidOpen && o.lidA < 0) { o.lidA = 0; o.lidV = 0; this.hooks.sound?.('chestShut'); } // falls shut
+      if (Math.abs(o.lidV) < 0.01 && Math.abs(o.lidA - target) < 0.002) { o.lidA = target; o.lidV = 0; }
+      o.lid.rotation.x = -o.lidA;
+      o.lid.updateMatrix();
+    }
     let any = false;
     const t = performance.now() / 1000;
     for (let i = 0; i < this.EN; i++) {
@@ -246,6 +264,8 @@ export class Placement {
     }
     if (any) pos.needsUpdate = true;
   }
+
+  setLid(o, open) { o.lidOpen = open; }
 
   // loudest fire close to the player (for the crackle ambience)
   nearestFire() {

@@ -561,7 +561,117 @@ function bookModel() {
   return { parts: [{ geo: covers, tex: cover }, { geo: spine, tex: spineTex }, { geo: pages, tex: paper }, { geo: ribbon, tex: red }] };
 }
 
+// Treasure chest: teak planks, barrel lid on a back hinge, brass straps,
+// corner caps and studs, a lock plate with keyhole, rope handles. The lid is
+// its own part (hinge) so it can swing open.
+const BRASS = ['#5e3c14', '#8a5c1e', '#b47e2c', '#d8a443', '#f2cf74'];
+export const CHEST = { W: 0.86, D: 0.54, H: 0.42, LID: 0.17 };
+function chestModel() {
+  const { W, D, H, LID } = CHEST;
+  // planar UVs by facing direction, in metres
+  const boxUV = (g, k = 2.2) => {
+    const P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv;
+    for (let i = 0; i < P.count; i++) {
+      const nx = Math.abs(N.getX(i)), ny = Math.abs(N.getY(i)), nz = Math.abs(N.getZ(i));
+      const [u, v] = nz >= nx && nz >= ny ? [P.getX(i), P.getY(i)] : nx >= ny ? [P.getZ(i), P.getY(i)] : [P.getX(i), P.getZ(i)];
+      U.setXY(i, u * k, v * k);
+    }
+    return g;
+  };
+  const roundRect = (w, h, r) => {
+    const sh = new THREE.Shape();
+    sh.moveTo(-w / 2 + r, -h / 2); sh.lineTo(w / 2 - r, -h / 2); sh.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+    sh.lineTo(w / 2, h / 2 - r); sh.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+    sh.lineTo(-w / 2 + r, h / 2); sh.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+    sh.lineTo(-w / 2, -h / 2 + r); sh.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+    return sh;
+  };
+  const body = new THREE.ExtrudeGeometry(roundRect(W, H, 0.025), { depth: D - 0.02, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.008, bevelSegments: 2, curveSegments: 3 });
+  body.translate(0, H / 2, -(D - 0.02) / 2);
+  boxUV(body);
+  // barrel lid: arched profile (side view) extruded along the width
+  const arch = new THREE.Shape();
+  arch.moveTo(-D / 2, 0);
+  for (let k = 0; k <= 12; k++) { const a = Math.PI * (1 - k / 12); arch.lineTo(Math.cos(a) * D / 2, Math.sin(a) * LID); }
+  arch.lineTo(-D / 2, 0);
+  const lid = new THREE.ExtrudeGeometry(arch, { depth: W, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.008, bevelSegments: 2, curveSegments: 4 });
+  lid.rotateY(-Math.PI / 2); lid.translate(W / 2, H, 0);
+  { // planks run along the width on the lid
+    const P = lid.attributes.position, U = lid.attributes.uv;
+    for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) * 2.2, (Math.atan2(P.getY(i) - H, P.getZ(i)) * 0.3 + P.getZ(i)) * 2.2);
+  }
+  // brass straps around body and lid, corner caps
+  const strapB = [], strapL = [];
+  const flat = rounded(0.22, 1, 2); // thin against the wood, wide across
+  for (const x of [-W * 0.3, W * 0.3]) {
+    const o = 0.012;
+    strapB.push([tube((t) => { // front down, under, back up
+      const L = [V(x, H, D / 2 + o), V(x, 0.0, D / 2 + o), V(x, -o, D / 2), V(x, -o, -D / 2), V(x, 0, -D / 2 - o), V(x, H, -D / 2 - o)];
+      const f = t * (L.length - 1), i = Math.min(L.length - 2, Math.floor(f));
+      return L[i].clone().lerp(L[i + 1], f - i);
+    }, () => 0.03, { rings: 25, radial: 6, section: flat, up: V(1, 0, 0) })]);
+    strapL.push([tube((t) => { const a = Math.PI * t; return V(x, H + Math.sin(a) * (LID + o), -Math.cos(a) * (D / 2 + o)); }, () => 0.03, { rings: 14, radial: 6, section: flat, up: V(1, 0, 0) })]);
+  }
+  const studs = [];
+  for (const x of [-W * 0.3, W * 0.3]) for (const y of [0.08, 0.2, 0.32]) for (const z of [D / 2 + 0.02, -D / 2 - 0.02]) {
+    const st = lathe([[0, 0], [0.013, 0], [0.011, 0.008], [0, 0.012]], 6);
+    st.rotateX(z > 0 ? Math.PI / 2 : -Math.PI / 2); st.translate(x, y, z);
+    studs.push([st]);
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { // corner caps
+    studs.push([tube(line(V(sx * (W / 2 - 0.005), 0.005, sz * (D / 2 - 0.005)), V(sx * (W / 2 - 0.005), 0.1, sz * (D / 2 - 0.005))), () => 0.03, { rings: 1, radial: 8, up: V(1, 0, 0) })]);
+  }
+  // lock: plate on the lid front + hasp on the body
+  const plate = new THREE.ExtrudeGeometry(roundRect(0.11, 0.12, 0.02), { depth: 0.012, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 1 });
+  { const P = plate.attributes.position, U = plate.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) / 0.11 + 0.5, P.getY(i) / 0.12 + 0.5); }
+  plate.translate(0, H - 0.03, D / 2 + 0.012);
+  const handles = [];
+  for (const sx of [-1, 1]) handles.push([tube((t) => { const a = Math.PI * t; return V(sx * (W / 2 + 0.012 + Math.sin(a) * 0.05), H * 0.62 - Math.sin(a) * 0.02, -Math.cos(a) * 0.09); }, () => 0.012, { rings: 10, radial: 6, up: V(0, 1, 0), vRep: 2 })]);
+
+  const teak = pixTex(32, 32, (g, w, h) => {
+    const r = mulberry32(41);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const plank = Math.floor(y / 8), gy = y % 8;
+      let k = 2.5 + Math.sin(x * 0.45 + plank * 2.1 + Math.sin(y * 0.9) * 0.6) * 0.8 + (r() - 0.5) * 0.6;
+      if (gy === 0) k = 0; else if (gy === 1) k += 1; else if (gy === 7) k -= 0.8;
+      if ((x + plank * 11) % 29 === 0 && gy > 2 && gy < 6) k = 0.6; // knot
+      ramp(g, TEAK, x, y, k);
+    }
+  });
+  const brass = pixTex(16, 16, (g, w, h) => { const r = mulberry32(42); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, BRASS, x, y, 2.4 + (r() - 0.5) * 1.2 + (y < 3 ? 1 : 0) - (y > 12 ? 1 : 0)); });
+  const lockTex = pixTex(12, 12, (g, w, h) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, BRASS, x, y, x === 0 || y === h - 1 ? 1 : x === w - 1 || y === 0 ? 4 : 2.6);
+    g.fillStyle = '#24140a'; g.fillRect(5, 6, 2, 2); g.fillRect(5, 3, 2, 3); g.fillRect(4, 6, 4, 1); // keyhole
+  });
+  // inside, seen when the lid is up: dark hollow, straw lining, a few coins
+  const inner = new THREE.PlaneGeometry(W - 0.07, D - 0.07);
+  inner.rotateX(-Math.PI / 2); inner.translate(0, H + 0.011, 0);
+  const innerTex = pixTex(32, 20, (g, w, h) => {
+    const r = mulberry32(43);
+    const DARK = ['#1e120a', '#2e1c10', '#3e2816', '#5a3c1e'];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const edge = Math.min(x, y, w - 1 - x, h - 1 - y);
+      ramp(g, DARK, x, y, Math.min(3, edge * 0.5) + (r() - 0.5) * 0.8);
+      if (edge > 2 && r() < 0.18) ramp(g, STRAW, x, y, 1 + r() * 2);
+    }
+    for (const [cx, cy] of [[11, 9], [13, 10], [12, 12], [20, 8], [19, 11]]) { ramp(g, GOLD, cx, cy, 3); ramp(g, GOLD, cx + 1, cy, 2); ramp(g, GOLD, cx, cy + 1, 1); }
+  });
+  return {
+    parts: [
+      { geo: body, tex: teak },
+      { geo: inner, tex: innerTex },
+      { geo: lid, tex: teak, hinge: [0, H, -D / 2] },
+      { geo: merge([...strapB, ...studs]), tex: brass, metal: 1 },
+      { geo: merge(strapL), tex: brass, metal: 1, hinge: [0, H, -D / 2] },
+      { geo: plate, tex: lockTex, metal: 1, hinge: [0, H, -D / 2] },
+      { geo: merge(handles), tex: T.rope() },
+    ],
+    height: H + LID,
+  };
+}
+
 export const MODELS = {
+  chest: () => once('m:chest', chestModel),
   book: () => once('m:book', bookModel),
   torch: () => once('m:torch', torchModel),
   transat: () => once('m:transat', transatModel),

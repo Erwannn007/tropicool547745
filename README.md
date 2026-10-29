@@ -20,6 +20,8 @@ Jeu cozy en 3D à la première personne : un archipel tropical généré procéd
 
 **Fabrication** (panneau à droite de l’inventaire) : torche tiki, feu de camp, transat, parasol en paille, carnet de voyage, à partir de bois, fibres et noix de coco.
 
+**Coffre** : pose-le puis utilise-le pour l’ouvrir (18 places, couvercle qui s’ouvre) ; Maj+clic / double touche / R1 envoie un objet d’un côté à l’autre. Un coffre plein ne se reprend pas.
+
 **Carnet de voyage** : utilise-le pour l’ouvrir et écrire librement (40 pages, sauvegardées sur l’appareil ; L1 / R1 tournent les pages à la manette).
 
 **Objets à poser** : en main, un hologramme bleu montre où l’objet sera posé (rouge si impossible : eau, pente, obstacle, trop loin). La torche éclaire aussi quand on la tient. Un coup de hache (ou la main vide) reprend un objet posé. Les objets posés sont mémorisés par archipel.
@@ -31,6 +33,7 @@ Dans les menus, la manette navigue avec la croix ou le stick gauche (✕ valide,
 ## Archipel configurable
 Menu → *Archipel* : nombre d'îles, taille, relief, végétation, graine (lettres, mots ou chiffres : `lagon-turquoise`, 🎲 en propose une). Les réglages sont mémorisés sur l'appareil.
 Options : qualité (basse/moyenne/haute), résolution, résolution dynamique, sensibilité, volume, FPS, heure, vitesse du cycle jour/nuit (normal, lent, figé), météo (variable, toujours beau, pluie).
+**Mondes** (menu → *Mondes*) : enregistre le monde où tu joues sous un nom (arbres coupés, herbe fauchée, objets posés, coffres, position, heure) et reviens-y quand tu veux ; un monde enregistré se sauvegarde ensuite tout seul. Taper une graine et générer donne toujours l’archipel vierge (un monde non enregistré est alors oublié).
 URL : `?seed=…`, `?hour=21`, `?weather=rain`.
 
 ## Technique

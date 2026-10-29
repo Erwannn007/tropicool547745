@@ -5,9 +5,9 @@
 import { itemDef, RECIPES, CAT_COLOR } from './items.js';
 import { iconURL } from './icons.js';
 
-const HOTBAR = 9, SIZE = 36;
+const HOTBAR = 9, SIZE = 36, CHEST = 100, CHEST_COLS = 6;
 const KEY = 'tropicool.inventory.v1';
-const KIT = 3; // starter-kit version: new tools are handed out once to existing saves
+const KIT = 4; // starter-kit version: new tools are handed out once to existing saves
 export { itemDef };
 
 // ---------------------------------------------------------------- model
@@ -24,6 +24,7 @@ export class Inventory {
     for (const id of ['rod', 'axe', 'scythe']) if (!this.count(id) && !(id === 'scythe' && this.kit >= KIT)) this.add(id, 1);
     if (this.kit < 2) { this.add('torch', 4); this.add('transat', 1); this.add('campfire', 1); }
     if (this.kit < 3 && !this.count('book')) this.add('book', 1);
+    if (this.kit < 4) this.add('chest', 1);
     if (this.kit < KIT) { this.kit = KIT; this.save(); }
     this.buildDOM();
     this.render();
@@ -91,32 +92,36 @@ export class Inventory {
     this.changed(true);
   }
 
-  changed(showName) { this.save(); this.render(showName); this.onChange?.(this.held); }
+  changed(showName) { this.save(); this.ext?.onChange?.(); this.render(showName); this.onChange?.(this.held); }
 
   // ---- slot interactions --------------------------------------------
+  // slot index: 0..35 = bag (0..8 hotbar), CHEST + k = slot k of the open chest
+  at(i) { return i >= CHEST ? this.ext?.slots[i - CHEST] ?? null : this.slots[i]; }
+  put(i, v) { if (i >= CHEST) { if (this.ext) this.ext.slots[i - CHEST] = v; } else this.slots[i] = v; }
+
   leftClick(i) {
-    const s = this.slots[i], c = this.cursor;
-    if (!c) { if (s) { this.cursor = s; this.slots[i] = null; } }
-    else if (!s) { this.slots[i] = c; this.cursor = null; }
+    const s = this.at(i), c = this.cursor;
+    if (!c) { if (s) { this.cursor = s; this.put(i, null); } }
+    else if (!s) { this.put(i, c); this.cursor = null; }
     else if (s.id === c.id) {
       const max = itemDef(s.id).max, k = Math.min(c.n, max - s.n);
       s.n += k; c.n -= k;
       if (c.n <= 0) this.cursor = null;
-      else if (k === 0) { this.slots[i] = c; this.cursor = s; }
-    } else { this.slots[i] = c; this.cursor = s; }
+      else if (k === 0) { this.put(i, c); this.cursor = s; }
+    } else { this.put(i, c); this.cursor = s; }
     this.sound?.('tick');
     this.changed();
   }
 
   rightClick(i) {
-    const s = this.slots[i], c = this.cursor;
+    const s = this.at(i), c = this.cursor;
     if (!c) {
       if (!s) return;
       const half = Math.ceil(s.n / 2);
       this.cursor = { id: s.id, n: half };
       s.n -= half;
-      if (s.n <= 0) this.slots[i] = null;
-    } else if (!s) { this.slots[i] = { id: c.id, n: 1 }; c.n--; }
+      if (s.n <= 0) this.put(i, null);
+    } else if (!s) { this.put(i, { id: c.id, n: 1 }); c.n--; }
     else if (s.id === c.id && s.n < itemDef(s.id).max) { s.n++; c.n--; }
     else { this.leftClick(i); return; }
     if (c && c.n <= 0) this.cursor = null;
@@ -124,20 +129,21 @@ export class Inventory {
     this.changed();
   }
 
-  // shift-click: send the stack to the other section
+  // shift-click: send the stack to the other section (bag <-> chest when a
+  // chest is open, otherwise hotbar <-> storage)
   quickMove(i) {
-    const s = this.slots[i];
+    const s = this.at(i);
     if (!s) return;
-    const range = i < HOTBAR ? [HOTBAR, SIZE] : [0, HOTBAR];
+    let targets;
+    if (this.ext) targets = i >= CHEST ? [...Array(SIZE).keys()] : this.ext.slots.map((_, k) => CHEST + k);
+    else targets = i < HOTBAR ? [...Array(SIZE - HOTBAR).keys()].map((k) => k + HOTBAR) : [...Array(HOTBAR).keys()];
     const max = itemDef(s.id).max;
-    for (let j = range[0]; j < range[1] && s.n > 0; j++) {
-      const t = this.slots[j];
-      if (t && t.id === s.id && t.n < max) { const k = Math.min(s.n, max - t.n); t.n += k; s.n -= k; }
+    for (const j of targets) {
+      const t = this.at(j);
+      if (s.n > 0 && t && t.id === s.id && t.n < max) { const k = Math.min(s.n, max - t.n); t.n += k; s.n -= k; }
     }
-    for (let j = range[0]; j < range[1] && s.n > 0; j++) {
-      if (!this.slots[j]) { this.slots[j] = { id: s.id, n: s.n }; s.n = 0; }
-    }
-    if (s.n <= 0) this.slots[i] = null;
+    for (const j of targets) if (s.n > 0 && !this.at(j)) { this.put(j, { id: s.id, n: s.n }); s.n = 0; }
+    if (s.n <= 0) this.put(i, null);
     this.sound?.('tick');
     this.changed();
   }
@@ -147,9 +153,10 @@ export class Inventory {
     const c = this.cursor;
     if (!c) return;
     const max = itemDef(c.id).max;
-    for (let j = 0; j < SIZE && c.n < max; j++) {
-      const t = this.slots[j];
-      if (t && t.id === c.id) { const k = Math.min(t.n, max - c.n); c.n += k; t.n -= k; if (t.n <= 0) this.slots[j] = null; }
+    const all = [...Array(SIZE).keys(), ...(this.ext ? this.ext.slots.map((_, k) => CHEST + k) : [])];
+    for (const j of all) {
+      const t = this.at(j);
+      if (c.n < max && t && t.id === c.id) { const k = Math.min(t.n, max - c.n); c.n += k; t.n -= k; if (t.n <= 0) this.put(j, null); }
     }
     this.changed();
   }
@@ -157,9 +164,18 @@ export class Inventory {
   // number key while hovering: swap with that hotbar slot
   swapWithHotbar(i, h) {
     if (i === h) return;
-    [this.slots[i], this.slots[h]] = [this.slots[h], this.slots[i]];
+    const a = this.at(i), b = this.at(h);
+    this.put(i, b); this.put(h, a);
     this.sound?.('tick');
     this.changed();
+  }
+
+  // show a chest next to the bag (ext = { slots, onChange }) or hide it
+  setChest(ext) {
+    this.ext = ext;
+    document.querySelector('.craft-panel').classList.toggle('hidden', !!ext);
+    document.querySelector('#chest-panel').classList.toggle('hidden', !ext);
+    this.render();
   }
 
   setOpen(open) {
@@ -176,9 +192,18 @@ export class Inventory {
   }
 
   // ---- gamepad -------------------------------------------------------
+  elOf(i) { return i >= CHEST ? this.chestEls[i - CHEST] : i >= SIZE ? this.craftEls[i - SIZE] : this.slotEls[i]; }
+
   handlePad(pressed) {
     let i = this.padIndex;
-    if (i >= SIZE) { // crafting column
+    const at = (r, c) => (r === 3 ? c : HOTBAR + r * 9 + c);
+    if (i >= CHEST) { // chest grid, 6 x 3
+      const k = i - CHEST, r = Math.floor(k / CHEST_COLS), c = k % CHEST_COLS;
+      if (pressed.has('up')) i = CHEST + ((r + 2) % 3) * CHEST_COLS + c;
+      if (pressed.has('down')) i = CHEST + ((r + 1) % 3) * CHEST_COLS + c;
+      if (pressed.has('right')) i = CHEST + r * CHEST_COLS + (c + 1) % CHEST_COLS;
+      if (pressed.has('left')) i = c === 0 ? at(r, 8) : CHEST + r * CHEST_COLS + c - 1;
+    } else if (i >= SIZE) { // crafting column
       const k = i - SIZE, n = RECIPES.length;
       if (pressed.has('up')) i = SIZE + (k + n - 1) % n;
       if (pressed.has('down')) i = SIZE + (k + 1) % n;
@@ -186,14 +211,14 @@ export class Inventory {
       if (i !== this.padIndex) { this.padIndex = i; this.render(); this.hideTip(); }
       if (pressed.has('confirm')) this.craft(k);
       return;
+    } else {
+      const row = i < HOTBAR ? 3 : Math.floor((i - HOTBAR) / 9), col = i < HOTBAR ? i : (i - HOTBAR) % 9;
+      if (pressed.has('left')) i = at(row, (col + 8) % 9);
+      if (pressed.has('right')) i = col < 8 ? at(row, col + 1) : this.ext ? CHEST + Math.min(row, 2) * CHEST_COLS : SIZE + Math.min(row, RECIPES.length - 1);
+      if (pressed.has('up')) i = at((row + 3) % 4, col);
+      if (pressed.has('down')) i = at((row + 1) % 4, col);
     }
-    const row = i < HOTBAR ? 3 : Math.floor((i - HOTBAR) / 9), col = i < HOTBAR ? i : (i - HOTBAR) % 9;
-    const at = (r, c) => (r === 3 ? c : HOTBAR + r * 9 + c);
-    if (pressed.has('left')) i = at(row, (col + 8) % 9);
-    if (pressed.has('right')) i = col === 8 ? SIZE + Math.min(row, RECIPES.length - 1) : at(row, col + 1);
-    if (pressed.has('up')) i = at((row + 3) % 4, col);
-    if (pressed.has('down')) i = at((row + 1) % 4, col);
-    if (i !== this.padIndex) { this.padIndex = i; this.render(); if (i < SIZE) this.showTipFor(i, this.slotEls[i]); else this.hideTip(); }
+    if (i !== this.padIndex) { this.padIndex = i; this.render(); if (i < SIZE || i >= CHEST) this.showTipFor(i, this.elOf(i)); else this.hideTip(); }
     if (pressed.has('confirm')) this.leftClick(i);
     if (pressed.has('action')) this.rightClick(i);
     if (pressed.has('quick')) this.quickMove(i);
@@ -210,12 +235,14 @@ export class Inventory {
       el.className = 'slot';
       el.innerHTML = '<img alt="" draggable="false"><span class="count"></span>';
       el.dataset.i = i;
-      this.slotEls[i] = el;
+      if (i < SIZE) this.slotEls[i] = el;
       return el;
     };
     const storage = $('#inv-storage'), hot = $('#inv-hotbar');
     for (let i = HOTBAR; i < SIZE; i++) storage.appendChild(mk(i));
     for (let i = 0; i < HOTBAR; i++) hot.appendChild(mk(i));
+    this.chestEls = [];
+    for (let k = 0; k < 18; k++) { const el = mk(CHEST + k); this.chestEls.push(el); $('#chest-grid').appendChild(el); }
 
     // crafting list
     this.craftEls = RECIPES.map((r, k) => {
@@ -278,7 +305,7 @@ export class Inventory {
         drag.timer = setTimeout(() => {
           if (!drag || drag.moved || !this.cursor) return;
           const c = this.cursor, keep = Math.floor(c.n / 2);
-          if (keep > 0 && !this.slots[i]) { this.slots[i] = { id: c.id, n: keep }; c.n -= keep; this.changed(); }
+          if (keep > 0 && !this.at(i)) { this.put(i, { id: c.id, n: keep }); c.n -= keep; this.changed(); }
           navigator.vibrate?.(15);
         }, 380);
       }
@@ -289,7 +316,7 @@ export class Inventory {
       if (drag && e.pointerId === drag.id && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag.moved = true;
       if (e.pointerType === 'touch') return;
       const i = slotAt(e.clientX, e.clientY);
-      if (i >= 0) { this.hover = i; this.showTipFor(i, this.slotEls[i], e.clientX, e.clientY); } else { this.hover = -1; this.hideTip(); }
+      if (i >= 0) { this.hover = i; this.showTipFor(i, this.elOf(i), e.clientX, e.clientY); } else { this.hover = -1; this.hideTip(); }
     });
     const end = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
@@ -307,8 +334,8 @@ export class Inventory {
       if (to >= 0 && to !== d.from) {
         this.leftClick(to); // drop: move, merge or swap
         // swapped stack goes back to where the drag started
-        if (this.cursor && !this.slots[d.from]) this.leftClick(d.from);
-      } else if (!this.slots[d.from] || this.slots[d.from].id === this.cursor.id) {
+        if (this.cursor && !this.at(d.from)) this.leftClick(d.from);
+      } else if (!this.at(d.from) || this.at(d.from).id === this.cursor.id) {
         this.leftClick(d.from); // dropped outside: put it back
       }
     };
@@ -327,7 +354,7 @@ export class Inventory {
   }
 
   showTipFor(i, el, x, y) {
-    const s = this.slots[i];
+    const s = this.at(i);
     if (!s || this.cursor) { this.hideTip(); return; }
     const d = itemDef(s.id);
     this.tipEl.innerHTML = `<b>${d.name}</b><em style="color:${CAT_COLOR[d.cat] || '#fff'}">${d.cat}${s.n > 1 ? ` · ×${s.n}` : ''}</em><span>${d.desc}</span>`;
@@ -369,6 +396,10 @@ export class Inventory {
       this.slotEls[i].classList.toggle('pad-focus', this.open && this.padFocus && i === this.padIndex);
       this.slotEls[i].classList.toggle('active', i === this.selected);
     }
+    this.chestEls?.forEach((el, k) => {
+      this.paint(el, this.ext?.slots[k] ?? null);
+      el.classList.toggle('pad-focus', this.open && this.padFocus && this.padIndex === CHEST + k);
+    });
     for (let i = 0; i < HOTBAR; i++) {
       this.paint(this.hudSlots[i], this.slots[i]);
       this.hudSlots[i].classList.toggle('active', i === this.selected);
@@ -378,7 +409,7 @@ export class Inventory {
     this.cursorEl.classList.toggle('hidden', !this.cursor);
     // gamepad: the carried stack hovers over the focused slot, not the mouse
     if (this.open && this.padFocus && this.cursor) {
-      const el = this.padIndex < SIZE ? this.slotEls[this.padIndex] : this.craftEls[this.padIndex - SIZE];
+      const el = this.elOf(this.padIndex);
       const r = el.getBoundingClientRect();
       this.moveCursor(r.left + r.width * 0.72, r.top + r.height * 0.28);
     }

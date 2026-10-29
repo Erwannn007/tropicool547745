@@ -14,40 +14,41 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261029184133">
+  <link rel="stylesheet" href="style.css?v=20261029203807">
   <script type="importmap">
 {
   "imports": {
-    "three": "./vendor/three.module.js?v=20261029184133",
-    "./src/audio.js": "./src/audio.js?v=20261029184133",
-    "./src/axe.js": "./src/axe.js?v=20261029184133",
-    "./src/axeModel.js": "./src/axeModel.js?v=20261029184133",
-    "./src/book.js": "./src/book.js?v=20261029184133",
-    "./src/daycycle.js": "./src/daycycle.js?v=20261029184133",
-    "./src/dress.js": "./src/dress.js?v=20261029184133",
-    "./src/fishing.js": "./src/fishing.js?v=20261029184133",
-    "./src/grass.js": "./src/grass.js?v=20261029184133",
-    "./src/hands.js": "./src/hands.js?v=20261029184133",
-    "./src/held.js": "./src/held.js?v=20261029184133",
-    "./src/icons.js": "./src/icons.js?v=20261029184133",
-    "./src/input.js": "./src/input.js?v=20261029184133",
-    "./src/inventory.js": "./src/inventory.js?v=20261029184133",
-    "./src/items.js": "./src/items.js?v=20261029184133",
-    "./src/lights.js": "./src/lights.js?v=20261029184133",
-    "./src/main.js": "./src/main.js?v=20261029184133",
-    "./src/models.js": "./src/models.js?v=20261029184133",
-    "./src/noise.js": "./src/noise.js?v=20261029184133",
-    "./src/placement.js": "./src/placement.js?v=20261029184133",
-    "./src/player.js": "./src/player.js?v=20261029184133",
-    "./src/scythe.js": "./src/scythe.js?v=20261029184133",
-    "./src/shaders.js": "./src/shaders.js?v=20261029184133",
-    "./src/sky.js": "./src/sky.js?v=20261029184133",
-    "./src/structures.js": "./src/structures.js?v=20261029184133",
-    "./src/terrain.js": "./src/terrain.js?v=20261029184133",
-    "./src/textures.js": "./src/textures.js?v=20261029184133",
-    "./src/vegetation.js": "./src/vegetation.js?v=20261029184133",
-    "./src/water.js": "./src/water.js?v=20261029184133",
-    "./src/world.js": "./src/world.js?v=20261029184133"
+    "three": "./vendor/three.module.js?v=20261029203807",
+    "./src/audio.js": "./src/audio.js?v=20261029203807",
+    "./src/axe.js": "./src/axe.js?v=20261029203807",
+    "./src/axeModel.js": "./src/axeModel.js?v=20261029203807",
+    "./src/book.js": "./src/book.js?v=20261029203807",
+    "./src/daycycle.js": "./src/daycycle.js?v=20261029203807",
+    "./src/dress.js": "./src/dress.js?v=20261029203807",
+    "./src/fishing.js": "./src/fishing.js?v=20261029203807",
+    "./src/grass.js": "./src/grass.js?v=20261029203807",
+    "./src/hands.js": "./src/hands.js?v=20261029203807",
+    "./src/held.js": "./src/held.js?v=20261029203807",
+    "./src/icons.js": "./src/icons.js?v=20261029203807",
+    "./src/input.js": "./src/input.js?v=20261029203807",
+    "./src/inventory.js": "./src/inventory.js?v=20261029203807",
+    "./src/items.js": "./src/items.js?v=20261029203807",
+    "./src/lights.js": "./src/lights.js?v=20261029203807",
+    "./src/main.js": "./src/main.js?v=20261029203807",
+    "./src/models.js": "./src/models.js?v=20261029203807",
+    "./src/noise.js": "./src/noise.js?v=20261029203807",
+    "./src/placement.js": "./src/placement.js?v=20261029203807",
+    "./src/player.js": "./src/player.js?v=20261029203807",
+    "./src/saves.js": "./src/saves.js?v=20261029203807",
+    "./src/scythe.js": "./src/scythe.js?v=20261029203807",
+    "./src/shaders.js": "./src/shaders.js?v=20261029203807",
+    "./src/sky.js": "./src/sky.js?v=20261029203807",
+    "./src/structures.js": "./src/structures.js?v=20261029203807",
+    "./src/terrain.js": "./src/terrain.js?v=20261029203807",
+    "./src/textures.js": "./src/textures.js?v=20261029203807",
+    "./src/vegetation.js": "./src/vegetation.js?v=20261029203807",
+    "./src/water.js": "./src/water.js?v=20261029203807",
+    "./src/world.js": "./src/world.js?v=20261029203807"
   }
 }
   </script>
@@ -97,6 +98,7 @@
     <div class="panel">
       <div class="tabs">
         <button data-tab="world" class="tab active">Archipel</button>
+        <button data-tab="saves" class="tab">Mondes</button>
         <button data-tab="options" class="tab">Options</button>
         <button data-tab="journal" class="tab">Journal</button>
       </div>
@@ -112,7 +114,18 @@
           <input type="range" id="vegetation" min="0" max="1" step="0.05"></label>
         <label>Graine <span class="hint-inline">lettres, mots ou chiffres</span>
           <span class="row"><input type="text" id="seed" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ex. lagon-turquoise"><button id="dice" aria-label="Graine aléatoire">🎲</button></span></label>
-        <button id="generate" class="primary">Générer l'archipel</button>
+        <button id="generate" class="primary">Générer l'archipel vierge</button>
+        <p class="tiny warn" id="gen-warn"></p>
+      </section>
+
+      <section data-panel="saves" class="hidden">
+        <div class="saves">
+          <div class="saves-head">Mes mondes</div>
+          <p class="tiny saves-intro">Enregistre le monde où tu joues pour y revenir quand tu veux. Une graine tapée dans Archipel redonne toujours l’archipel vierge.</p>
+          <span class="row"><input type="text" id="save-name" maxlength="28" autocomplete="off" spellcheck="false" placeholder="Nom de ce monde"><button id="save-world" aria-label="Enregistrer ce monde">💾</button></span>
+          <p class="tiny" id="save-status"></p>
+          <div id="save-list"></div>
+        </div>
       </section>
 
       <section data-panel="options" class="hidden">
@@ -167,6 +180,11 @@
         <div id="inv-hotbar" class="grid hot"></div>
         <p class="inv-help" id="inv-help"></p>
       </div>
+      <div id="chest-panel" class="px-panel hidden">
+        <div class="inv-head"><span class="inv-title">Coffre</span><span class="inv-sub" id="chest-sub"></span></div>
+        <div id="chest-grid" class="grid"></div>
+        <p class="inv-help" id="chest-help"></p>
+      </div>
       <div class="craft-panel px-panel">
         <div class="inv-head"><span class="inv-title">Fabrication</span></div>
         <div id="craft-list"></div>
@@ -200,7 +218,7 @@
   <script>
     // Startup guard: if the game fails to boot, say so and offer a clean reload
     // (clears the offline cache + service worker) instead of a frozen menu.
-    window.TROPICOOL_VERSION = '20261029184133';
+    window.TROPICOOL_VERSION = '20261029203807';
     window.__bootFail = function (msg) {
       if (window.__booted || document.getElementById('boot-error')) return;
       var p = document.querySelector('#start .panel');
@@ -219,6 +237,6 @@
     addEventListener('unhandledrejection', function (e) { window.__bootFail((e.reason && e.reason.message) || 'erreur de chargement'); });
     setTimeout(function () { if (!window.__booted) window.__bootFail('Chargement trop long (connexion ?)'); }, 20000);
   </script>
-  <script type="module" src="src/main.js?v=20261029184133"></script>
+  <script type="module" src="src/main.js?v=20261029203807"></script>
 </body>
 </html>

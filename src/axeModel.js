@@ -241,7 +241,7 @@ export class AxeModel {
       transparent: true, depthTest: false, depthWrite: false,
       uniforms: { uTex: { value: this.rt.texture } },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: 'uniform sampler2D uTex; varying vec2 vUv; void main() { vec4 c = texture2D(uTex, vUv); if (c.a < 0.02) discard; gl_FragColor = c; }',
+      fragmentShader: 'uniform sampler2D uTex; varying vec2 vUv; void main() { vec4 c = texture2D(uTex, vUv); if (c.a < 0.02) discard; gl_FragColor = vec4(c.rgb / c.a, c.a); }', // target colour is premultiplied by alpha
     }));
     this.quad.frustumCulled = false;
     this.quadScene.add(this.quad);

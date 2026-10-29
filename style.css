@@ -253,6 +253,16 @@ body.touch .slot .key { display: none; }
 .tip em { font-style: normal; font-size: 12px; font-weight: 600; }
 .tip span { opacity: .88; white-space: normal; }
 
+/* chest */
+#chest-panel {
+  --s: clamp(28px, min(5.4vw, calc((100dvh - 158px) / 4.7)), 54px); --g: clamp(4px, 0.6vw, 6px);
+  padding: clamp(10px, 1.6vw, 16px); display: flex; flex-direction: column; gap: calc(var(--g) * 1.6);
+  background: linear-gradient(rgba(90, 52, 24, .35), rgba(90, 52, 24, .35)), var(--panel); border-color: #d8a443;
+}
+#chest-panel .inv-title { color: #f2cf74; }
+#chest-grid { grid-template-columns: repeat(6, var(--s)); }
+@media (orientation: portrait) { #chest-panel { --s: clamp(26px, 9vw, 44px); --g: 3px; } }
+
 /* crafting */
 .craft-panel { padding: clamp(10px, 1.6vw, 16px); display: flex; flex-direction: column; gap: 8px; width: 270px; }
 #craft-list { display: flex; flex-direction: column; gap: 6px; }
@@ -295,6 +305,22 @@ body.inv-open #touch, body.inv-open #hotbar, body.inv-open #crosshair, body.inv-
   position: absolute; left: 50%; top: calc(50% + 22px); transform: translateX(-50%);
   font: 700 14px/1 var(--font); color: #ff9a8a; text-shadow: 2px 2px 0 rgba(40, 10, 10, .7); white-space: nowrap;
 }
+.saves { display: flex; flex-direction: column; gap: 8px; }
+.saves-intro { text-align: left; margin: 0; }
+.saves-head { font: 700 18px/1 var(--font); color: var(--accent); text-shadow: 2px 2px 0 #c0560f; }
+#save-status { text-align: left; margin: 0; min-height: 1em; }
+.warn { color: #ffb08e; text-align: left; margin: -4px 0 0; min-height: 0; }
+.warn:empty { display: none; }
+#save-list { display: flex; flex-direction: column; gap: 6px; }
+.save-row {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 6px 8px;
+  background: rgba(13, 44, 76, .75); box-shadow: inset 2px 2px 0 rgba(0, 12, 30, .5), 0 0 0 2px #1d5486;
+}
+.save-row.current { box-shadow: inset 2px 2px 0 rgba(0, 12, 30, .5), 0 0 0 2px var(--accent); }
+.save-row b { display: block; font-size: 16px; }
+.save-row span { font-size: 12px; opacity: .75; }
+.save-row button { padding: 8px 10px; font-size: 14px; }
+.save-empty { font-size: 13px; opacity: .7; }
 .hint-inline { font-size: 12px; opacity: .65; }
 input[type=text] {
   font-family: var(--font); font-size: 18px; padding: 8px; background: #0d2c4c; color: var(--text); border: 2px solid #6ab6ea;

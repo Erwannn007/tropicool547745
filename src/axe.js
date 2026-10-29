@@ -11,7 +11,9 @@ const HITS = { palms: 4, trees: 5 };
 const REGROW_MS = 20 * 60 * 1000;
 const FKEY = 'tropicool.felled.v1';
 
-export const worldKey = (cfg) => `${seedNumber(cfg.seed)}|${cfg.islands}|${cfg.size}|${cfg.relief}|${cfg.vegetation}`;
+// where a world's changes are stored: its instance id (older saves used the config)
+export const legacyKey = (cfg) => `${seedNumber(cfg.seed)}|${cfg.islands}|${cfg.size}|${cfg.relief}|${cfg.vegetation}`;
+export const worldKey = (cfg) => cfg.instance || legacyKey(cfg);
 function loadAll() { try { return JSON.parse(localStorage.getItem(FKEY)) || {}; } catch (_) { return {}; } }
 
 // keys of trees still felled (not yet regrown) for this world config

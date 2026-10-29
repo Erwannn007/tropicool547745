@@ -120,7 +120,12 @@ export function dress(model, kind, light) {
     else mat = heldMat(part, kind === 'icon' ? light : null);
     const m = new THREE.Mesh(part.geo, mat);
     if (part.flame) m.userData.flame = true;
-    g.add(m);
+    if (part.hinge) { // parts sharing a hinge swing together (chest lid)
+      let pivot = g.children.find((c) => c.userData.hinge === String(part.hinge));
+      if (!pivot) { pivot = new THREE.Group(); pivot.userData.hinge = String(part.hinge); pivot.position.set(...part.hinge); g.add(pivot); }
+      m.position.set(-part.hinge[0], -part.hinge[1], -part.hinge[2]);
+      pivot.add(m);
+    } else g.add(m);
   }
   return g;
 }

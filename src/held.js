@@ -17,17 +17,31 @@ export class HeldView {
       transparent: true, depthTest: false, depthWrite: false,
       uniforms: { uTex: { value: this.rt.texture } },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: 'uniform sampler2D uTex; varying vec2 vUv; void main() { vec4 c = texture2D(uTex, vUv); if (c.a < 0.02) discard; gl_FragColor = c; }',
+      fragmentShader: 'uniform sampler2D uTex; varying vec2 vUv; void main() { vec4 c = texture2D(uTex, vUv); if (c.a < 0.02) discard; gl_FragColor = vec4(c.rgb / c.a, c.a); }', // target colour is premultiplied by alpha
     }));
     quad.frustumCulled = false;
     this.quadScene.add(quad);
     this.item = null; this.anim = null; this.t = -1; this.hitStop = 0; this.raise = 1;
+
+    // wind trail behind a fast blade (anim.trail = { tip, inner, from, to })
+    this.RIB = 28;
+    const rg = new THREE.BufferGeometry();
+    rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.RIB * 2 * 3), 3));
+    rg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.RIB * 2 * 4), 4));
+    const idx = [];
+    for (let i = 0; i < this.RIB - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    rg.setIndex(idx);
+    this.ribbon = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+    this.ribbon.frustumCulled = false;
+    this.scene.add(this.ribbon);
+    this.samples = [];
   }
 
   // object: Group already dressed; anim: { idle, keys, impact, cooldown }
   set(id, object, anim) {
     if (this.item === id) return;
     this.holder.clear();
+    this.samples = [];
     this.item = id; this.anim = anim; this.t = -1; this.queued = false;
     if (object) this.holder.add(object);
     this.raise = 0; // bring it up from below the screen
@@ -81,7 +95,32 @@ export class HeldView {
     );
     this.holder.quaternion.copy(p.q);
     this.holder.scale.setScalar(this.anim.scale || 1); // reset: the previous item may have been scaled
+    this.trail(dt);
     return impact;
+  }
+
+  trail(dt) {
+    const tr = this.anim.trail;
+    if (tr && this.t > tr.from && this.t < tr.to) {
+      this.holder.updateMatrixWorld();
+      this.samples.unshift({
+        tip: new THREE.Vector3(...tr.tip).applyMatrix4(this.holder.matrixWorld),
+        inner: new THREE.Vector3(...tr.inner).applyMatrix4(this.holder.matrixWorld),
+        age: 0,
+      });
+    }
+    const life = tr?.life ?? 0.16;
+    for (const s of this.samples) s.age += dt;
+    this.samples = this.samples.filter((s) => s.age < life).slice(0, this.RIB);
+    const P = this.ribbon.geometry.attributes.position, C = this.ribbon.geometry.attributes.color;
+    for (let i = 0; i < this.RIB; i++) {
+      const s = this.samples[Math.min(i, this.samples.length - 1)];
+      const a = s && i < this.samples.length ? Math.max(0, 1 - s.age / life) * (1 - i / this.RIB) : 0;
+      if (s) { P.setXYZ(i * 2, s.tip.x, s.tip.y, s.tip.z); P.setXYZ(i * 2 + 1, s.inner.x, s.inner.y, s.inner.z); }
+      C.setXYZW(i * 2, 0.92, 0.97, 1, 0.5 * a);       // airy white at the blade tip
+      C.setXYZW(i * 2 + 1, 0.75, 0.9, 1, 0.08 * a);   // fading towards the heel
+    }
+    P.needsUpdate = true; C.needsUpdate = true;
   }
 
   render(renderer, mainCamera) {

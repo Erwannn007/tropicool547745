@@ -14,7 +14,8 @@ import { Fishing, SPECIES, rarityOf } from './fishing.js';
 import { Audio } from './audio.js';
 import { Inventory } from './inventory.js';
 import { itemDef } from './items.js';
-import { Axe, loadFelled } from './axe.js';
+import { Axe, loadFelled, legacyKey } from './axe.js';
+import { newInstance, listSaves, findSave, writeSave, deleteSave, hasChanges, purge } from './saves.js';
 import { DayCycle, fmtHour } from './daycycle.js';
 import { Lights } from './lights.js';
 import { Hands } from './hands.js';
@@ -45,7 +46,13 @@ try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SKEY) || '{}'
 settings.world = { ...DEFAULT_CONFIG, ...settings.world };
 const save = () => { try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch (_) { /* ignore */ } };
 const params = new URLSearchParams(location.search);
-if (params.has('seed')) settings.world.seed = params.get('seed').trim() || settings.world.seed;
+// the world being played keeps its changes under an instance id; worlds from
+// before saves existed keep using their old key so nothing is lost
+if (!settings.world.instance) settings.world.instance = legacyKey(settings.world);
+if (params.has('seed')) {
+  const seed = params.get('seed').trim() || settings.world.seed;
+  if (String(seed) !== String(settings.world.seed)) settings.world = { ...settings.world, seed, instance: newInstance() };
+}
 if (params.has('hour')) settings.hour = (+params.get('hour') || 0) % 24;
 if (params.has('weather')) settings.weather = params.get('weather');
 
@@ -160,12 +167,26 @@ function giveItems(list) {
 function pickPlaced() {
   const o = placement.aimed();
   if (!o) return false;
+  if (o.items?.some(Boolean)) { toast('Vide le coffre avant de le reprendre'); audio.sfx('deny'); return true; }
   const id = placement.pickUp(o);
   audio.sfx('place');
   giveItems([[id, 1]]);
   return true;
 }
 axe.hooks.hitPlaced = pickPlaced;
+
+// chest: open it next to the bag, lid swings up
+let openChestObj = null;
+function openChest(o) {
+  openChestObj = o;
+  placement.setLid(o, true);
+  audio.sfx('chestOpen');
+  inventory.setChest({ slots: o.items, onChange: () => { placement.save(); $('#chest-sub').textContent = `${o.items.filter(Boolean).length} / ${o.items.length}`; } });
+  $('#chest-sub').textContent = `${o.items.filter(Boolean).length} / ${o.items.length}`;
+  $('#chest-help').textContent = input.lastDevice === 'gamepad' ? 'R1 : envoyer d’un côté à l’autre' : input.lastDevice === 'touch' ? 'Double touche : envoyer d’un côté à l’autre' : 'Maj+clic : envoyer d’un côté à l’autre';
+  openInventory();
+}
+function aimedChest() { const o = placement.aimed(); return o?.items ? o : null; }
 
 const ACTION_ICON = { book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍' };
 function onHeldChange(held) {
@@ -203,12 +224,20 @@ function openInventory() {
 function closeInventory() {
   if (state !== 'inventory') return;
   inventory.setOpen(false);
+  if (openChestObj) {
+    inventory.setChest(null);
+    placement.setLid(openChestObj, false);
+    placement.save();
+    audio.sfx('chestClose');
+    openChestObj = null;
+  }
   state = 'play';
   if (!isTouch && input.lastDevice === 'keyboard') lockPointer();
 }
 
 // ---------------------------------------------------------------- world
 let current = null;
+let pendingSpawn = null; // where to stand when a saved world is loaded
 function buildWorld() {
   if (current) {
     current.terrain.removeFromParent();
@@ -233,6 +262,7 @@ function buildWorld() {
   scene.add(structures.group);
   player.setWorld(world, [...vegColliders(world), ...structures.colliders], structures.surfaces);
   player.spawn(world.spawn);
+  if (pendingSpawn) { player.spawn(pendingSpawn); pendingSpawn = null; }
   fishing.setWorld(world);
   axe.setWorld(world, veg, player);
   mower.setWorld(world, veg);
@@ -263,6 +293,7 @@ function syncOutputs() {
 function fillMenu() {
   for (const k of ranges) $('#' + k).value = settings.world[k];
   $('#seed').value = settings.world.seed;
+  renderSaves();
   $('#quality').value = settings.quality;
   $('#res').value = settings.res;
   $('#autores').checked = settings.autores;
@@ -293,9 +324,76 @@ const SEED_B = ['bleu', 'doré', 'turquoise', 'secret', 'paisible', 'sauvage', '
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 $('#dice').onclick = () => { $('#seed').value = `${pick(SEED_A)}-${pick(SEED_B)}${Math.random() < 0.4 ? '-' + (2 + Math.floor(Math.random() * 98)) : ''}`; };
 $('#seed').addEventListener('keydown', (e) => e.stopPropagation());
+// ---- saved worlds
+const fmtDate = (t) => new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' ' + new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+function currentSave() { return findSave(settings.world.instance); }
+function storeCurrent(name) {
+  const p = player.pos;
+  writeSave({
+    id: settings.world.instance, name: name ?? currentSave()?.name ?? String(settings.world.seed),
+    cfg: { ...settings.world }, date: Date.now(), hour: +day.hour.toFixed(2),
+    pos: { x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), yaw: +player.yaw.toFixed(3) },
+  });
+}
+function renderSaves() {
+  const cur = currentSave();
+  $('#save-name').value = cur ? cur.name : String(settings.world.seed);
+  $('#save-status').textContent = cur ? `Monde enregistré ✓ (sauvegarde auto) · graine « ${settings.world.seed} »` : `Monde actuel non enregistré · graine « ${settings.world.seed} »`;
+  $('#gen-warn').textContent = !cur && hasChanges(settings.world.instance) ? '⚠ Le monde actuel n’est pas enregistré : ses changements seront perdus.' : '';
+  const list = $('#save-list'); list.innerHTML = '';
+  const saves = listSaves();
+  if (!saves.length) { list.innerHTML = '<div class="save-empty">Aucun monde enregistré pour l’instant.</div>'; return; }
+  for (const sv of saves) {
+    const row = document.createElement('div');
+    const isCur = sv.id === settings.world.instance;
+    row.className = 'save-row' + (isCur ? ' current' : '');
+    const info = document.createElement('div');
+    info.innerHTML = '<b></b><span></span>';
+    info.querySelector('b').textContent = sv.name;
+    info.querySelector('span').textContent = `graine « ${sv.cfg.seed} » · ${fmtDate(sv.date)}${isCur ? ' · en cours' : ''}`;
+    const play = document.createElement('button');
+    play.textContent = isCur ? 'En cours' : 'Jouer'; play.className = isCur ? '' : 'primary'; play.disabled = isCur;
+    play.onclick = () => loadSave(sv.id);
+    const del = document.createElement('button');
+    del.textContent = '🗑'; del.setAttribute('aria-label', 'Supprimer');
+    del.onclick = () => {
+      if (del.dataset.armed !== '1') { del.dataset.armed = '1'; del.textContent = 'Sûr ?'; setTimeout(() => { del.dataset.armed = ''; del.textContent = '🗑'; }, 2500); return; }
+      deleteSave(sv.id);
+      if (!isCur) purge(sv.id); // the world being played keeps its data, it just becomes unsaved
+      renderSaves();
+    };
+    row.append(info, play, del);
+    list.appendChild(row);
+  }
+}
+// leaving the current world: an unsaved one is forgotten
+function leaveCurrent() { if (!currentSave()) purge(settings.world.instance); }
+function loadSave(id) {
+  const sv = findSave(id);
+  if (!sv) return;
+  leaveCurrent();
+  settings.world = { ...DEFAULT_CONFIG, ...sv.cfg, instance: sv.id };
+  if (sv.hour != null) { day.hour = sv.hour; settings.hour = sv.hour; }
+  pendingSpawn = sv.pos ? { x: sv.pos.x, y: sv.pos.y, z: sv.pos.z, yaw: sv.pos.yaw } : null;
+  save();
+  regenerate();
+  closeMenu();
+  setTimeout(() => toast(`Monde « ${sv.name} » chargé`), 200);
+}
+$('#save-world').onclick = () => {
+  const name = $('#save-name').value.trim().slice(0, 28) || String(settings.world.seed);
+  storeCurrent(name);
+  audio.sfx('craft');
+  renderSaves();
+  $('#save-status').textContent = `« ${name} » enregistré ✓`;
+};
+$('#save-name').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') $('#save-world').click(); });
+
 $('#generate').onclick = () => {
+  leaveCurrent();
   for (const k of ranges) settings.world[k] = +$('#' + k).value;
   settings.world.seed = $('#seed').value.trim().slice(0, 32) || '1';
+  settings.world.instance = newInstance(); // always the untouched archipelago
   save();
   regenerate();
   closeMenu();
@@ -305,6 +403,7 @@ function showTab(name) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('section[data-panel]').forEach((s) => s.classList.toggle('hidden', s.dataset.panel !== name));
   if (name === 'journal') renderJournal();
+  if (name === 'saves') renderSaves();
   focusIndex = 0;
 }
 document.querySelectorAll('.tab').forEach((t) => (t.onclick = () => showTab(t.dataset.tab)));
@@ -452,7 +551,10 @@ function hudTick(dt) {
   audio.setRain(day.rain * 0.9);
   audio.setNight(globals.uNight.value);
   audio.setFire(Math.max(0, 1 - placement.nearestFire() / 9) * 0.8 + (hands.id === 'torch' ? 0.25 : 0));
-  if ((hourSave += hudAcc) > 10) { hourSave = 0; settings.hour = +day.hour.toFixed(2); save(); }
+  if ((hourSave += hudAcc) > 10) {
+    hourSave = 0; settings.hour = +day.hour.toFixed(2); save();
+    if (state === 'play' && currentSave()) storeCurrent(); // saved worlds remember where you stand
+  }
   hudAcc = 0;
 }
 
@@ -480,7 +582,9 @@ function frame() {
     if (shoreTimer < 0 && current) { shoreTimer = 0.5; audio.setShore(shoreness()); }
     const heldId = inventory.held?.id;
     if (p.has('rotate') || (input.lastDevice === 'gamepad' && (p.has('left') || p.has('right')))) placement.rotOffset += (p.has('left') ? -1 : 1) * Math.PI / 4;
-    if (p.has('action')) {
+    const chest = p.has('action') && heldId !== 'axe' ? aimedChest() : null;
+    if (chest) openChest(chest);
+    else if (p.has('action')) {
       if (heldId === 'rod') fishing.action(input);
       else if (heldId === 'axe') axe.action();
       else if (heldId === 'scythe') hands.action();
