@@ -238,7 +238,7 @@ function pickPlaced() {
   if (!o) {
     const p = building.aimed();
     if (!p) return false;
-    giveItems([building.remove(p)]);
+    giveItems(building.remove(p)); // [[id, n], …]: a doorway brings its door along
     return true;
   }
   if (o.items?.some(Boolean)) { toast('Vide le coffre avant de le reprendre'); audio.sfx('deny'); return true; }
