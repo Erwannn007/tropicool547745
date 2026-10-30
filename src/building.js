@@ -11,9 +11,9 @@ import * as THREE from 'three';
 import { MODELS, floorPosts, STOREY as H, GATE_W } from './models.js';
 import { dress, ghostColor, worldMat } from './dress.js';
 import { worldKey } from './axe.js';
+import { getW, setW } from './store.js';
 import { Puffs } from './cooking.js';
 
-const BKEY = 'tropicool.build.v1';
 const REACH = 6;
 const Q = Math.PI / 2;
 
@@ -195,17 +195,11 @@ export class Building {
     this.pieces = []; this.grid.clear(); this.popping = [];
     this.world = world; this.player = player;
     player.solids = this;
-    let list = [];
-    try { list = (JSON.parse(localStorage.getItem(BKEY)) || {})[worldKey(world.cfg)] || []; } catch (_) { /* none */ }
-    for (const e of list) if (PIECES[e.t]) this.spawn(e.t, e.x, e.y, e.z, e.yaw, e.posts, e.open);
+    for (const e of getW('build', worldKey(world.cfg)) || []) if (PIECES[e.t]) this.spawn(e.t, e.x, e.y, e.z, e.yaw, e.posts, e.open);
   }
   save() {
-    try {
-      const all = JSON.parse(localStorage.getItem(BKEY)) || {};
-      const r = (v) => +v.toFixed(3);
-      all[worldKey(this.world.cfg)] = this.pieces.map((p) => ({ t: p.type, x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(p.yaw), ...(p.posts ? { posts: p.posts.map(r) } : {}), ...(p.open ? { open: p.open } : {}) }));
-      localStorage.setItem(BKEY, JSON.stringify(all));
-    } catch (_) { /* private mode */ }
+    const r = (v) => +v.toFixed(3);
+    setW('build', worldKey(this.world.cfg), this.pieces.map((p) => ({ t: p.type, x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(p.yaw), ...(p.posts ? { posts: p.posts.map(r) } : {}), ...(p.open ? { open: p.open } : {}) })));
   }
 
   // ---------------------------------------------------------------- pieces

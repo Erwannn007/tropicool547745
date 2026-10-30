@@ -88,6 +88,10 @@ body.inv-open #prompt, body.book-open #prompt { display: none !important; }
 #catch-name { font-size: 22px; font-weight: 700; }
 #catch-info { font-size: 15px; opacity: .9; }
 #catch-badge { font-size: 13px; color: var(--accent); min-height: 1em; }
+#found { text-align: center; border-color: #7ee0dc; }
+#found-badge { font-size: 13px; color: #7ee0dc; }
+#found-name { font-size: 24px; font-weight: 700; color: var(--accent); text-shadow: 2px 2px 0 #c0560f; }
+#found-info { font-size: 14px; opacity: .9; }
 #fps { position: absolute; left: calc(8px + env(safe-area-inset-left)); top: calc(8px + env(safe-area-inset-top)); font-size: 14px; text-shadow: 1px 1px 0 #0008; }
 #hint {
   position: absolute; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%);
@@ -360,6 +364,15 @@ body.inv-open #touch, body.inv-open #hotbar, body.inv-open #crosshair, body.inv-
 .save-row span { font-size: 12px; opacity: .75; }
 .save-row button { padding: 8px 10px; font-size: 14px; }
 .save-empty { font-size: 13px; opacity: .7; }
+/* game modes: start screen choice, tabs that belong to one mode only */
+.modes { display: flex; flex-direction: column; gap: 10px; }
+.mode { display: flex; flex-direction: column; gap: 4px; text-align: left; }
+.mode b { font-size: 20px; }
+.mode span { font-size: 13px; opacity: .85; font-weight: 400; }
+body.mode-discover .tab[data-tab=world], body.mode-discover .tab[data-tab=saves], body:not(.mode-discover) .tab[data-tab=isles] { display: none; }
+#isle-search:not(.on) { display: none; }
+#isle-list { display: flex; flex-direction: column; gap: 6px; }
+#isle-list .save-row b small { font-size: 12px; color: #7ee0dc; margin-right: 4px; }
 .hint-inline { font-size: 12px; opacity: .65; }
 input[type=text] {
   font-family: var(--font); font-size: 18px; padding: 8px; background: #0d2c4c; color: var(--text); border: 2px solid #6ab6ea;

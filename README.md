@@ -20,6 +20,8 @@ Jeu cozy en 3D à la première personne : un archipel tropical généré procéd
 
 **Fabrication** (panneau à droite de l’inventaire) : torche tiki, feu de camp, transat, parasol en paille, carnet de voyage, à partir de bois, fibres et noix de coco.
 
+**Barque** (bois ×10, fibres ×6) : mets-la à l’eau depuis la plage ou le ponton, utilise-la pour monter, puis rame (marcher = ramer, gauche/droite = tourner, courir = ramer plus fort) pour aller d’une île à l’autre. Saute pour descendre : sur la plage ou le ponton le plus proche, sinon dans l’eau. On peut pêcher depuis la barque ; un coup de hache la reprend.
+
 **Coffre** : pose-le puis utilise-le pour l’ouvrir (18 places, couvercle qui s’ouvre) ; Maj+clic / double touche / R1 envoie un objet d’un côté à l’autre. Un coffre plein ne se reprend pas.
 
 **Carnet de voyage** : utilise-le pour l’ouvrir et écrire librement (40 pages, sauvegardées sur l’appareil ; L1 / R1 tournent les pages à la manette).
@@ -30,7 +32,15 @@ Jeu cozy en 3D à la première personne : un archipel tropical généré procéd
 
 Dans les menus, la manette navigue avec la croix ou le stick gauche (✕ valide, ○ ferme).
 
-## Archipel configurable
+## Deux modes
+- **Découverte** : le bouton *Découvrir une nouvelle île* (menu → *Registre*) tire une graine vraiment aléatoire (mots, lettres, chiffres mélangés) et des réglages au hasard : un îlot seul ou un grand archipel. Chaque île découverte entre dans ton **registre** (numéro, nom à changer, graine, date) ; reviens-y quand tu veux avec *Y aller* : elle garde tout ce que tu y as fait (constructions, arbres coupés, coffres, barques…) et l’endroit où tu étais. Le mode a son propre sac.
+- **Mode libre** : l’archipel que tu règles toi-même (ci-dessous), avec tes mondes enregistrés.
+
+Les îles découvertes sont sauvages : ni ponton ni paillote, tu arrives sur la plage. On change de mode depuis l’écran d’accueil (menu → *Écran d’accueil*).
+
+Ce que tu changes dans chaque monde est rangé dans la base de données du navigateur (IndexedDB), qui a beaucoup plus de place que le petit stockage habituel : de quoi garder des centaines d’îles. Sur iPhone, ajoute le jeu à l’écran d’accueil pour que Safari ne vide jamais ces données.
+
+## Archipel configurable (mode libre)
 Menu → *Archipel* : nombre d'îles, taille, relief, végétation, graine (lettres, mots ou chiffres : `lagon-turquoise`, 🎲 en propose une). Les réglages sont mémorisés sur l'appareil.
 Options : qualité (basse/moyenne/haute), résolution, résolution dynamique, sensibilité, volume, FPS, heure, vitesse du cycle jour/nuit (normal, lent, figé), météo (variable, toujours beau, pluie).
 **Mondes** (menu → *Mondes*) : enregistre le monde où tu joues sous un nom (arbres coupés, herbe fauchée, objets posés, coffres, position, heure) et reviens-y quand tu veux ; un monde enregistré se sauvegarde ensuite tout seul. Taper une graine et générer donne toujours l’archipel vierge (un monde non enregistré est alors oublié).

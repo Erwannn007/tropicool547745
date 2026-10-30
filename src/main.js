@@ -14,7 +14,8 @@ import { Fishing, SPECIES, rarityOf } from './fishing.js';
 import { Audio } from './audio.js';
 import { Inventory } from './inventory.js';
 import { itemDef } from './items.js';
-import { Axe, loadFelled, legacyKey } from './axe.js';
+import { Axe, loadFelled, legacyKey, worldKey } from './axe.js';
+import { initStore, loadWorld } from './store.js';
 import { newInstance, listSaves, findSave, writeSave, deleteSave, hasChanges, purge } from './saves.js';
 import { DayCycle, fmtHour } from './daycycle.js';
 import { Lights } from './lights.js';
@@ -28,6 +29,8 @@ import { initIcons } from './icons.js';
 import { Book } from './book.js';
 import { Cooking, cookStage, cookedId, COOK } from './cooking.js';
 import { Building, PIECES, isPiece } from './building.js';
+import { Boats } from './boat.js';
+import { listIsles, findIsle, writeIsle, deleteIsle, randomSeed, randomIsleCfg, isleName } from './discover.js';
 
 const $ = (s) => document.querySelector(s);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -45,6 +48,9 @@ const defaults = {
   hour: 9.5,
   dayspeed: 'normal',
   weather: 'auto',
+  mode: 'free', // 'free': the archipelago you set up · 'discover': islands found one by one
+  free: null, // the Free world while playing Discover
+  isle: null, // the last Discover island
 };
 let settings;
 try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SKEY) || '{}') }; } catch (_) { settings = { ...defaults }; }
@@ -55,6 +61,7 @@ const params = new URLSearchParams(location.search);
 // before saves existed keep using their old key so nothing is lost
 if (!settings.world.instance) settings.world.instance = legacyKey(settings.world);
 if (params.has('seed')) {
+  if (settings.mode === 'discover') { settings.mode = 'free'; settings.world = { ...DEFAULT_CONFIG, instance: newInstance(), ...settings.free }; }
   const seed = params.get('seed').trim() || settings.world.seed;
   if (String(seed) !== String(settings.world.seed)) settings.world = { ...settings.world, seed, instance: newInstance() };
 }
@@ -200,6 +207,11 @@ const cooking = new Cooking(scene, camera, {
   ready: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast('🔥 Ton poisson est grillé !'); },
   burnt: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast('Ça sent le brûlé… 💨'); },
 });
+// rowboats on the lagoon
+const boats = new Boats(scene, camera, {
+  sound: (n) => audio.sfx(n), message: toast, rumble: (s, ms) => input.rumble(s, ms),
+  ripple: (x, z, s) => waterFx.ripple(x, z, s), drop: (...a) => waterFx.drop(...a), splash: (p, k) => waterFx.splash(p, k),
+});
 // blocks, floors, walls, roofs, stairs
 const building = new Building(scene, camera, {
   sound: (n) => audio.sfx(n), message: toast, rumble: (s, ms) => input.rumble(s, ms),
@@ -236,6 +248,8 @@ function giveItems(list) {
 function pickPlaced() {
   const o = placement.aimed();
   if (!o) {
+    const bt = boats.aimed();
+    if (bt) { boats.remove(bt); audio.sfx('place'); giveItems([['boat', 1]]); return true; }
     const p = building.aimed();
     if (!p) return false;
     giveItems(building.remove(p)); // [[id, n], …]: a doorway brings its door along
@@ -324,7 +338,7 @@ function openChest(o) {
 }
 function aimedChest() { const o = placement.aimed(); return o?.items ? o : null; }
 
-const ACTION_ICON = { book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍', bed: '📍' };
+const ACTION_ICON = { boat: '📍', book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍', bed: '📍' };
 let lastHeld;
 function onHeldChange(held) {
   const id = held?.id ?? null;
@@ -364,7 +378,7 @@ function stashPiece(b) {
 // A: one of the selected item set down in the world, as a real piece
 function dropHeld() {
   const id = inventory.held?.id;
-  if (!id || !hasModel(id)) return;
+  if (!id || !hasModel(id) || id === 'boat') return;
   inventory.take(id, 1);
   debris.dropItem(id, camera, player.vel);
   audio.sfx('toss');
@@ -377,9 +391,9 @@ function endCarry() {
 // over the thing itself (or above the bar while carrying), with the keys of
 // the device in use
 const KEYS = {
-  keyboard: { use: 'Clic', grab: 'G', stash: 'V', turn: 'R', drop: 'A' },
-  gamepad: { use: '□', grab: '○', stash: 'R3', turn: '◀ ▶', drop: '▼' },
-  touch: { use: '●', grab: '✋', stash: '🎒', turn: '', drop: '⤓' },
+  keyboard: { use: 'Clic', grab: 'G', stash: 'V', turn: 'R', drop: 'A', jump: 'Espace', row: 'ZQSD' },
+  gamepad: { use: '□', grab: '○', stash: 'R3', turn: '◀ ▶', drop: '▼', jump: '✕', row: 'Stick G' },
+  touch: { use: '●', grab: '✋', stash: '🎒', turn: '', drop: '⤓', jump: '⤒', row: '' },
 };
 const kb = (k) => (k ? `<kbd>${k}</kbd>` : '');
 let promptHtml = '', promptAcc = 0, promptTarget = null;
@@ -390,7 +404,9 @@ function promptHud(dt) {
     promptAcc = 0.12;
     promptTarget = null;
     const held = inventory.held?.id;
-    if (state !== 'play') { /* nothing */ } else if (carrying) {
+    if (state !== 'play') { /* nothing */ } else if (boats.riding && !carrying && !debris.aimed) {
+      promptTarget = { html: `${K.row ? kb(K.row) + ' ' : ''}Ramer ${kb(K.jump)} Descendre${held === 'rod' ? ` ${kb(K.use)} Pêcher` : ''}`, bottom: true };
+    } else if (carrying) {
       const b = hands.carried.body;
       promptTarget = { html: `${kb(K.use)} Lancer ${kb(K.grab)} Lâcher ${kb(K.stash)} Ranger${K.turn ? ` ${kb(K.turn)} Tourner` : ''}`, bottom: true };
     } else if (debris.aimed) {
@@ -405,6 +421,11 @@ function promptHud(dt) {
       if (t) promptTarget = { html: `<div class="pname">${t.type === 'palms' ? 'Palmier' : 'Arbre'}</div>${kb(K.use)} Abattre`, at: () => _anchor.set(t.x, Math.min(camera.position.y + 0.5, t.y + 2.2), t.z) };
     } else if (isPiece(held)) {
       promptTarget = { html: `<div class="pname">${itemDef(held).name}</div>${kb(K.use)} Poser${K.turn ? ` ${kb(K.turn)} Tourner` : ''}`, bottom: true };
+    }
+    if (!promptTarget && state === 'play' && !carrying && !boats.riding) {
+      const bt = boats.aimed();
+      if (bt) promptTarget = { html: `<div class="pname">Barque</div>${kb(K.use)} ${held === 'axe' ? 'Reprendre' : 'Monter'}`, at: () => _anchor.set(bt.x, 1.15, bt.z) };
+      else if (held === 'boat') promptTarget = { html: `<div class="pname">Barque</div>${kb(K.use)} Mettre à l’eau${K.turn ? ` ${kb(K.turn)} Tourner` : ''}`, bottom: true };
     }
     const fire = !promptTarget && state === 'play' && !carrying && held !== 'axe' ? aimedFire() : null;
     if (fire?.cook) {
@@ -429,7 +450,7 @@ function promptHud(dt) {
       if (c) promptTarget = { html: `<div class="pname">Coffre</div>${kb(K.use)} Ouvrir`, at: () => _anchor.set(c.x, (c.y ?? camera.position.y - 1) + 0.9, c.z) };
     }
     // an item in hand that is not a tool: how to set it down
-    if (!promptTarget && state === 'play' && !carrying && held && hasModel(held) && !TOOLS_IN_HAND.has(held) && !PLACEABLE[held]) {
+    if (!promptTarget && state === 'play' && !carrying && held && hasModel(held) && !TOOLS_IN_HAND.has(held) && !PLACEABLE[held] && held !== 'boat') {
       promptTarget = { html: `${kb(K.drop)} Déposer`, bottom: true };
     }
   }
@@ -448,7 +469,7 @@ let grabUi = '';
 function grabHud() {
   const carrying = !!hands.carried, piece = !carrying && state === 'play' ? debris.aimed : null;
   const held = inventory.held?.id;
-  const canDrop = !carrying && !piece && held && hasModel(held) && !TOOLS_IN_HAND.has(held) && !PLACEABLE[held];
+  const canDrop = !carrying && !piece && held && hasModel(held) && !TOOLS_IN_HAND.has(held) && !PLACEABLE[held] && held !== 'boat';
   const ui = carrying ? 'carry' : piece ? 'grab' : canDrop ? 'drop' : '';
   if (ui === grabUi) return;
   grabUi = ui;
@@ -458,7 +479,9 @@ function grabHud() {
   $('#btn-stash').classList.toggle('hidden', !carrying && !piece);
 }
 
-const inventory = new Inventory({ sound: (n) => audio.sfx(n), toast, onChange: onHeldChange });
+// each game mode has its own bag
+const INV_KEY = { free: 'tropicool.inventory.v1', discover: 'tropicool.inventory.discover.v1' };
+const inventory = new Inventory({ sound: (n) => audio.sfx(n), toast, onChange: onHeldChange, key: INV_KEY[settings.mode] });
 onHeldChange(inventory.held);
 inventory.closeRequest = () => closeInventory();
 $('#inv-close').addEventListener('click', () => closeInventory());
@@ -530,6 +553,7 @@ function buildWorld() {
   axe.setWorld(world, veg, player);
   mower.setWorld(world, veg);
   building.setWorld(world, player); // (flattens the grass under what was built)
+  boats.setWorld(world, player);
   debris.setWorld(world, veg, player);
   waterFx.clear();
   if (hands.carried) hands.endCarry();
@@ -540,7 +564,7 @@ function buildWorld() {
   day.shadowDir.copy(globals.uSunDir.value);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights, building, cooking };
+  window.__game = { player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights, building, cooking, boats };
   console.log(`[tropicool] world ${settings.world.seed} (${world.cfg.seed}) built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
     bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length, stones: world.props.stones.length,
@@ -549,7 +573,7 @@ function buildWorld() {
 
 function regenerate() {
   $('#loading').classList.remove('hidden');
-  setTimeout(() => { buildWorld(); $('#loading').classList.add('hidden'); }, 30);
+  setTimeout(async () => { await loadWorld(worldKey(settings.world)); buildWorld(); $('#loading').classList.add('hidden'); }, 30);
 }
 
 // ---------------------------------------------------------------- menus
@@ -673,6 +697,7 @@ function showTab(name) {
   document.querySelectorAll('section[data-panel]').forEach((s) => s.classList.toggle('hidden', s.dataset.panel !== name));
   if (name === 'journal') renderJournal();
   if (name === 'saves') renderSaves();
+  if (name === 'isles') renderIsles();
   focusIndex = 0;
 }
 document.querySelectorAll('.tab').forEach((t) => (t.onclick = () => showTab(t.dataset.tab)));
@@ -698,6 +723,7 @@ function renderJournal() {
 }
 
 function openMenu(tab = 'world') {
+  if (settings.mode === 'discover' && (tab === 'world' || tab === 'saves')) tab = 'isles';
   state = 'menu';
   fillMenu(); showTab(tab);
   $('#menu').classList.remove('hidden');
@@ -726,8 +752,127 @@ function startGame(withSettings) {
     document.documentElement.requestFullscreen().catch(() => {});
   }
 }
-$('#play').onclick = () => startGame(false);
-$('#start-settings').onclick = () => startGame(true);
+
+// ---- game modes: Free (the archipelago you set up, the saved worlds) and
+// Discover (islands found one by one, kept in a registry; discover.js). Each
+// keeps its own world and its own bag.
+function storeIsle() { // the island being played remembers where you stand
+  if (settings.mode !== 'discover' || current?.world.cfg.instance !== settings.world.instance || !findIsle(settings.world.instance)) return; // (not while the next one loads)
+  const p = player.pos;
+  writeIsle({ id: settings.world.instance, date: Date.now(), pos: { x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), yaw: +player.yaw.toFixed(3) } });
+}
+function goIsle(id, fresh = false) {
+  const isle = findIsle(id);
+  if (!isle) return;
+  storeIsle();
+  settings.world = { ...DEFAULT_CONFIG, ...isle.cfg, instance: id };
+  settings.isle = id;
+  pendingSpawn = !fresh && isle.pos ? { ...isle.pos } : null;
+  save();
+  regenerate();
+}
+function discoverIsle() {
+  const list = listIsles();
+  const cfg = randomIsleCfg(), seed = randomSeed(new Set(list.map((i) => String(i.cfg.seed))));
+  const isle = {
+    id: newInstance(), n: list.reduce((m, i) => Math.max(m, i.n || 0), 0) + 1,
+    name: isleName(cfg, new Set(list.map((i) => i.name))), cfg: { ...cfg, seed, wild: true }, found: Date.now(), date: Date.now(),
+  };
+  writeIsle(isle);
+  goIsle(isle.id, true);
+  setTimeout(() => { showFound(isle); audio.sfx('catch'); }, 450);
+}
+let foundTimer;
+function showFound(isle) {
+  $('#found-badge').textContent = `★ Île n°${isle.n} découverte !`;
+  $('#found-name').textContent = isle.name;
+  $('#found-info').textContent = `${isle.cfg.islands === 1 ? 'Une seule île' : `${isle.cfg.islands} îles`} · graine « ${isle.cfg.seed} »`;
+  const card = $('#found');
+  card.classList.add('hidden'); void card.offsetWidth; card.classList.remove('hidden');
+  clearTimeout(foundTimer); foundTimer = setTimeout(() => card.classList.add('hidden'), 5200);
+}
+const islesTxt = (n) => (n === 1 ? '1 île' : `${n} îles`);
+function renderIsles() {
+  const list = listIsles(), cur = findIsle(settings.world.instance), q = $('#isle-search').value.trim().toLowerCase();
+  $('#isles-count').textContent = list.length ? `· ${list.length}` : '';
+  $('#isle-name').value = cur?.name ?? '';
+  $('#isle-status').textContent = cur ? `Île n°${cur.n} · ${islesTxt(cur.cfg.islands)} · graine « ${cur.cfg.seed} » · découverte le ${fmtDate(cur.found)}` : '';
+  $('#isle-search').classList.toggle('on', list.length > 6);
+  const box = $('#isle-list'); box.innerHTML = '';
+  if (!list.length) { box.innerHTML = '<div class="save-empty">Aucune île découverte pour l’instant.</div>'; return; }
+  const shown = list.filter((i) => !q || i.name.toLowerCase().includes(q) || String(i.cfg.seed).toLowerCase().includes(q)).sort((a, b) => b.n - a.n);
+  if (!shown.length) { box.innerHTML = '<div class="save-empty">Aucune île ne correspond.</div>'; return; }
+  for (const isle of shown) {
+    const isCur = isle.id === cur?.id, row = document.createElement('div');
+    row.className = 'save-row' + (isCur ? ' current' : '');
+    const info = document.createElement('div');
+    info.innerHTML = '<b><small></small></b><span></span>';
+    info.querySelector('small').textContent = `n°${isle.n}`;
+    info.querySelector('b').append(isle.name);
+    info.querySelector('span').textContent = `${islesTxt(isle.cfg.islands)} · graine « ${isle.cfg.seed} » · ${fmtDate(isle.found)}`;
+    const go = document.createElement('button');
+    go.textContent = isCur ? 'Ici' : 'Y aller'; go.className = isCur ? '' : 'primary'; go.disabled = isCur;
+    go.onclick = () => { goIsle(isle.id); closeMenu(); setTimeout(() => toast(`⛵ Cap sur « ${isle.name} »`), 200); };
+    const del = document.createElement('button');
+    del.textContent = '🗑'; del.setAttribute('aria-label', 'Oublier cette île'); del.disabled = isCur;
+    del.onclick = () => {
+      if (del.dataset.armed !== '1') { del.dataset.armed = '1'; del.textContent = 'Sûr ?'; setTimeout(() => { del.dataset.armed = ''; del.textContent = '🗑'; }, 2500); return; }
+      deleteIsle(isle.id); purge(isle.id); // the island and everything done there
+      renderIsles();
+    };
+    row.append(info, go, del);
+    box.appendChild(row);
+  }
+}
+$('#discover').onclick = () => { discoverIsle(); closeMenu(); };
+$('#rename-isle').onclick = () => {
+  const cur = findIsle(settings.world.instance), name = $('#isle-name').value.trim().slice(0, 28);
+  if (!cur || !name) return;
+  writeIsle({ id: cur.id, name });
+  audio.sfx('craft');
+  renderIsles();
+  $('#isle-status').textContent = `Renommée « ${name} » ✓`;
+};
+for (const id of ['#isle-name', '#isle-search']) $(id).addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && id === '#isle-name') $('#rename-isle').click(); });
+$('#isle-search').addEventListener('input', () => renderIsles());
+
+function setMode(mode) {
+  if (mode === settings.mode) return;
+  if (settings.mode === 'discover') storeIsle();
+  else { if (currentSave()) storeCurrent(); settings.free = { ...settings.world }; }
+  settings.mode = mode;
+  document.body.classList.toggle('mode-discover', mode === 'discover');
+  inventory.useKey(INV_KEY[mode]);
+  if (mode === 'discover') {
+    const last = findIsle(settings.isle) || listIsles().sort((a, b) => (b.date || 0) - (a.date || 0))[0];
+    if (last) goIsle(last.id); else discoverIsle(); // the very first island
+    return;
+  }
+  settings.world = { ...DEFAULT_CONFIG, ...settings.free };
+  if (!settings.world.instance) settings.world.instance = newInstance();
+  const sv = currentSave();
+  pendingSpawn = sv?.pos ? { ...sv.pos } : null;
+  save();
+  regenerate();
+}
+function renderStart() {
+  const n = listIsles().length, freeSeed = (settings.mode === 'free' ? settings.world : settings.free)?.seed ?? DEFAULT_CONFIG.seed;
+  $('#discover-sub').textContent = n ? `${islesTxt(n)} dans ton registre · continue ton voyage` : 'Pars à la découverte d’îles inconnues et garde-les dans ton registre.';
+  $('#free-sub').textContent = `Archipel « ${freeSeed} » · choisis ta graine et règle l’archipel comme tu veux.`;
+  $('#play-discover').classList.toggle('primary', settings.mode === 'discover');
+  $('#play-free').classList.toggle('primary', settings.mode !== 'discover');
+}
+$('#play-free').onclick = () => { setMode('free'); startGame(false); };
+$('#play-discover').onclick = () => { setMode('discover'); startGame(false); };
+$('#to-start').onclick = () => {
+  closeMenu();
+  storeIsle();
+  state = 'start';
+  document.exitPointerLock?.();
+  renderStart();
+  $('#start').classList.remove('hidden');
+  focusIndex = 0;
+};
 
 const tbtn = (id, fn) => $(id).addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
 tbtn('#btn-fish', () => input.pressed.add('action'));
@@ -817,7 +962,7 @@ function hudTick(dt) {
     if (lastPeriod && state === 'play') { const c = $('#clock'); c.classList.remove('change'); void c.offsetWidth; c.classList.add('change'); }
     lastPeriod = name;
   }
-  const t = placement.target || building.target;
+  const t = placement.target || building.target || boats.target;
   $('#place-tip').textContent = state === 'play' && t && !t.ok ? t.why : '';
   audio.setRain(day.rain * 0.9);
   audio.setNight(globals.uNight.value);
@@ -825,6 +970,7 @@ function hudTick(dt) {
   if ((hourSave += hudAcc) > 10) {
     hourSave = 0; settings.hour = +day.hour.toFixed(2); save();
     if (state === 'play' && currentSave()) storeCurrent(); // saved worlds remember where you stand
+    if (state === 'play') storeIsle();
   }
   hudAcc = 0;
 }
@@ -849,13 +995,15 @@ function frame() {
     if (p.has('prev')) inventory.select(inventory.selected - 1);
     const look = input.consumeLook();
     player.update(dt, input, look);
+    boats.pushOut(player);
+    if (boats.riding && p.has('jump')) boats.leave();
     shoreTimer -= dt;
     if (shoreTimer < 0 && current) { shoreTimer = 0.5; audio.setShore(shoreness()); }
     const heldId = inventory.held?.id;
     const carrying = !!hands.carried, piece = carrying ? null : debris.aimed;
     const turn = p.has('rotate') || (input.lastDevice === 'gamepad' && (p.has('left') || p.has('right')));
     if (turn && carrying) debris.turn();
-    else if (turn) { placement.rotOffset += (p.has('left') ? -1 : 1) * Math.PI / 4; building.rot += (p.has('left') ? -1 : 1) * Math.PI / 2; }
+    else if (turn) { boats.rot += (p.has('left') ? -1 : 1) * Math.PI / 4; placement.rotOffset += (p.has('left') ? -1 : 1) * Math.PI / 4; building.rot += (p.has('left') ? -1 : 1) * Math.PI / 2; }
     if (p.has('grab')) { if (debris.carried) letGo('drop'); else if (piece) grabPiece(piece); }
     if (p.has('stash') && debris.carried) letGo('stash');
     else if (p.has('stash') && piece) stashPiece(piece);
@@ -864,10 +1012,12 @@ function frame() {
     const fire = p.has('action') && heldId !== 'axe' && !carrying && !chest ? aimedFire() : null;
     const gate = p.has('action') && heldId !== 'axe' && !carrying && !chest && !fire ? aimedGate() : null;
     const bed = p.has('action') && heldId !== 'axe' && !carrying && !chest && !fire && !gate ? aimedBed() : null;
+    const boat = p.has('action') && heldId !== 'axe' && !carrying && !chest && !fire && !gate && !bed && !boats.riding ? boats.aimed() : null;
     if (chest) openChest(chest);
     else if (fire && useFire(fire, heldId)) { /* fish on or off the spit */ }
     else if (gate) building.toggle(gate, player.pos);
     else if (bed) sleepOn(bed);
+    else if (boat) boats.board(boat);
     else if (p.has('action') && carrying) letGo('throw');
     else if (p.has('action')) {
       if (heldId === 'rod') fishing.action(input);
@@ -875,6 +1025,7 @@ function frame() {
       else if (heldId === 'scythe' || heldId === 'pickaxe') hands.action();
       else if (heldId === 'book') openBook();
       else if (PLACEABLE[heldId]) { if (placement.place()) inventory.take(heldId, 1); }
+      else if (heldId === 'boat') { if (boats.place()) inventory.take(heldId, 1); }
       else if (isPiece(heldId)) { if (building.place()) inventory.take(heldId, 1); }
       else if (itemDef(heldId ?? '').eat) hands.eat();
       else if (piece) grabPiece(piece);
@@ -927,6 +1078,8 @@ function frame() {
     placement.update(dt);
     building.aim(state === 'play' && !hands.carried ? inventory.held?.id : null, dt);
     building.update(dt);
+    boats.aim(state === 'play' && !hands.carried ? inventory.held?.id : null);
+    boats.update(dt);
     cooking.update(dt);
     const px = renderer.getDrawingBufferSize(_px).y * 0.5;
     building.setScale(px); cooking.setScale(px);
@@ -963,6 +1116,11 @@ function frame() {
   }
 }
 
+document.body.classList.toggle('mode-discover', settings.mode === 'discover');
+if (settings.mode === 'discover') { const i = findIsle(settings.world.instance); if (i?.pos) pendingSpawn = { ...i.pos }; }
+renderStart();
+await initStore(); // what changed in each world: IndexedDB (store.js)
+await loadWorld(worldKey(settings.world));
 buildWorld();
 window.__booted = true;
 fillMenu();

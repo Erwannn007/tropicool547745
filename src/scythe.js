@@ -4,9 +4,9 @@
 import * as THREE from 'three';
 import { cutMap } from './grass.js';
 import { worldKey, saveFelled } from './axe.js';
+import { getW, setW } from './store.js';
 
 const RES = 1024, REGROW_S = 10 * 60;
-const MKEY = 'tropicool.mowed.v1';
 const GREENS = [[0.30, 0.70, 0.13], [0.42, 0.78, 0.16], [0.60, 0.92, 0.26], [0.80, 0.86, 0.38]];
 
 export class Mower {
@@ -36,13 +36,11 @@ export class Mower {
   setWorld(world, veg) {
     this.world = world; this.veg = veg;
     this.cut.fill(0); this.data.fill(0); this.active.clear(); this.pinned.clear();
-    try {
-      const e = (JSON.parse(localStorage.getItem(MKEY)) || {})[worldKey(world.cfg)];
-      if (e) {
-        const age = (Date.now() - e.t) / 1000 / REGROW_S;
-        for (const [i, a] of e.cells) { const v = a - age; if (v > 0) { this.cut[i] = v; this.active.add(i); } }
-      }
-    } catch (_) { /* fresh */ }
+    const e = getW('mowed', worldKey(world.cfg));
+    if (e) {
+      const age = (Date.now() - e.t) / 1000 / REGROW_S;
+      for (const [i, a] of e.cells) { const v = a - age; if (v > 0) { this.cut[i] = v; this.active.add(i); } }
+    }
     this.upload();
   }
 
@@ -67,12 +65,8 @@ export class Mower {
     this.tex.needsUpdate = true;
   }
   save() {
-    try {
-      const all = JSON.parse(localStorage.getItem(MKEY)) || {};
-      const pinned = new Set([...this.pinned.values()].flat());
-      all[worldKey(this.world.cfg)] = { t: Date.now(), cells: [...this.active].filter((i) => !pinned.has(i)).map((i) => [i, +this.cut[i].toFixed(3)]) };
-      localStorage.setItem(MKEY, JSON.stringify(all));
-    } catch (_) { /* private mode */ }
+    const pinned = new Set([...this.pinned.values()].flat());
+    setW('mowed', worldKey(this.world.cfg), { t: Date.now(), cells: [...this.active].filter((i) => !pinned.has(i)).map((i) => [i, +this.cut[i].toFixed(3)]) });
   }
 
   // sweep in front of (x, z) towards (fx, fz); returns fibres gained

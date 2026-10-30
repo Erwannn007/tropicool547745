@@ -108,6 +108,7 @@ export class Player {
   }
 
   update(dt, input, lookDelta, frozen = false) {
+    if (this.ride) { this.ride(dt, input, lookDelta, frozen); return; } // seated in a boat (boat.js)
     this.yaw -= lookDelta.x;
     this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - lookDelta.y));
 

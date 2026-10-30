@@ -10,27 +10,24 @@ import { AxeModel, AXE_BLOW } from './axeModel.js';
 import { Blow } from './blow.js';
 import { globals } from './shaders.js';
 import { seedNumber } from './world.js';
+import { getW, setW } from './store.js';
 
 const HITS = { palms: 4, trees: 5 };
 const REGROW_MS = 20 * 60 * 1000;
-const FKEY = 'tropicool.felled.v1';
 
 // where a world's changes are stored: its instance id (older saves used the config)
 export const legacyKey = (cfg) => `${seedNumber(cfg.seed)}|${cfg.islands}|${cfg.size}|${cfg.relief}|${cfg.vegetation}`;
 export const worldKey = (cfg) => cfg.instance || legacyKey(cfg);
-function loadAll() { try { return JSON.parse(localStorage.getItem(FKEY)) || {}; } catch (_) { return {}; } }
 
 // keys of trees still felled (not yet regrown) for this world config
 export function loadFelled(cfg) {
-  const all = loadAll(), now = Date.now();
-  const list = (all[worldKey(cfg)] || []).filter((e) => now - e.t < REGROW_MS);
+  const now = Date.now();
+  const list = (getW('felled', worldKey(cfg)) || []).filter((e) => now - e.t < REGROW_MS);
   return new Set(list.map((e) => e.k));
 }
 export function saveFelled(cfg, key) {
-  const all = loadAll(), wk = worldKey(cfg), now = Date.now();
-  all[wk] = (all[wk] || []).filter((e) => now - e.t < REGROW_MS);
-  all[wk].push({ k: key, t: now });
-  try { localStorage.setItem(FKEY, JSON.stringify(all)); } catch (_) { /* private mode */ }
+  const wk = worldKey(cfg), now = Date.now();
+  setW('felled', wk, [...(getW('felled', wk) || []).filter((e) => now - e.t < REGROW_MS), { k: key, t: now }]);
 }
 
 const DEPTH = [0.3, 0.46, 0.6, 0.7, 0.78]; // notch depth per blow, fraction of the trunk radius

@@ -45,6 +45,7 @@ Les images de référence du projet sont des captures de jeux indé pixel-art 3D
 - Flamme : `#fff5b2 #ffc740 #ff801f #e64214` (bandes nettes, jamais de dégradé)
 - Planches (blocs de bois, planchers, marches) : `#5e3a1c #764a26 #8e5e32 #a6743e #bc8a4e #d2a264`, joints sombres d'un pixel décalés d'une rangée à l'autre, têtes de clous claires
 - Moellons (blocs de pierre) : rampe Pierre, assises décalées, joints `#dbdbe3`, arête haut-gauche éclairée
+- Barque : peinture lagon `#0d4c5e #14687a #1d8592 #2ba2a8 #4cc0bc #86dcd0`, fond `#4a1a14 #62241a #7c3022 #963e2c #b0503a`, virure haute crème `#b8a888 #d4c6a4 #e8dcbc #f6eed6` + liseré corail, rivets cuivre `#6a3418 #9a5426 #c47a3a #e8a860` ; intérieur en rampe Planches avec membrures
 - Poisson grillé : `#5a2a10 #7e4016 #a85e24 #c8823a #e0a654 #f2c878`, marques de grill en diagonale, yeux blancs · carbonisé : `#120c0a #1e1410 #2e2018 #3e2c20 #523a28` + braises `#c8380e` · chair : `#d8b890 #ead0a8 #f6e4c4 #fff4e0`
 
 ## Mouvement

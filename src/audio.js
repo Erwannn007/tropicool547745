@@ -522,6 +522,23 @@ export class Audio {
     if (name === 'tick') this.tone(1800, 1400, 0.035, 'sine', 0.04);
     if (name === 'open') { this.tone(500, 900, 0.12, 'sine', 0.05); }
     if (name === 'jump') this.noise({ f0: 700, f1: 1500, q: 0.8, dur: 0.12, attack: 0.02, gain: 0.04 });
+    if (name === 'oar') { // the blade slips in and pulls, the oarlock creaks
+      this.noise({ type: 'lowpass', f0: 900, f1: 350, q: 0.7, dur: 0.35, attack: 0.03, gain: 0.12, buf: this.brown });
+      this.noise({ type: 'bandpass', f0: 1500, f1: 700, q: 1.2, dur: 0.3, attack: 0.05, gain: 0.04 });
+      this.tone(380, 330, 0.12, 'sawtooth', 0.008, 0.08, this.master, 0.1);
+      if (Math.random() < 0.5) this.tone(700 + Math.random() * 300, 1100, 0.05, 'sine', 0.015, 0.25); // a drop
+    }
+    if (name === 'board') { // a step onto the boards: hollow thump, the hull rocks, water slaps
+      this.tone(110, 70, 0.25, 'sine', 0.25);
+      this.noise({ type: 'bandpass', f0: 420, q: 4, dur: 0.12, attack: 0.002, gain: 0.18 });
+      this.noise({ type: 'lowpass', f0: 600, f1: 250, q: 0.6, dur: 0.6, attack: 0.08, gain: 0.14, delay: 0.1, buf: this.brown });
+      this.tone(170, 220, 0.3, 'sawtooth', 0.01, 0.05, this.master, 0.08);
+    }
+    if (name === 'boatBump') { // the hull knocks against sand or a post
+      this.tone(90, 55, 0.3, 'sine', 0.3);
+      this.noise({ type: 'bandpass', f0: 320, f1: 200, q: 3, dur: 0.2, attack: 0.002, gain: 0.25 });
+      this.noise({ type: 'highpass', f0: 2000, q: 0.6, dur: 0.25, attack: 0.01, gain: 0.04, delay: 0.03 }); // sand hiss
+    }
     if (name === 'splash') {
       this.noise({ type: 'lowpass', f0: 2500, f1: 400, q: 0.5, dur: 0.7, attack: 0.01, gain: 0.25, buf: this.brown });
       this.noise({ f0: 2200, f1: 800, q: 0.7, dur: 0.5, gain: 0.1 });

@@ -12,32 +12,42 @@ export { itemDef };
 
 // ---------------------------------------------------------------- model
 export class Inventory {
-  constructor({ onChange, sound, toast } = {}) {
+  // key: where this bag is kept (each game mode has its own)
+  constructor({ onChange, sound, toast, key = KEY } = {}) {
     this.onChange = onChange; this.sound = sound; this.toast = toast;
-    this.slots = new Array(SIZE).fill(null);
-    this.selected = 0;
     this.cursor = null; // stack held by the pointer while the inventory is open
     this.open = false;
     this.padIndex = 0;
-    this.kit = 0;
+    this.key = key;
     this.load();
+    this.buildDOM();
+    this.render();
+  }
+
+  load() {
+    this.slots = new Array(SIZE).fill(null);
+    this.selected = 0; this.kit = 0;
+    try {
+      const d = JSON.parse(localStorage.getItem(this.key));
+      if (d && Array.isArray(d.slots) && d.slots.length === SIZE) { this.slots = d.slots; this.selected = d.selected | 0; this.kit = d.kit | 0; }
+    } catch (_) { /* fresh inventory */ }
     const since = { scythe: 4, pickaxe: 5 }; // handed out once, from that kit version on
     for (const id of ['rod', 'axe', 'scythe', 'pickaxe']) if (!this.count(id) && !(since[id] && this.kit >= since[id])) this.add(id, 1);
     if (this.kit < 2) { this.add('torch', 4); this.add('transat', 1); this.add('campfire', 1); }
     if (this.kit < 3 && !this.count('book')) this.add('book', 1);
     if (this.kit < 4) this.add('chest', 1);
     if (this.kit < KIT) { this.kit = KIT; this.save(); }
-    this.buildDOM();
+  }
+  save() { try { localStorage.setItem(this.key, JSON.stringify({ slots: this.slots, selected: this.selected, kit: this.kit })); } catch (_) { /* private mode */ } }
+  // another bag (switching game mode)
+  useKey(key) {
+    if (key === this.key) return;
+    this.save();
+    this.key = key; this.cursor = null;
+    this.load();
     this.render();
+    this.onChange?.(this.held);
   }
-
-  load() {
-    try {
-      const d = JSON.parse(localStorage.getItem(KEY));
-      if (d && Array.isArray(d.slots) && d.slots.length === SIZE) { this.slots = d.slots; this.selected = d.selected | 0; this.kit = d.kit | 0; }
-    } catch (_) { /* fresh inventory */ }
-  }
-  save() { try { localStorage.setItem(KEY, JSON.stringify({ slots: this.slots, selected: this.selected, kit: this.kit })); } catch (_) { /* private mode */ } }
 
   get held() { return this.slots[this.selected]; }
   count(id) { return this.slots.reduce((n, s) => n + (s && s.id === id ? s.n : 0), 0) + (this.cursor?.id === id ? this.cursor.n : 0); }

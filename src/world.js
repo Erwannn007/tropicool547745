@@ -141,16 +141,19 @@ export function generateWorld(cfg, felled = new Set()) {
     const score = shelf - flat * 3 - Math.max(0, inland - 4);
     if (!best || score > best.score) best = { score, a, dx, dz, cx, cz };
   }
-  const pier = {
+  // a wild island (Discover mode) has neither: nobody has been there yet
+  const wild = !!cfg.wild;
+  const pier = wild ? null : {
     x0: best.cx - best.dx * 3, z0: best.cz - best.dz * 3,
     dx: best.dx, dz: best.dz, length: 26, width: 2.6, deck: 1.35,
   };
   const hutX = best.cx - best.dx * 13, hutZ = best.cz - best.dz * 13;
   let hutFloor = -1e9;
   for (let a = 0; a < 8; a++) hutFloor = Math.max(hutFloor, heightAt(hutX + Math.cos(a) * 3.5, hutZ + Math.sin(a) * 3.5));
-  const hut = { x: hutX, z: hutZ, floor: hutFloor + 0.45, rot: Math.atan2(best.dx, best.dz) };
+  const hut = wild ? null : { x: hutX, z: hutZ, floor: hutFloor + 0.45, rot: Math.atan2(best.dx, best.dz) };
 
   const exclusion = (x, z, pad) => {
+    if (wild) return false;
     // pier capsule
     const px = x - pier.x0, pz = z - pier.z0;
     const along = clamp(px * pier.dx + pz * pier.dz, 0, pier.length);
@@ -213,7 +216,7 @@ export function generateWorld(cfg, felled = new Set()) {
     }
   }
   // a few palms framing the pier & hut, like the reference shot
-  for (let k = 0; k < 6; k++) {
+  for (let k = 0; k < (wild ? 0 : 6); k++) {
     const side = k % 2 ? 1 : -1;
     const t = 2 + k * 2.2 + rnd();
     const px = hut.x + best.dx * t * 0.8 + -best.dz * side * (6 + rnd() * 3);
@@ -308,10 +311,10 @@ export function generateWorld(cfg, felled = new Set()) {
   }
   const SHADOW = { palms: [7.5, 3.6, 0.75], trees: [4.5, 3.4, 0.85], bushes: [0.6, 1.3, 0.7], rocks: [0.7, 1.2, 0.7], stones: [0.3, 0.55, 0.6] };
   const shadowOf = (p) => { const [h, r, k] = SHADOW[p.type]; return [p.x, p.z, h * p.s, r * p.s, k]; };
-  const hutShadow = [hut.x, hut.z, hut.floor - heightAt(hut.x, hut.z) + 3.2, 4.4, 0.85];
+  const hutShadow = wild ? null : [hut.x, hut.z, hut.floor - heightAt(hut.x, hut.z) + 3.2, 4.4, 0.85];
   const paintAll = (filter) => {
     for (const type of Object.keys(SHADOW)) for (const p of props[type]) if (!p.gone && (!filter || filter(shadowOf(p)))) paint(...shadowOf(p));
-    if (!filter || filter(hutShadow)) paint(...hutShadow);
+    if (hutShadow && (!filter || filter(hutShadow))) paint(...hutShadow);
   };
   paintAll();
 
@@ -331,8 +334,16 @@ export function generateWorld(cfg, felled = new Set()) {
   tex.colorSpace = THREE.NoColorSpace;
   tex.needsUpdate = true;
 
-  const deckEnd = { x: pier.x0 + pier.dx * (pier.length - 1.5), z: pier.z0 + pier.dz * (pier.length - 1.5) };
-  const spawn = { x: deckEnd.x, y: pier.deck, z: deckEnd.z, yaw: Math.atan2(pier.dx, pier.dz) };
+  let spawn;
+  if (pier) {
+    const deckEnd = { x: pier.x0 + pier.dx * (pier.length - 1.5), z: pier.z0 + pier.dz * (pier.length - 1.5) };
+    spawn = { x: deckEnd.x, y: pier.deck, z: deckEnd.z, yaw: Math.atan2(pier.dx, pier.dz) };
+  } else { // landed at the water's edge of the shelf, facing inland
+    let d = -6;
+    while (d < 20 && heightAt(best.cx - best.dx * d, best.cz - best.dz * d) < 0.06) d += 0.25;
+    const x = best.cx - best.dx * (d + 0.6), z = best.cz - best.dz * (d + 0.6);
+    spawn = { x, y: heightAt(x, z), z, yaw: Math.atan2(best.dx, best.dz) };
+  }
 
   // remove a prop (tree felled): clear its shadow, repaint neighbours, re-upload
   function removeProp(p) {

@@ -5,8 +5,8 @@ import * as THREE from 'three';
 import { MODELS } from './models.js';
 import { dress, ghostColor } from './dress.js';
 import { worldKey } from './axe.js';
+import { getW, setW } from './store.js';
 
-const PKEY = 'tropicool.placed.v1';
 const REACH = 6;
 // circles: local [x, z, r] colliders; foot: local points that must sit on
 // fairly flat dry ground; ring: preview footprint radius
@@ -57,16 +57,10 @@ export class Placement {
     for (const o of this.objects) this.dispose(o, false);
     this.objects = [];
     this.world = world; this.player = player;
-    let list = [];
-    try { list = (JSON.parse(localStorage.getItem(PKEY)) || {})[worldKey(world.cfg)] || []; } catch (_) { /* none */ }
-    for (const e of list) if (PLACEABLE[e.id]) this.spawn(e.id, e.x, e.y, e.z, e.yaw, e.items, e.cook);
+    for (const e of getW('placed', worldKey(world.cfg)) || []) if (PLACEABLE[e.id]) this.spawn(e.id, e.x, e.y, e.z, e.yaw, e.items, e.cook);
   }
   save() {
-    try {
-      const all = JSON.parse(localStorage.getItem(PKEY)) || {};
-      all[worldKey(this.world.cfg)] = this.objects.map((o) => ({ id: o.id, x: +o.x.toFixed(2), y: +o.y.toFixed(2), z: +o.z.toFixed(2), yaw: +o.yaw.toFixed(3), ...(o.items ? { items: o.items } : {}), ...(o.cook ? { cook: { id: o.cook.id, t: +o.cook.t.toFixed(1) } } : {}) }));
-      localStorage.setItem(PKEY, JSON.stringify(all));
-    } catch (_) { /* private mode */ }
+    setW('placed', worldKey(this.world.cfg), this.objects.map((o) => ({ id: o.id, x: +o.x.toFixed(2), y: +o.y.toFixed(2), z: +o.z.toFixed(2), yaw: +o.yaw.toFixed(3), ...(o.items ? { items: o.items } : {}), ...(o.cook ? { cook: { id: o.cook.id, t: +o.cook.t.toFixed(1) } } : {}) })));
   }
 
   spawn(id, x, y, z, yaw, items, cook) {

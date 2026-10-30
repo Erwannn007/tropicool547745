@@ -103,6 +103,7 @@ export function buildStructures(world, tex) {
   const group = new THREE.Group();
   const rnd = mulberry32(world.cfg.seed + 3);
   const { pier, hut } = world;
+  if (!pier) return { group, colliders: [], surfaces: [] }; // a wild island
   const yaw = Math.atan2(pier.dx, pier.dz);
   const wood = new BoxBatch();  // pier deck
   const floor = new BoxBatch(); // hut floor, sofa frames, table (varnished, under the roof)

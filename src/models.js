@@ -1101,7 +1101,178 @@ export function floorPosts(lengths) {
   return list.length ? { parts: [{ geo: merge(list), tex: T.log(BARK) }] } : null;
 }
 
+// ---------------------------------------------------------------- rowboat
+// Clinker-built rowboat, bow towards +x, keel at y = 0: planks that overlap
+// like upside-down roof tiles (each strake steps out over the one below, a
+// line of copper rivets along its lap), painted lagoon blue over a red bottom,
+// cream top strake with a coral line; bare wood inside with ribs, a slatted
+// floor kept above the waterline, two thwarts, brass oarlocks, a rope ring on
+// the stem, and two oars on their own hinges (they row, see boat.js).
+const HULL_PAINT = ['#0d4c5e', '#14687a', '#1d8592', '#2ba2a8', '#4cc0bc', '#86dcd0'];
+const BOTTOM = ['#4a1a14', '#62241a', '#7c3022', '#963e2c', '#b0503a'];
+const CREAM = ['#b8a888', '#d4c6a4', '#e8dcbc', '#f6eed6'];
+const COPPER = ['#6a3418', '#9a5426', '#c47a3a', '#e8a860'];
+export const BOAT = { L: 3.1, OAR_X: 0.12, SEAT_X: -0.12, SEAT_Y: 0.36, FLOOR_Y: 0.16, OAR_IN: 0.55, OAR_OUT: 1.5 };
+export function boatBeam(u) { // half-width at the gunwale, u: 0 transom .. 1 bow
+  return u < 0.42 ? 0.6 - 0.17 * Math.pow((0.42 - u) / 0.42, 2) : 0.6 * Math.pow(Math.max(0, Math.cos(((u - 0.42) / 0.58) * Math.PI / 2)), 0.75);
+}
+const boatSheer = (u) => 0.56 + 0.2 * Math.pow(Math.max(0, (u - 0.5) / 0.5), 2) + 0.06 * Math.pow(Math.max(0, (0.3 - u) / 0.3), 2);
+const boatKeel = (u) => 0.3 * Math.pow(Math.max(0, (u - 0.72) / 0.28), 2) + 0.07 * Math.pow(Math.max(0, (0.25 - u) / 0.25), 2);
+// a point of the skin: u along the boat, s from the keel (0) up to the gunwale (1)
+function hullPoint(u, s, side, inset = 0) {
+  const B = Math.max(0, boatBeam(u) - inset), K = boatKeel(u) + inset, H = boatSheer(u);
+  return V((u - 0.5) * BOAT.L, K + (H - K) * Math.pow(s, 1.6), side * B * Math.pow(Math.sin(s * Math.PI / 2), 0.75));
+}
+// half-width of the inside of the hull at height y (0 below the keel)
+function insideHalf(u, y) {
+  const K = boatKeel(u) + 0.035, H = boatSheer(u);
+  if (y <= K) return 0;
+  const s = Math.min(1, Math.pow((y - K) / (H - K), 1 / 1.6));
+  return Math.max(0, boatBeam(u) - 0.035) * Math.pow(Math.sin(s * Math.PI / 2), 0.75);
+}
+
+function boatModel() {
+  const { L } = BOAT, NS = 5, NU = 30;
+  // ---- outer skin: strakes with their laps
+  const rows = []; // { s, off, v }
+  for (let k = 0; k < NS; k++) {
+    const s0 = k / NS + (k ? 0.006 : 0), s1 = (k + 1) / NS - 0.006;
+    for (let j = 0; j <= 3; j++) {
+      const f = j / 3;
+      rows.push({ s: s0 + (s1 - s0) * f, off: k ? 0.018 * (1 - f) : 0, v: (k + f) / NS });
+    }
+  }
+  const skin = (inside) => {
+    const pos = [], uv = [], idx = [];
+    const R = inside ? Array.from({ length: 9 }, (_, j) => ({ s: j / 8, off: 0, v: j / 8 })) : rows;
+    for (const side of [1, -1]) {
+      const base = pos.length / 3;
+      for (let i = 0; i <= NU; i++) {
+        const u = 0.002 + (i / NU) * 0.996;
+        for (const r of R) {
+          const p = hullPoint(u, r.s, side, inside ? 0.035 : 0);
+          if (r.off) { // out along the section normal
+            const a = hullPoint(u, Math.max(0, r.s - 0.01), side), b = hullPoint(u, Math.min(1, r.s + 0.01), side);
+            p.addScaledVector(V(0, -side * (b.z - a.z), side * (b.y - a.y)).normalize(), r.off);
+          }
+          pos.push(p.x, p.y, p.z); uv.push(p.x * (inside ? 0.9 : 0.7), r.v);
+        }
+      }
+      const n = R.length;
+      for (let i = 0; i < NU; i++) for (let j = 0; j < n - 1; j++) {
+        const a = base + i * n + j, b = a + n;
+        (side > 0) !== inside ? idx.push(a, b, a + 1, b, b + 1, a + 1) : idx.push(a, a + 1, b, b, a + 1, b + 1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  };
+  const outer = skin(false), inner = skin(true);
+  // ---- transom: a board closing the stern, painted outside, bare inside
+  const transom = (inside) => {
+    const pos = [], nor = [], uv = [], idx = [], x = (0.002 - 0.5) * L + (inside ? 0.035 : 0);
+    const ring = [];
+    for (let j = 0; j <= 8; j++) ring.push(hullPoint(0.002, 1 - j / 8, 1, inside ? 0.035 : 0));
+    for (let j = 1; j <= 8; j++) ring.push(hullPoint(0.002, j / 8, -1, inside ? 0.035 : 0));
+    const cy = ring.reduce((a, p) => a + p.y, 0) / ring.length;
+    pos.push(x, cy, 0); nor.push(inside ? 1 : -1, 0, 0); uv.push(0.5, cy * 2);
+    for (const p of ring) { pos.push(x, p.y, p.z); nor.push(inside ? 1 : -1, 0, 0); uv.push(p.z * 2 + 0.5, p.y * 2); }
+    for (let k = 1; k <= ring.length; k++) { const k1 = k % ring.length + 1; inside ? idx.push(0, k, k1) : idx.push(0, k1, k); }
+    return geo(pos, nor, uv, idx);
+  };
+  // ---- gunwales, keel and stem, thwarts, floor slats
+  const sheerLine = (side) => (t) => hullPoint(0.004 + t * 0.99, 1, side, 0.017).add(V(0, 0.012, 0));
+  const rails = [];
+  for (const side of [1, -1]) rails.push([tube(sheerLine(side), () => 0.032, { rings: 30, radial: 6, section: rounded(1, 0.7), up: V(0, 1, 0), vRep: 6 })]);
+  const keelPts = [];
+  for (let k = 0; k <= 14; k++) { const u = 0.01 + (k / 14) * 0.985; const p = hullPoint(u, 0, 1); keelPts.push(V(p.x, p.y - 0.018, 0)); }
+  for (let k = 1; k <= 5; k++) keelPts.push(V(L / 2 + 0.012, boatKeel(1) + (boatSheer(1) + 0.06 - boatKeel(1)) * (k / 5), 0));
+  const keelCurve = new THREE.CatmullRomCurve3(keelPts);
+  rails.push([tube((t) => keelCurve.getPoint(t), () => 0.03, { rings: 40, radial: 6, section: rounded(0.55, 1), up: V(0, 0, 1), vRep: 8 })]);
+  const seatAt = (x, y, d) => { const u = x / L + 0.5, hw = Math.min(insideHalf(u - d / L / 2, y), insideHalf(u + d / L / 2, y)); return [bevelBox(d, 0.045, hw * 2 + 0.02, 0.012), M(x, y, 0)]; };
+  const thwarts = merge([seatAt(BOAT.SEAT_X, BOAT.SEAT_Y, 0.26), seatAt(-1.02, BOAT.SEAT_Y + 0.04, 0.3), seatAt(0.95, BOAT.SEAT_Y + 0.12, 0.2)]);
+  const slats = [], FY = BOAT.FLOOR_Y;
+  for (const z of [-0.3, -0.15, 0, 0.15, 0.3]) {
+    let a = null, b = null;
+    for (let u = 0.04; u < 0.96; u += 0.01) if (insideHalf(u, FY) > Math.abs(z) + 0.07) { a ??= u; b = u; }
+    if (a != null && b - a > 0.05) slats.push([bevelBox((b - a) * L, 0.025, 0.11, 0.008), M(((a + b) / 2 - 0.5) * L, FY, z)]);
+  }
+  for (const x of [-0.75, 0.05, 0.75]) slats.push([bevelBox(0.07, 0.03, insideHalf(x / L + 0.5, FY - 0.03) * 2, 0.008), M(x, FY - 0.028, 0)]); // cross battens
+  // ---- brass oarlocks on the gunwale, a rope ring on the stem
+  const uo = BOAT.OAR_X / L + 0.5, oarlocks = [], pivots = [];
+  for (const side of [1, -1]) {
+    const top = hullPoint(uo, 1, side, 0.017).add(V(0, 0.045, 0));
+    pivots.push(top.clone().add(V(0, 0.035, 0)));
+    oarlocks.push([lathe([[0, -0.07], [0.016, -0.07], [0.014, 0], [0.02, 0.005], [0, 0.01]], 6), M(top.x, top.y, top.z)]);
+    oarlocks.push([tube((t) => { const a = Math.PI * t; return V(top.x + Math.cos(a) * 0.04, top.y + 0.005 + Math.sin(a) * 0.05, top.z); }, () => 0.009, { rings: 8, radial: 5, up: V(0, 0, 1) })]);
+  }
+  const eye = V(L / 2 + 0.03, boatSheer(1) - 0.05, 0);
+  const ring = tube((t) => { const a = t * Math.PI * 2; return V(eye.x + 0.02 + Math.cos(a) * 0.045, eye.y - 0.04 + Math.sin(a) * 0.045, 0); }, () => 0.011, { rings: 14, radial: 5, up: V(0, 0, 1), vRep: 3 });
+  // ---- the oars, each in its own frame around its oarlock
+  const oar = (side) => {
+    const P = pivots[side > 0 ? 0 : 1], d = V(0, -0.4, side).normalize();
+    const a = P.clone().addScaledVector(d, -BOAT.OAR_IN), b = P.clone().addScaledVector(d, BOAT.OAR_OUT - 0.42), c = P.clone().addScaledVector(d, BOAT.OAR_OUT);
+    const shaft = tube(line(a, b), (t) => (t < 0.09 ? 0.02 : t < 0.12 ? 0.026 : t < 0.5 ? 0.03 - (t - 0.12) * 0.01 : 0.025), { rings: 8, radial: 7, up: V(0, 1, 0), vRep: 2 });
+    const blade = tube(line(b.clone().addScaledVector(d, -0.03), c), (t) => 0.03 + Math.sin(Math.min(1, t * 1.6) * Math.PI / 2) * 0.05 - Math.pow(t, 6) * 0.02, { rings: 8, radial: 8, section: rounded(1, 0.2, 3), up: V(0, 1, 0) });
+    return { shaft, blade, hinge: [P.x, P.y, P.z] };
+  };
+  const oars = [oar(1), oar(-1)];
+
+  const paint = pixTex(32, 8 * NS, (g, w, h) => {
+    const r = mulberry32(71);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const k = NS - 1 - Math.floor(y / 8), fy = y % 8; // strake from the keel, row from its top edge
+      const pal = k <= 1 ? BOTTOM : k === NS - 1 ? CREAM : HULL_PAINT;
+      let t = (pal.length - 1) * 0.62 + (r() - 0.5) * 0.7 + Math.sin(x * 0.5 + k * 3 + y * 0.2) * 0.25;
+      if (fy === 0) t -= 1.6; else if (fy === 1) t -= 0.6; else if (fy >= 6) t += 0.7; // tucked under the lap above / proud lower edge
+      ramp(g, pal, x, y, t);
+      if (k === NS - 1 && fy === 5) ramp(g, CORAL, x, y, 2.4 + (r() - 0.5)); // the coral line
+      if (fy === 6 && (x + k * 3) % 8 === 0) ramp(g, COPPER, x, y, 3); // rivets
+      if (fy === 6 && (x + k * 3) % 8 === 1) ramp(g, COPPER, x, y, 1);
+      if (k > 1 && r() < 0.025) ramp(g, TEAK, x, y, 3 + r() * 2); // paint worn off
+    }
+  });
+  const bare = pixTex(32, 32, (g, w, h) => {
+    const r = mulberry32(72);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const fy = y % 8;
+      let t = 2.7 + (r() - 0.5) * 0.8 + Math.sin(x * 0.4 + Math.floor(y / 8) * 2) * 0.3;
+      if (fy === 0) t = 0.5; else if (fy === 1) t += 0.9;
+      const rib = x % 11;
+      if (rib === 0) t = 0.8; else if (rib <= 2) t = 4 + (fy === 4 ? 0.8 : 0); else if (rib === 3) t = 1.4; // steamed ribs
+      ramp(g, PLANK, x, y, t);
+    }
+  });
+  const ash = pixTex(8, 32, (g, w, h) => { const r = mulberry32(73); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, FRESH, x, y, 2.4 + (x === 0 ? -1 : x === w - 1 ? 1 : 0) + (r() - 0.5) * 0.6 + ((x * 5 + y) % 11 === 0 ? -1 : 0)); });
+  const brass = pixTex(8, 8, (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, BRASS, x, y, 2.4 + (y < 2 ? 1.2 : y > 5 ? -1 : 0)); });
+  const bladeTex = pixTex(8, 16, (g, w, h) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (y < 6) ramp(g, HULL_PAINT, x, y, (y === 5 ? 1 : 3.4) + (x % 3 === 0 ? -0.6 : 0)); // painted tip
+      else if (y === 6) ramp(g, CREAM, x, y, 2.5);
+      else ramp(g, FRESH, x, y, 2.6 + Math.sin(x * 1.3 + y) * 0.8);
+    }
+  });
+  return {
+    parts: [
+      { geo: outer, tex: paint, gloss: 0.35 },
+      { geo: merge([[inner], [transom(true)]]), tex: bare },
+      { geo: transom(false), tex: T.teak(), gloss: 0.5 },
+      { geo: merge(rails), tex: T.teak(), gloss: 0.55 },
+      { geo: thwarts, tex: T.teak(), gloss: 0.4 },
+      { geo: merge(slats), tex: BT.planks() },
+      { geo: merge(oarlocks), tex: brass, metal: 1 },
+      { geo: ring, tex: T.rope() },
+      ...oars.flatMap((o) => [{ geo: o.shaft, tex: ash, hinge: o.hinge }, { geo: o.blade, tex: bladeTex, hinge: o.hinge }]),
+    ],
+    height: 0.8,
+  };
+}
+
 export const MODELS = {
+  boat: () => once('m:boat', boatModel),
   'block:wood': () => once('m:bw', blockWood),
   'block:stone': () => once('m:bs', blockStone),
   floor: () => once('m:floor', floorModel),
