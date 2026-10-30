@@ -1000,6 +1000,64 @@ function gableModel() {
   const post = bevelBox(0.12, 1.0, 0.32, 0.02).translate(0.99, 0.5, 0);
   return { parts: [{ geo: g, tex: BT.planks() }, { geo: merge([[batten], [post]]), tex: T.teak(), gloss: 0.3 }] };
 }
+// Door leaf for a doorway: seven bamboo canes side by side, hinge at x = 0,
+// the leaf running to +x; two teak ledges and a brace on the inside face,
+// rope lashings where they cross the canes, a carved teak knob on each side.
+export const GATE_W = 0.86;
+function gateModel() {
+  const canes = [], rnd = mulberry32(89);
+  for (let k = 0; k < 7; k++) {
+    const x = 0.062 + k * 0.122, top = 1.94 - (k % 2) * 0.03 - rnd() * 0.02;
+    canes.push([tube(line(V(x, 0.03, 0), V(x, top, 0)), () => 0.058, { rings: 3, radial: 7, up: V(1, 0, 0), vRep: 2.2 })]);
+  }
+  const ledges = merge([
+    [bevelBox(0.84, 0.11, 0.05, 0.015), M(0.43, 0.42, -0.085)], [bevelBox(0.84, 0.11, 0.05, 0.015), M(0.43, 1.56, -0.085)],
+    [bevelBox(0.07, 1.24, 0.045, 0.012), M(0.43, 0.99, -0.085, 0, 0, -0.62)],
+  ]);
+  const knob = (z) => [lathe([[0, 0], [0.022, 0.0], [0.016, 0.03], [0.034, 0.06], [0.03, 0.08], [0, 0.085]], 8), M(0.76, 1.0, z, z > 0 ? Math.PI / 2 : -Math.PI / 2, 0, 0)];
+  const ties = [];
+  for (const y of [0.42, 1.56]) for (let k = 0; k < 7; k += 2) ties.push([lathe([[0.062, -0.03], [0.068, -0.02], [0.068, 0.02], [0.062, 0.03]], 7, 2), M(0.062 + k * 0.122, y, 0)]);
+  return { parts: [{ geo: merge(canes), tex: T.bamboo() }, { geo: merge([[ledges], [merge([knob(0.05), knob(-0.11)])]]), tex: T.teak(), gloss: 0.4 }, { geo: merge(ties), tex: T.rope() }] };
+}
+
+// Island bed: a low bamboo frame on four stubby legs, a thick woven palm
+// mattress, a cream pillow, a striped coral blanket folded at the foot, and
+// a mosquito net canopy on four tall canes, its white drapes gathered and
+// knotted at each post (the signature). 2.1 m long (x), 1.25 m wide (z).
+const NET = ['#c9d4e0', '#dfe7ef', '#eef3f8', '#fbfdff'];
+function bedModel() {
+  const L = 2.1, W = 1.25, top = 0.46, bam = T.bamboo();
+  const cane = (a, b, r) => [tube(line(a, b), () => r, { rings: 3, radial: 7, up: Math.abs(b.y - a.y) > 0.5 ? V(1, 0, 0) : V(0, 1, 0), vRep: a.distanceTo(b) * 1.2 })];
+  const frame = [];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    frame.push(cane(V(sx * L / 2, 0, sz * W / 2), V(sx * L / 2, 1.95, sz * W / 2), 0.045)); // canopy posts
+    frame.push(cane(V(sx * (L / 2 - 0.12), 0, sz * (W / 2 - 0.1)), V(sx * (L / 2 - 0.12), 0.3, sz * (W / 2 - 0.1)), 0.05)); // legs
+  }
+  for (const sz of [-1, 1]) { frame.push(cane(V(-L / 2, 0.28, sz * (W / 2 - 0.06)), V(L / 2, 0.28, sz * (W / 2 - 0.06)), 0.045)); frame.push(cane(V(-L / 2, 1.93, sz * W / 2), V(L / 2, 1.93, sz * W / 2), 0.03)); }
+  for (const sx of [-1, 1]) { frame.push(cane(V(sx * (L / 2 - 0.06), 0.28, -W / 2), V(sx * (L / 2 - 0.06), 0.28, W / 2), 0.045)); frame.push(cane(V(sx * L / 2, 1.93, -W / 2), V(sx * L / 2, 1.93, W / 2), 0.03)); }
+  frame.push(cane(V(-L / 2, 0.75, -W / 2), V(-L / 2, 0.75, W / 2), 0.04)); // headboard rail
+  const mattress = bevelBox(L - 0.16, 0.17, W - 0.14, 0.06).translate(0, top - 0.085, 0);
+  const pillow = bevelBox(0.36, 0.11, W - 0.36, 0.05).translate(-L / 2 + 0.3, top + 0.05, 0);
+  const blanket = merge([[bevelBox(0.55, 0.06, W - 0.1, 0.025), M(L / 2 - 0.4, top + 0.03, 0)], [bevelBox(0.5, 0.05, W - 0.12, 0.02), M(L / 2 - 0.42, top + 0.085, 0)]]);
+  const netTex = pixTex(8, 8, (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, NET, x, y, (x + y) % 3 === 0 ? 1 : 2.6 + ((x * 3 + y) % 5 === 0 ? 1 : 0)); });
+  const pillowTex = pixTex(8, 8, (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, ['#d8ccb0', '#ecdfc4', '#f6eedc', '#fffaf0'], x, y, 2 + ((x + y) % 4 === 0 ? -1 : 0)); });
+  const drapes = [], canopy = bevelBox(L + 0.06, 0.03, W + 0.06, 0.01).translate(0, 1.965, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { // net gathered at the post: full at the top, a knot, a fall below
+    const c = (t) => V(sx * (L / 2 - 0.04) + Math.sin(t * 3) * 0.02 * sx, 1.92 - t * 1.4, sz * (W / 2 - 0.04));
+    drapes.push([tube(c, (t) => (t < 0.35 ? 0.16 - t * 0.33 : t < 0.42 ? 0.045 : 0.06 + (t - 0.42) * 0.12), { rings: 10, radial: 8, up: V(1, 0, 0), vRep: 2 })]);
+  }
+  return {
+    parts: [
+      { geo: merge(frame), tex: bam },
+      { geo: mattress, tex: T.weave() },
+      { geo: pillow, tex: pillowTex },
+      { geo: blanket, tex: T.canvas() },
+      { geo: merge([[canopy], [merge(drapes)]]), tex: netTex },
+    ],
+    height: 2,
+  };
+}
+
 // the gable under the high edge of a roof: a panel of boards 1 m tall
 function gableWallModel() {
   const g = bevelBox(2.1, 1.0, 0.26, 0.02).translate(0, 0.5, 0);
@@ -1053,6 +1111,8 @@ export const MODELS = {
   roof: () => once('m:roof', roofModel),
   roofcorner: () => once('m:roofc', roofCornerModel),
   gable: () => once('m:gable', gableModel),
+  gate: () => once('m:gate', gateModel),
+  bed: () => once('m:bed', bedModel),
   gablewall: () => once('m:gablew', gableWallModel),
   flatroof: () => once('m:flatroof', flatRoofModel),
   stairs: () => once('m:stairs', stairsModel),

@@ -8,7 +8,7 @@
 // empty hand takes one back. Drawn with one instanced mesh per part, saved
 // per world.
 import * as THREE from 'three';
-import { MODELS, floorPosts, STOREY as H } from './models.js';
+import { MODELS, floorPosts, STOREY as H, GATE_W } from './models.js';
 import { dress, ghostColor, worldMat } from './dress.js';
 import { worldKey } from './axe.js';
 import { Puffs } from './cooking.js';
@@ -40,6 +40,8 @@ export const PIECES = {
   gable: { mat: 'wood', boxes: [], ray: [[0, 0, 1, 0.15, 0, 1]], check: [[0, 0, 1, 0.15, 0.05, 0.95]], mid: 0.5, grab: 0.2, r: 1.2, snapOnly: true, sound: 'wood' },
   // the same piece under the high edge of a roof: a full board panel 1 m tall
   gablewall: { mat: 'wood', boxes: [], ray: [[0, 0, 1, 0.15, 0, 1]], check: [[0, 0, 1, 0.15, 0.05, 0.95]], mid: 0.5, grab: 0.2, r: 1.2, snapOnly: true, sound: 'wood', refund: ['gable', 1] },
+  // a door hung in a doorway: solid while shut, swings open on its hinge
+  gate: { mat: 'wood', boxes: [[0, 0, GATE_W / 2, 0.07, 0.02, 1.96]], check: [], mid: 1, grab: 1, r: 1, snapOnly: true, sound: 'wood' },
   flatroof: { mat: 'thatch', boxes: [[0, 0, 1, 1, -0.22, 0]], mid: -0.1, grab: 0, r: 1.5, sound: 'wood' },
   stairs: { mat: 'wood', boxes: STEPS, check: [[0, 0, 1, 1, 0, H]], mid: H / 2, grab: 0.4, r: 1.5, sound: 'big', facing: true },
 };
@@ -72,9 +74,11 @@ const SOCKETS = {
   roofcorner: [S(['roof'], -2, 0, 0, 0), S(['roof'], 0, 0, -2, Q)], // on along either eave
   gable: [],
   gablewall: [],
+  gate: [],
   stairs: [S(FLOORS, 0, H, -2), S(['stairs'], 0, H, -2), S(['floor'], 0, 0, 2), S(WALLS, 1, 0, 0, Q), S(WALLS, -1, 0, 0, Q)],
 };
-SOCKETS.door = SOCKETS.window = SOCKETS.wall;
+SOCKETS.window = SOCKETS.wall;
+SOCKETS.door = [...SOCKETS.wall, S(['gate'], 0, 0, 0, 0), S(['gate'], 0, 0, 0, 2 * Q)]; // hinged on either side
 SOCKETS.flatroof = [
   ...SOCKETS.floor,
   S(['roof'], 0, -RIDGE, 2, 0), S(['roof'], 2, -RIDGE, 0, Q), S(['roof'], 0, -RIDGE, -2, 2 * Q), S(['roof'], -2, -RIDGE, 0, -Q), // slopes down from its edges
@@ -166,6 +170,8 @@ class Batch {
   clear() { this.list = []; for (const mesh of this.meshes) mesh.count = 0; }
 }
 
+const OPEN = 1.7; // how far a door swings open (radians)
+const _g = new THREE.Matrix4(), _r = new THREE.Matrix4();
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);
 
 export class Building {
@@ -177,6 +183,7 @@ export class Building {
     this.ghosts = {}; this.ghost = null; this.ghostPosts = null; this.postKey = '';
     this.target = null; this.rot = 0; this.snapKey = '';
     this.popping = [];
+    this.swinging = new Set();
     this.dust = new Puffs(scene, 120);
     this.chips = new Puffs(scene, 80);
   }
@@ -190,13 +197,13 @@ export class Building {
     player.solids = this;
     let list = [];
     try { list = (JSON.parse(localStorage.getItem(BKEY)) || {})[worldKey(world.cfg)] || []; } catch (_) { /* none */ }
-    for (const e of list) if (PIECES[e.t]) this.spawn(e.t, e.x, e.y, e.z, e.yaw, e.posts);
+    for (const e of list) if (PIECES[e.t]) this.spawn(e.t, e.x, e.y, e.z, e.yaw, e.posts, e.open);
   }
   save() {
     try {
       const all = JSON.parse(localStorage.getItem(BKEY)) || {};
       const r = (v) => +v.toFixed(3);
-      all[worldKey(this.world.cfg)] = this.pieces.map((p) => ({ t: p.type, x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(p.yaw), ...(p.posts ? { posts: p.posts.map(r) } : {}) }));
+      all[worldKey(this.world.cfg)] = this.pieces.map((p) => ({ t: p.type, x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(p.yaw), ...(p.posts ? { posts: p.posts.map(r) } : {}), ...(p.open ? { open: p.open } : {}) }));
       localStorage.setItem(BKEY, JSON.stringify(all));
     } catch (_) { /* private mode */ }
   }
@@ -213,12 +220,14 @@ export class Building {
     return out;
   }
 
-  spawn(type, x, y, z, yaw, posts) {
+  spawn(type, x, y, z, yaw, posts, open = 0) {
     const def = PIECES[type];
     const p = { type, x, y, z, yaw, posts: posts?.some((l) => l > 0.05) ? posts : null };
+    if (type === 'gate') { p.open = open; p.ang = open * OPEN; p.v = 0; } // open: 0 shut, +1 / -1 the side it swung to
     p.boxes = def.boxes.map((b) => ({ ...worldBox(b, x, y, z, yaw), piece: p }));
     p.check = (def.check || def.boxes).map((b) => worldBox(b, x, y, z, yaw, 0.12));
     p.ray = [...p.boxes, ...(def.ray || []).map((b) => ({ ...worldBox(b, x, y, z, yaw), piece: p }))];
+    if (p.open) p.boxes[0].off = true; // an open door lets you through
     this.batches[type].add(p, this.matrix(p));
     if (p.posts) { // legs of a raised floor
       p.legs = dress(floorPosts(p.posts), 'world');
@@ -243,7 +252,21 @@ export class Building {
     this.hooks.release?.(p);
   }
   matrix(p, s = 1, lift = 0) {
-    return _m.compose(_p.set(p.x, p.y + lift, p.z), _q.setFromAxisAngle(_Y, p.yaw), _s.set(s, s, s)).clone();
+    const m = _m.compose(_p.set(p.x, p.y + lift, p.z), _q.setFromAxisAngle(_Y, p.yaw), _s.set(s, s, s)).clone();
+    if (p.type === 'gate') m.multiply(_g.makeTranslation(-GATE_W / 2, 0, 0)).multiply(_r.makeRotationY(p.ang)); // about its hinge
+    return m;
+  }
+
+  // open or shut a door, swinging away from whoever pushes it
+  toggle(p, from) {
+    if (p.open) { p.open = 0; this.hooks.sound?.('doorClose'); } else {
+      const side = (from.x - p.x) * Math.sin(p.yaw) + (from.z - p.z) * Math.cos(p.yaw);
+      p.open = side > 0 ? 1 : -1;
+      this.hooks.sound?.('doorOpen');
+    }
+    p.boxes[0].off = true; // passable while it moves
+    this.swinging.add(p);
+    this.save();
   }
 
   // ---------------------------------------------------------------- aiming
@@ -280,7 +303,11 @@ export class Building {
     const check = (def.check || def.boxes).map((b) => worldBox(b, x, y, z, yaw, 0.12));
     const mid = new THREE.Vector3(x, y + def.mid, z);
     if (mid.distanceTo(this.camera.position) > REACH + 1.5) return 'Trop loin';
-    for (const p of this.piecesNear(x, z, def.r + 2)) if (p !== ignore) for (const a of p.check) for (const b of check) if (overlap(a, b)) return 'Pas de place';
+    for (const p of this.piecesNear(x, z, def.r + 2)) {
+      if (p === ignore) continue;
+      if (p.type === type && Math.hypot(p.x - x, p.z - z) < 0.05 && Math.abs(p.y - y) < 0.05) return 'Pas de place'; // already one there
+      for (const a of p.check) for (const b of check) if (overlap(a, b)) return 'Pas de place';
+    }
     for (const b of check) if (b.y0 < pl.pos.y + 1.75 && b.y1 > pl.pos.y + 0.05 && circleHits(b, pl.pos.x, pl.pos.z, 0.36)) return 'Trop près de toi';
     // trees, stones, the hut posts, placed objects
     const ground = this.world.heightAt(x, z);
@@ -337,7 +364,7 @@ export class Building {
     // the crosshair shows (just on this side of the surface), or nearest the
     // view ray when it shows only sky
     const cands = [];
-    const spot = hit ? hit.point.clone().addScaledVector(dir, -0.25) : null;
+    const spot = hit && id !== 'gate' ? hit.point.clone().addScaledVector(dir, -0.25) : null; // (a door: aimed through its empty doorway)
     const around = spot || cam.clone().addScaledVector(dir, 3.5);
     for (const p of this.piecesNear(around.x, around.z, 5)) for (const s of SOCKETS[p.type]) {
       if (!s.types.includes(id)) continue;
@@ -470,9 +497,15 @@ export class Building {
     this.unlink(p);
     this.save();
     this.hooks.removed?.(p);
-    return PIECES[p.type].refund || [p.type, 1];
+    const got = [PIECES[p.type].refund || [p.type, 1]];
+    if (p.type === 'door') for (const q of this.piecesNear(p.x, p.z, 1)) { // its door goes with it
+      if (q.type === 'gate' && Math.hypot(q.x - p.x, q.z - p.z) < 0.05 && Math.abs(q.y - p.y) < 0.05) { this.unlink(q); got.push(['gate', 1]); }
+    }
+    this.save();
+    return got;
   }
   unlink(p) {
+    this.swinging.delete(p);
     this.batches[p.type].remove(p);
     this.drop(p);
     this.pieces.splice(this.pieces.indexOf(p), 1);
@@ -484,7 +517,7 @@ export class Building {
     const def = PIECES[p.type], stone = def.mat === 'stone', thatch = def.mat === 'thatch';
     const DUST = stone ? [0.72, 0.71, 0.74] : thatch ? [0.86, 0.76, 0.5] : [0.86, 0.74, 0.56];
     const CHIP = stone ? [[0.6, 0.59, 0.64], [0.81, 0.8, 0.83]] : thatch ? [[0.82, 0.69, 0.39], [0.91, 0.82, 0.53]] : [[0.66, 0.46, 0.25], [0.82, 0.64, 0.4]];
-    const box = p.check[0], n = apart ? 26 : 16;
+    const box = p.check[0] || p.ray[0], n = apart ? 26 : 16;
     for (let k = 0; k < n; k++) {
       const a = Math.random() * Math.PI * 2, rr = Math.random();
       const lx = Math.cos(a) * box.hx * rr, lz = Math.sin(a) * box.hz * rr;
@@ -496,6 +529,19 @@ export class Building {
   }
 
   update(dt) {
+    // doors swing on a spring: a little overshoot opening, a knock shutting
+    for (const p of this.swinging) {
+      const target = p.open * OPEN, before = p.ang;
+      p.v += ((target - p.ang) * 70 - p.v * 11) * dt;
+      p.ang += p.v * dt;
+      if (!p.open && before !== 0 && Math.sign(p.ang) !== Math.sign(before)) { // back in its frame: it stops dead there
+        p.ang = 0; p.v = 0;
+        this.hooks.sound?.('doorShut'); this.hooks.rumble?.(0.2, 50);
+      }
+      if (p.open && !p.hit && Math.abs(p.ang) > Math.abs(target)) { p.hit = true; this.hooks.sound?.('doorStop'); }
+      if (Math.abs(p.ang - target) < 0.003 && Math.abs(p.v) < 0.02) { p.ang = target; p.v = 0; p.hit = false; this.swinging.delete(p); p.boxes[0].off = !!p.open; }
+      this.batches.gate.set(p, this.matrix(p));
+    }
     // a piece set down lands with a little drop and squash
     this.popping = this.popping.filter((e) => {
       e.t += dt;

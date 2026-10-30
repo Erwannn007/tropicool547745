@@ -264,6 +264,51 @@ function useFire(o, held) {
   return true;
 }
 const COOK_STATE = ['Cru', 'Ça grésille…', 'Grillé, prêt !', 'Carbonisé'];
+
+// doors and beds under the crosshair (the axe takes them back instead)
+function aimedGate() { const p = building.aimed(3.2); return p?.type === 'gate' ? p : null; }
+function aimedBed() { const o = placement.aimed(); return o?.id === 'bed' ? o : null; }
+
+// ---- sleeping: lie down under the net, the screen goes dark, time flies to
+// the morning (or to the evening for a nap in the day), then you get up
+let sleep = null;
+const ease3 = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+function sleepOn(o) {
+  const h = day.hour, night = h >= 17 || h < 5.5, to = night ? 7 : 18.5;
+  sleep = { o, t: 0, from: h, span: (to - h + 24) % 24, night, snores: [1.9, 3.1], woke: false, start: { p: camera.position.clone(), q: camera.quaternion.clone() } };
+  // lying on the bed, head on the pillow, looking up at the canopy
+  const c = Math.cos(o.yaw), s = Math.sin(o.yaw), hx = -0.62;
+  sleep.lie = {
+    p: new THREE.Vector3(o.x + hx * c, o.y + 0.78, o.z - hx * s),
+    q: new THREE.Quaternion().setFromEuler(new THREE.Euler(1.05, o.yaw - Math.PI / 2, 0, 'YXZ')),
+  };
+  state = 'sleep';
+  audio.sfx('lieDown');
+  $('#sleep').classList.remove('hidden');
+  $('#sleep-clock').textContent = fmtHour(h);
+}
+function sleepTick(dt) {
+  const S = sleep, t = (S.t += dt);
+  // down onto the bed, and back up at the end
+  const k = t < 4.4 ? ease3(t / 0.9) : 1 - ease3((t - 4.4) / 0.8);
+  camera.position.lerpVectors(S.start.p, S.lie.p, k);
+  camera.quaternion.slerpQuaternions(S.start.q, S.lie.q, k);
+  // eyes close, the hours go by in the dark, eyes open
+  const dark = t < 1.6 ? ease3((t - 0.7) / 0.9) : t < 4.2 ? 1 : 1 - ease3((t - 4.2) / 1);
+  $('#sleep').style.opacity = dark.toFixed(3);
+  if (t > 1.6 && t < 4) {
+    day.hour = (S.from + S.span * ease3((t - 1.6) / 2.2)) % 24;
+    $('#sleep-clock').textContent = fmtHour(day.hour);
+  }
+  if (S.snores.length && t > S.snores[0]) { S.snores.shift(); audio.sfx('snore'); }
+  if (!S.woke && t > 4.1) { S.woke = true; audio.sfx('wake'); }
+  if (t > 5.3) {
+    sleep = null; state = 'play';
+    $('#sleep').classList.add('hidden');
+    settings.hour = +day.hour.toFixed(2); save();
+    toast(S.night ? `Bien dormi ! Il est ${fmtHour(day.hour)} ☀️` : `Petite sieste… Il est ${fmtHour(day.hour)} 🌇`, 3000);
+  }
+}
 axe.hooks.hitPlaced = pickPlaced;
 
 // chest: open it next to the bag, lid swings up
@@ -279,7 +324,7 @@ function openChest(o) {
 }
 function aimedChest() { const o = placement.aimed(); return o?.items ? o : null; }
 
-const ACTION_ICON = { book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍' };
+const ACTION_ICON = { book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍', bed: '📍' };
 let lastHeld;
 function onHeldChange(held) {
   const id = held?.id ?? null;
@@ -367,6 +412,11 @@ function promptHud(dt) {
       promptTarget = { html: `<div class="pname">${itemDef(cookedId(fire.cook)).name}</div>${st < 2 ? `Cuisson ${pct} %` : COOK_STATE[st]}<br>${kb(K.use)} Retirer`, at: () => _anchor.set(fire.x, fire.y + 1.15, fire.z) };
       promptAcc = 0.05;
     } else if (fire && isRawFish(held)) promptTarget = { html: `<div class="pname">Feu de camp</div>${kb(K.use)} Faire griller`, at: () => _anchor.set(fire.x, fire.y + 1.1, fire.z) };
+    if (!promptTarget && state === 'play' && !carrying && held !== 'axe') {
+      const g = aimedGate(), b = g ? null : aimedBed();
+      if (g) promptTarget = { html: `<div class="pname">Porte</div>${kb(K.use)} ${g.open ? 'Fermer' : 'Ouvrir'}`, at: () => _anchor.set(g.x, g.y + 2.2, g.z) };
+      else if (b) promptTarget = { html: `<div class="pname">Lit de l’île</div>${kb(K.use)} ${day.hour >= 17 || day.hour < 5.5 ? 'Dormir jusqu’au matin' : 'Faire la sieste'}`, at: () => _anchor.set(b.x, b.y + 2.3, b.z) };
+    }
     if (!promptTarget && state === 'play' && !carrying && held === 'axe') { // what the axe would take back
       const o = placement.aimed(), p = o ? null : building.aimed();
       if (o) promptTarget = { html: `<div class="pname">${itemDef(o.id).name}</div>${kb(K.use)} Reprendre`, at: () => _anchor.set(o.x, o.y + (PLACEABLE[o.id].h ?? 0.9) + 0.4, o.z) };
@@ -503,7 +553,7 @@ function regenerate() {
 }
 
 // ---------------------------------------------------------------- menus
-let state = 'start'; // start | play | menu | inventory | book
+let state = 'start'; // start | play | menu | inventory | book | sleep
 const ranges = ['islands', 'size', 'relief', 'vegetation', 'stones'];
 const fmt = { hour: (v) => fmtHour(+v), islands: (v) => v, size: (v) => `×${(+v).toFixed(2)}`, relief: (v) => `${Math.round(v * 100)}%`, vegetation: (v) => `${Math.round(v * 100)}%`, stones: (v) => `${Math.round(v * 100)}%`, res: (v) => `${Math.round(v * 100)}%`, sens: (v) => (+v).toFixed(1), volume: (v) => `${Math.round(v * 100)}%` };
 function syncOutputs() {
@@ -812,8 +862,12 @@ function frame() {
     if (p.has('drop')) { if (debris.carried) letGo('drop'); else dropHeld(); }
     const chest = p.has('action') && heldId !== 'axe' && !carrying ? aimedChest() : null;
     const fire = p.has('action') && heldId !== 'axe' && !carrying && !chest ? aimedFire() : null;
+    const gate = p.has('action') && heldId !== 'axe' && !carrying && !chest && !fire ? aimedGate() : null;
+    const bed = p.has('action') && heldId !== 'axe' && !carrying && !chest && !fire && !gate ? aimedBed() : null;
     if (chest) openChest(chest);
     else if (fire && useFire(fire, heldId)) { /* fish on or off the spit */ }
+    else if (gate) building.toggle(gate, player.pos);
+    else if (bed) sleepOn(bed);
     else if (p.has('action') && carrying) letGo('throw');
     else if (p.has('action')) {
       if (heldId === 'rod') fishing.action(input);
@@ -828,6 +882,10 @@ function frame() {
       else if (isRawFish(heldId)) toast('Grille-le sur un feu de camp 🔥');
       else toast('Prends un outil dans ta barre');
     }
+  } else if (state === 'sleep') {
+    input.consumeLook();
+    player.update(dt, { move: { x: 0, y: 0 }, pressed: new Set(), sprint: false }, { x: 0, y: 0 }, true);
+    sleepTick(dt);
   } else if (state === 'book') {
     input.consumeLook();
     const p = input.pressed;
@@ -888,7 +946,7 @@ function frame() {
   water.position.set(Math.round(camera.position.x), 0, Math.round(camera.position.z));
   globals.uCamPos.value.copy(camera.position);
   renderer.render(scene, camera);
-  if (state !== 'inventory' && state !== 'book') { axe.render(renderer, camera); hands.render(renderer, camera); }
+  if (state !== 'inventory' && state !== 'book' && state !== 'sleep') { axe.render(renderer, camera); hands.render(renderer, camera); }
   hudTick(dt);
 
   // fps + dynamic resolution

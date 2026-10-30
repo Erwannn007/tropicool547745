@@ -83,7 +83,7 @@ export class Player {
     }
     // the tops of built pieces (building.js) within a step
     if (this.solids) for (const b of this.solids.near(x, z)) {
-      if (b.y1 > currentY + 0.6 || b.y1 <= g) continue;
+      if (b.off || b.y1 > currentY + 0.6 || b.y1 <= g) continue; // (off: an open door)
       const dx = x - b.x, dz = z - b.z;
       if (Math.abs(dx * b.ux + dz * b.uz) <= b.hx && Math.abs(dx * b.vx + dz * b.vz) <= b.hz) g = b.y1;
     }
@@ -94,7 +94,7 @@ export class Player {
   // head under the top): returns the corrected position
   bump(nx, nz, r0) {
     for (let pass = 0; pass < 2; pass++) for (const b of this.solids.near(nx, nz)) {
-      if (b.y1 <= this.pos.y + 0.6 || b.y0 >= this.pos.y + 1.75) continue; // a step up (as in groundAt) or overhead
+      if (b.off || b.y1 <= this.pos.y + 0.6 || b.y0 >= this.pos.y + 1.75) continue; // a step up (as in groundAt) or overhead
       const r = b.y1 - this.pos.y < 0.9 ? 0.15 : r0; // knee high (the next stairs): only the feet meet it
       const dx = nx - b.x, dz = nz - b.z;
       let a = dx * b.ux + dz * b.uz, c = dx * b.vx + dz * b.vz;
@@ -160,6 +160,7 @@ export class Player {
     this.pos.x = nx; this.pos.z = nz;
     this.pos.y += this.vel.y * dt;
     if (this.solids && this.vel.y > 0) for (const b of this.solids.near(nx, nz)) { // head against a floor above
+      if (b.off) continue;
       const dx = nx - b.x, dz = nz - b.z, top = this.pos.y + 1.75;
       if (top > b.y0 && top - this.vel.y * dt <= b.y0 + 0.02 && Math.abs(dx * b.ux + dz * b.uz) < b.hx + 0.2 && Math.abs(dx * b.vx + dz * b.vz) < b.hz + 0.2) { this.pos.y = b.y0 - 1.75; this.vel.y = 0; }
     }

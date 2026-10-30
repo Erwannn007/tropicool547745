@@ -484,6 +484,39 @@ export class Audio {
       this.noise({ type: 'lowpass', f0: 600, f1: 150, q: 0.5, dur: 0.4, gain: 0.25, buf: this.brown });
       for (let i = 0; i < 7; i++) this.noise({ type: 'bandpass', f0: (stone ? 900 : 500) + Math.random() * 1600, q: 6, dur: 0.03, attack: 0.001, gain: 0.07, delay: 0.06 + Math.random() * 0.4 });
     }
+    if (name === 'doorOpen') { // the latch lifts, the lashings creak, the hollow canes knock
+      this.noise({ type: 'bandpass', f0: 2100, q: 8, dur: 0.025, attack: 0.001, gain: 0.12 });
+      this.tone(1500, 1250, 0.03, 'triangle', 0.03, 0.01);
+      this.tone(170, 300, 0.42, 'sawtooth', 0.014, 0.08, this.master, 0.1);
+      this.noise({ type: 'bandpass', f0: 800, f1: 1300, q: 6, dur: 0.38, attack: 0.1, gain: 0.04, delay: 0.08 });
+      this.noise({ f0: 600, f1: 1200, q: 0.8, dur: 0.3, attack: 0.12, gain: 0.04, delay: 0.12 }); // air
+      [520, 610].forEach((f, i) => this.tone(f, f * 0.94, 0.09, 'triangle', 0.035, 0.1 + i * 0.05));
+    }
+    if (name === 'doorStop') { const f = 480 + Math.random() * 60; this.tone(f, f * 0.9, 0.08, 'triangle', 0.05); this.noise({ type: 'bandpass', f0: f * 2, q: 5, dur: 0.04, gain: 0.05 }); }
+    if (name === 'doorClose') { this.tone(300, 165, 0.36, 'sawtooth', 0.012, 0, this.master, 0.1); this.noise({ f0: 1200, f1: 600, q: 0.8, dur: 0.28, attack: 0.08, gain: 0.04 }); }
+    if (name === 'doorShut') { // bamboo against the frame: a hollow clatter, a thump, the latch dropping
+      this.tone(130, 70, 0.2, 'sine', 0.25);
+      this.noise({ type: 'lowpass', f0: 600, q: 0.6, dur: 0.15, gain: 0.25, buf: this.brown });
+      for (let i = 0; i < 4; i++) { const f = 380 + Math.random() * 380; this.tone(f, f * 0.92, 0.07, 'triangle', 0.05, i * 0.025); }
+      this.noise({ type: 'bandpass', f0: 2300, q: 8, dur: 0.02, attack: 0.001, gain: 0.12, delay: 0.09 });
+      this.tone(1600, 1400, 0.03, 'triangle', 0.03, 0.09);
+    }
+    if (name === 'lieDown') { // the mattress takes the weight: woven palm rustles, bamboo creaks
+      this.noise({ f0: 2400, f1: 1500, q: 0.7, dur: 0.5, attack: 0.15, gain: 0.07 });
+      this.noise({ type: 'lowpass', f0: 400, q: 0.6, dur: 0.25, gain: 0.12, delay: 0.15, buf: this.brown });
+      this.tone(150, 125, 0.4, 'sawtooth', 0.012, 0.2, this.master, 0.12);
+      this.tone(330, 220, 0.6, 'triangle', 0.03, 0.55, this.master, 0.02); // a contented sigh
+    }
+    if (name === 'snore') { // soft breathing in, a little rumble out
+      this.noise({ type: 'lowpass', f0: 700, f1: 1100, q: 0.7, dur: 0.9, attack: 0.7, gain: 0.07 });
+      this.noise({ type: 'lowpass', f0: 260, f1: 160, q: 2, dur: 0.9, attack: 0.15, gain: 0.12, delay: 1.0, buf: this.brown });
+      this.tone(95, 85, 0.7, 'sawtooth', 0.01, 1.05, this.master, 0.15);
+    }
+    if (name === 'wake') { // a stretch and a yawn, then birds
+      this.tone(260, 420, 0.5, 'triangle', 0.035, 0, this.master, 0.03); this.tone(420, 230, 0.7, 'triangle', 0.03, 0.5, this.master, 0.03);
+      this.noise({ f0: 1800, f1: 1200, q: 0.7, dur: 0.4, attack: 0.1, gain: 0.04, delay: 0.1 });
+      for (let i = 0; i < 5; i++) { const f = 2800 + Math.random() * 1400; this.tone(f, f * 1.25, 0.06, 'sine', 0.03, 1.3 + i * 0.11); }
+    }
     if (name === 'snap') this.tone(1500, 1900, 0.03, 'sine', 0.025); // the hologram clicks onto a socket
     if (name === 'pickup') { this.tone(880, 1320, 0.08, 'sine', 0.06); this.tone(1320, 1760, 0.08, 'sine', 0.05, 0.07); }
     if (name === 'tick') this.tone(1800, 1400, 0.035, 'sine', 0.04);

@@ -15,6 +15,7 @@ export const PLACEABLE = {
   transat: { circles: [[0.45, 0, 0.36], [-0.45, 0, 0.36]], foot: [[0.95, 0.33], [0.95, -0.33], [-0.88, 0.33], [-0.88, -0.33], [0, 0]], slope: 0.32, ring: 1.0, pick: 0.8, h: 0.5 },
   parasol: { circles: [[0, 0, 0.14]], foot: [[0, 0], [0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]], slope: 0.5, ring: 0.45, clear: 1.1, pick: 0.45, h: 1.2 },
   chest: { circles: [[0.22, 0, 0.3], [-0.22, 0, 0.3]], foot: [[0.43, 0.27], [0.43, -0.27], [-0.43, 0.27], [-0.43, -0.27], [0, 0]], slope: 0.3, ring: 0.58, pick: 0.55, h: 0.35, slots: 18 },
+  bed: { circles: [[0.55, 0, 0.6], [-0.55, 0, 0.6]], foot: [[1.0, 0.55], [1.0, -0.55], [-1.0, 0.55], [-1.0, -0.55], [0, 0]], slope: 0.3, ring: 1.15, pick: 0.85, h: 0.55, bed: true },
   campfire: { circles: [[0, 0, 0.6]], foot: [[0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5], [0, 0]], slope: 0.35, ring: 0.68, pick: 0.7, light: { y: 0.7, radius: 10, col: [1.0, 0.52, 0.2] }, embers: 0.6, h: 0.4 },
 };
 
@@ -127,7 +128,7 @@ export class Placement {
     }
     if (wet) return { ok: false, why: 'Pas dans l’eau' };
     if (hi - lo > def.slope) return { ok: false, why: 'Sol trop pentu' };
-    const y = id === 'transat' || id === 'campfire' ? (lo + hi) / 2 : this.player.groundAt(x, z, pl.pos.y + 1.5);
+    const y = id === 'transat' || id === 'campfire' || id === 'bed' ? (lo + hi) / 2 : this.player.groundAt(x, z, pl.pos.y + 1.5);
     for (const [cx, cz, r] of def.circles) {
       const [lx, lz] = local(cx, cz, yaw), px = x + lx, pz = z + lz;
       if (Math.hypot(px - pl.pos.x, pz - pl.pos.z) < r + 0.32 && Math.abs(pl.pos.y - y) < 1.5) return { ok: false, why: 'Trop près de toi' };
