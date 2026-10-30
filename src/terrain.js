@@ -76,12 +76,14 @@ export function buildTerrain(world, tex, quality) {
       }`,
   });
 
+  const built = new Set(); // chunks that have a mesh (not deep ocean)
   for (let cz = -half; cz < half; cz += chunkMeters) {
     for (let cx = -half; cx < half; cx += chunkMeters) {
       let maxH = -1e9;
       for (let z = 0; z <= chunkMeters; z += 4) for (let x = 0; x <= chunkMeters; x += 4)
         maxH = Math.max(maxH, world.heightAt(cx + x, cz + z));
       if (maxH < -7.5) continue; // deep ocean: water is opaque there
+      built.add(`${cx},${cz}`);
       const geo = new THREE.BufferGeometry();
       const verts = (n + 1) * (n + 1);
       const pos = new Float32Array(verts * 3);
@@ -111,5 +113,17 @@ export function buildTerrain(world, tex, quality) {
     }
   }
   group.userData.material = material;
+  // the height of the drawn ground: the same vertices and triangles as the
+  // chunks (a-c-b / b-c-d per cell), so what stands on it touches what is seen
+  const trueH = world.heightAt;
+  group.userData.heightAt = (x, z) => {
+    const cx = Math.floor((x + half) / chunkMeters) * chunkMeters - half, cz = Math.floor((z + half) / chunkMeters) * chunkMeters - half;
+    if (!built.has(`${cx},${cz}`)) return trueH(x, z);
+    const s = chunkMeters / n, fx = (x - cx) / s, fz = (z - cz) / s;
+    const i = Math.min(n - 1, Math.floor(fx)), j = Math.min(n - 1, Math.floor(fz)), u = fx - i, v = fz - j;
+    const P = (a, c) => trueH(cx + (i + a) * s, cz + (j + c) * s);
+    return u + v <= 1 ? P(0, 0) + (P(1, 0) - P(0, 0)) * u + (P(0, 1) - P(0, 0)) * v
+      : P(1, 1) + (P(0, 1) - P(1, 1)) * (1 - u) + (P(1, 0) - P(1, 1)) * (1 - v);
+  };
   return group;
 }

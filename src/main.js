@@ -339,12 +339,12 @@ function openChest(o) {
 function aimedChest() { const o = placement.aimed(); return o?.items ? o : null; }
 
 const ACTION_ICON = { boat: '📍', book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍', bed: '📍' };
-let lastHeld;
+let lastHeld, stashing = false;
 function onHeldChange(held) {
   const id = held?.id ?? null;
   const changed = id !== lastHeld;
   lastHeld = id;
-  if (changed && debris.carried) letGo('drop'); // taking another tool: the stone is put down
+  if (changed && debris.carried && !stashing) letGo('drop'); // taking another tool: the stone is put down (not when the piece itself goes into that slot)
   const busy = !!hands.carried; // a stone in the hand: the tools wait
   fishing.setEquipped(!busy && id === 'rod');
   axe.setEquipped(!busy && id === 'axe');
@@ -363,17 +363,27 @@ function letGo(how) {
   const b = debris.carried;
   if (!b) return;
   if (how === 'stash') {
-    if (inventory.add(b.kind, b.value)) { toast('Inventaire plein'); audio.sfx('deny'); return; }
+    if (!bagPiece(b)) return; // (still in hand: the bag is full)
     debris.stash();
-    toast(`+${b.value} ${itemDef(b.kind).name}`); audio.sfx('pickup');
   } else if (how === 'throw') { debris.throw(camera, player.vel); audio.sfx('toss'); } else { debris.drop(camera, player.vel); }
   endCarry();
 }
 // V on a piece lying in the world: straight into the bag
 function stashPiece(b) {
-  if (inventory.add(b.kind, b.value)) { toast('Inventaire plein'); audio.sfx('deny'); return; }
-  debris.take(b);
-  toast(`+${b.value} ${itemDef(b.kind).name}`); audio.sfx('pickup');
+  if (bagPiece(b)) debris.take(b);
+}
+// a piece's worth into the bag; what does not fit stays on the piece (never
+// both in the bag and in the world). True when it all went in.
+function bagPiece(b) {
+  stashing = true; // it may land in the selected slot: that must not let go of it
+  const left = inventory.add(b.kind, b.value);
+  stashing = false;
+  const got = b.value - left;
+  if (got > 0) { toast(`+${got} ${itemDef(b.kind).name}${left ? ' · inventaire plein' : ''}`); audio.sfx('pickup'); }
+  if (!left) return true;
+  b.value = left;
+  if (!got) { toast('Inventaire plein'); audio.sfx('deny'); }
+  return false;
 }
 // A: one of the selected item set down in the world, as a real piece
 function dropHeld() {
@@ -541,6 +551,11 @@ function buildWorld() {
   globals.uWorldSize.value = world.size;
   const terrain = buildTerrain(world, tex, settings.quality);
   scene.add(terrain);
+  // from now on the ground is the drawn one (a vertex every 1–2 m): props are
+  // lowered or raised onto it, and walking, placing, physics and boats follow it
+  const trueH = world.heightAt, drawnH = terrain.userData.heightAt;
+  for (const list of Object.values(world.props)) for (const p of list) p.y += drawnH(p.x, p.z) - trueH(p.x, p.z);
+  world.heightAt = drawnH;
   const grass = new Grass(scene, settings.quality);
   const veg = new Vegetation(scene, world, tex, settings.quality);
   veg.setDistanceScale({ low: 0.6, medium: 0.8, high: 1 }[settings.quality]);

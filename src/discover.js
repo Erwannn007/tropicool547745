@@ -52,7 +52,7 @@ export function randomIsleCfg() {
   return {
     islands,
     size: +step(0.55 + Math.pow(rnd(), 1.3) * 1.05).toFixed(2),
-    relief: +step(0.05 + rnd() * 0.9).toFixed(2),
+    relief: +step(0.05 + rnd() * 0.55).toFixed(2), // gentle to mountainous (wild islands round their crests, world.js)
     vegetation: +step(0.35 + rnd() * 0.65).toFixed(2),
     stones: +step(0.15 + rnd() * 0.75).toFixed(2),
   };
@@ -64,7 +64,7 @@ const OF = ['de la Tortue', 'des Perles', 'du Corail', 'aux Mangues', 'de l’Al
   'des Frangipaniers', 'de la Mousson', 'aux Cocotiers', 'des Lagons', 'du Banian', 'de l’Orchidée', 'des Pirogues', 'du Mérou', 'aux Papayes',
   'du Tiaré', 'des Sables blancs', 'de la Baie cachée', 'du Vent doux', 'des Marées', 'aux Coquillages', 'du Grand Récif', 'de Cannelle'];
 export function isleName(cfg, taken = new Set()) {
-  const kind = cfg.islands === 1 ? (cfg.size < 0.8 ? 'Îlot' : cfg.relief > 0.7 ? 'Mont' : 'Île')
+  const kind = cfg.islands === 1 ? (cfg.size < 0.8 ? 'Îlot' : cfg.relief > 0.45 ? 'Mont' : 'Île')
     : cfg.islands === 2 ? 'Îles jumelles' : cfg.islands <= 4 ? 'Îles' : 'Archipel';
   // a complement no island of the registry wears yet, while there are some left
   const free = OF.filter((o) => ![...taken].some((n) => n.includes(o)));

@@ -67,10 +67,12 @@ export function makeSimplex(seed) {
     return s / n;
   }
 
-  function ridged(x, y, oct = 4) {
+  // soft > 0 rounds the crests (a smooth |n|) instead of sharp blades
+  function ridged(x, y, oct = 4, soft = 0) {
     let a = 0.5, f = 1, s = 0;
     for (let o = 0; o < oct; o++) {
-      const v = 1 - Math.abs(noise(x * f, y * f));
+      const n = noise(x * f, y * f);
+      const v = 1 - (soft ? Math.sqrt(n * n + soft * soft) - soft : Math.abs(n));
       s += a * v * v; a *= 0.5; f *= 2.03;
     }
     return s;

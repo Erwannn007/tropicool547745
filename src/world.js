@@ -27,6 +27,7 @@ export function seedNumber(seed) {
 
 export function generateWorld(cfg, felled = new Set()) {
   cfg = { ...cfg, label: String(cfg.seed), seed: seedNumber(cfg.seed) };
+  let api = null; // what is returned (restingY reads its heightAt, swapped for the drawn ground later)
   const N = MAP_N, S = WORLD_SIZE, half = S / 2, cell = S / N;
   const rnd = mulberry32(cfg.seed);
   const sx = makeSimplex(cfg.seed);
@@ -53,7 +54,11 @@ export function generateWorld(cfg, felled = new Set()) {
 
   // ---- heightfield ----------------------------------------------------
   const heights = new Float32Array(N * N);
-  const relief = cfg.relief;
+  // wild islands (Discover) have soft relief: mountains, never blades. Rounded
+  // crests, then one blur pass, so the terrain mesh (a vertex every 1.6 m on
+  // phones) stays close to the ground things stand on
+  const relief = cfg.wild ? Math.min(cfg.relief, 0.6) : cfg.relief;
+  const soft = cfg.wild ? 0.22 : 0;
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
       const x = -half + (i + 0.5) * cell, z = -half + (j + 0.5) * cell;
@@ -77,7 +82,7 @@ export function generateWorld(cfg, felled = new Set()) {
           h = -0.35 + smoothstep(0, beach, e) * 1.5;
         } else {
           const t = e - beach;
-          const hills = (sx.ridged(x * 0.011, z * 0.011, 4) * 0.75 + (sx2.fbm(x * 0.02, z * 0.02, 3) * 0.5 + 0.5) * 0.35);
+          const hills = (sx.ridged(x * 0.011, z * 0.011, 4, soft) * 0.75 + (sx2.fbm(x * 0.02, z * 0.02, 3) * 0.5 + 0.5) * 0.35);
           const k = smoothstep(0, 0.45, t);
           h = 1.15 + t * 5 + hills * k * (4 + relief * 38) * hs;
           h += sx2.fbm(x * 0.07, z * 0.07, 2) * 0.35 * k;
@@ -87,6 +92,14 @@ export function generateWorld(cfg, felled = new Set()) {
     }
   }
 
+  if (soft) {
+    const src = heights.slice();
+    for (let j = 1; j < N - 1; j++) for (let i = 1; i < N - 1; i++) {
+      let s = 0;
+      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) s += src[(j + b) * N + i + a] * (a || b ? (a && b ? 1 : 2) : 4);
+      heights[j * N + i] = s / 16;
+    }
+  }
   const H = (i, j) => heights[clamp(j, 0, N - 1) * N + clamp(i, 0, N - 1)];
   function heightAt(x, z) {
     const fx = (x + half) / cell - 0.5, fz = (z + half) / cell - 0.5;
@@ -300,7 +313,7 @@ export function generateWorld(cfg, felled = new Set()) {
   // where a stone of a heap would rest now: on the ground, or on the
   // remaining stones under it
   function restingY(p) {
-    let y = heightAt(p.x, p.z) - 0.06;
+    let y = (api ? api.heightAt : heightAt)(p.x, p.z) - 0.06; // (the drawn ground once the terrain is built)
     if (p.cluster == null) return y;
     for (const q of clusters[p.cluster]) {
       if (q === p || q.gone || q.y >= p.y - 0.05) continue;
@@ -371,5 +384,6 @@ export function generateWorld(cfg, felled = new Set()) {
     tex.needsUpdate = true;
   }
 
-  return { cfg, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex, removeProp, setShadowDir, clusters, restingY };
+  api = { cfg, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex, removeProp, setShadowDir, clusters, restingY };
+  return api;
 }
