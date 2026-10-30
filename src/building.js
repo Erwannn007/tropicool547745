@@ -33,16 +33,24 @@ export const PIECES = {
   door: { mat: 'wood', boxes: [[-0.72, 0, 0.28, 0.24, 0, H], [0.72, 0, 0.28, 0.24, 0, H], [0, 0, 0.44, 0.24, 2.0, H]], check: [[0, 0, 1, 0.24, 0, H]], mid: H / 2, grab: 0.3, r: 1.2, sound: 'big' },
   window: { mat: 'wood', boxes: [[0, 0, 1, 0.24, 0, 1], [-0.72, 0, 0.28, 0.24, 1, 2], [0.72, 0, 0.28, 0.24, 1, 2], [0, 0, 1, 0.24, 2, H]], check: [[0, 0, 1, 0.24, 0, H]], mid: H / 2, grab: 0.3, r: 1.2, sound: 'big' },
   roof: { mat: 'thatch', boxes: [], ray: ROOF_RAY, check: [[0, 0, 1, 1, 0.05, 1]], mid: 0.5, grab: 0.3, r: 1.6, snapOnly: true, sound: 'wood', facing: true },
+  // two roof panels on the same square at right angles become a hip corner
+  // (low along both outer edges, up to the inner corner); worth two roofs
+  roofcorner: { mat: 'thatch', boxes: [], ray: ROOF_RAY, check: [[0, 0, 1, 1, 0.05, 1]], mid: 0.5, grab: 0.3, r: 1.6, snapOnly: true, sound: 'wood', refund: ['roof', 2] },
+  // half gable: the triangle between a wall top and the roof sloping over it
+  gable: { mat: 'wood', boxes: [], ray: [[0, 0, 1, 0.15, 0, 1]], check: [[0, 0, 1, 0.15, 0.05, 0.95]], mid: 0.5, grab: 0.2, r: 1.2, snapOnly: true, sound: 'wood' },
+  // the same piece under the high edge of a roof: a full board panel 1 m tall
+  gablewall: { mat: 'wood', boxes: [], ray: [[0, 0, 1, 0.15, 0, 1]], check: [[0, 0, 1, 0.15, 0.05, 0.95]], mid: 0.5, grab: 0.2, r: 1.2, snapOnly: true, sound: 'wood', refund: ['gable', 1] },
+  flatroof: { mat: 'thatch', boxes: [[0, 0, 1, 1, -0.22, 0]], mid: -0.1, grab: 0, r: 1.5, sound: 'wood' },
   stairs: { mat: 'wood', boxes: STEPS, check: [[0, 0, 1, 1, 0, H]], mid: H / 2, grab: 0.4, r: 1.5, sound: 'big', facing: true },
 };
 export const isPiece = (id) => !!PIECES[id];
 
 // sockets: where a new piece of one of `types` goes relative to a piece
-const WALLS = ['wall', 'door', 'window'], BLOCKS = ['block:wood', 'block:stone'];
+const WALLS = ['wall', 'door', 'window'], BLOCKS = ['block:wood', 'block:stone'], FLOORS = ['floor', 'flatroof'];
 const S = (types, x, y, z, yaw = 0) => ({ types, x, y, z, yaw });
 const SOCKETS = {
   floor: [
-    S(['floor'], 2, 0, 0), S(['floor'], -2, 0, 0), S(['floor'], 0, 0, 2), S(['floor'], 0, 0, -2),
+    S(FLOORS, 2, 0, 0), S(FLOORS, -2, 0, 0), S(FLOORS, 0, 0, 2), S(FLOORS, 0, 0, -2),
     S(WALLS, 0, 0, 1), S(WALLS, 0, 0, -1), S(WALLS, 1, 0, 0, Q), S(WALLS, -1, 0, 0, Q),
     ...[[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]].map(([x, z]) => S(BLOCKS, x, 0, z)),
     ...[0, 1, 2, 3].map((k) => S(['stairs'], 0, 0, 0, k * Q)),                                      // up from this floor
@@ -51,14 +59,19 @@ const SOCKETS = {
   wall: [
     S(WALLS, 0, H, 0), S(WALLS, 2, 0, 0), S(WALLS, -2, 0, 0),
     S(WALLS, 1, 0, 1, Q), S(WALLS, 1, 0, -1, Q), S(WALLS, -1, 0, 1, Q), S(WALLS, -1, 0, -1, Q),          // corners
-    S(['floor'], 0, H, 1), S(['floor'], 0, H, -1), S(['floor'], 0, 0, 1), S(['floor'], 0, 0, -1),
+    S(FLOORS, 0, H, 1), S(FLOORS, 0, H, -1), S(['floor'], 0, 0, 1), S(['floor'], 0, 0, -1),
     S(['roof'], 0, H, -1, 0), S(['roof'], 0, H, 1, 2 * Q),
+    S(['gable'], 0, H, 0, 0), S(['gable'], 0, H, 0, 2 * Q), // which way it rises: to fit the roof above (gableFit)
   ],
   block: [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].map(([x, y, z]) => S(BLOCKS, x, y, z)),
   roof: [S(['roof'], 2, 0, 0), S(['roof'], -2, 0, 0), S(['roof'], 0, 1, -2, 0), S(['roof'], 0, 0, -2, 2 * Q)], // along, up the slope, ridge
-  stairs: [S(['floor'], 0, H, -2), S(['stairs'], 0, H, -2), S(['floor'], 0, 0, 2), S(WALLS, 1, 0, 0, Q), S(WALLS, -1, 0, 0, Q)],
+  roofcorner: [S(['roof'], -2, 0, 0, 0), S(['roof'], 0, 0, -2, Q)], // on along either eave
+  gable: [],
+  gablewall: [],
+  stairs: [S(FLOORS, 0, H, -2), S(['stairs'], 0, H, -2), S(['floor'], 0, 0, 2), S(WALLS, 1, 0, 0, Q), S(WALLS, -1, 0, 0, Q)],
 };
 SOCKETS.door = SOCKETS.window = SOCKETS.wall;
+SOCKETS.flatroof = SOCKETS.floor;
 SOCKETS['block:wood'] = SOCKETS['block:stone'] = SOCKETS.block;
 
 const angDiff = (a, b) => { const d = ((a - b) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI; return Math.abs(d); };
@@ -255,12 +268,12 @@ export class Building {
   }
 
   // can a piece go there? -> null if it can, else why not
-  why(type, x, y, z, yaw) {
+  why(type, x, y, z, yaw, ignore = null) {
     const def = PIECES[type], pl = this.player;
     const check = (def.check || def.boxes).map((b) => worldBox(b, x, y, z, yaw, 0.12));
     const mid = new THREE.Vector3(x, y + def.mid, z);
     if (mid.distanceTo(this.camera.position) > REACH + 1.5) return 'Trop loin';
-    for (const p of this.piecesNear(x, z, def.r + 2)) for (const a of p.check) for (const b of check) if (overlap(a, b)) return 'Pas de place';
+    for (const p of this.piecesNear(x, z, def.r + 2)) if (p !== ignore) for (const a of p.check) for (const b of check) if (overlap(a, b)) return 'Pas de place';
     for (const b of check) if (b.y0 < pl.pos.y + 1.75 && b.y1 > pl.pos.y + 0.05 && circleHits(b, pl.pos.x, pl.pos.z, 0.36)) return 'Trop près de toi';
     // trees, stones, the hut posts, placed objects
     const ground = this.world.heightAt(x, z);
@@ -328,13 +341,15 @@ export class Building {
       if (spot) d = m.distanceTo(spot);
       else { m.sub(cam); const along = m.dot(dir); if (along < 0.5 || along > REACH + 1.5) continue; d = m.addScaledVector(dir, -along).length(); }
       if (d > (spot ? 1.9 : 1.3)) continue;
-      cands.push({ x, y, z, yaw, score: d + (def.facing ? angDiff(yaw, want) / Math.PI * 0.9 : 0) });
+      cands.push({ x, y, z, yaw, score: d + (def.facing ? angDiff(yaw, want) / Math.PI * 0.9 : 0) + (id === 'gable' ? this.gableFit(x, y, z, yaw) : 0) });
     }
     cands.sort((a, b) => a.score - b.score);
     let t = null;
     for (const c of cands.slice(0, 8)) { // the best one that fits, else the best one (in red)
       const why = this.why(id, c.x, c.y, c.z, c.yaw);
       if (!why) { t = { ...c, snap: true }; break; }
+      const m = id === 'roof' && this.corner(c);
+      if (m) { t = { ...c, ...m, snap: true }; break; } // the roof already there turns the corner with this one
       if (!t) t = { ...c, snap: true, why };
     }
     if (!t && spot) { // nothing to snap onto: on the ground
@@ -342,14 +357,56 @@ export class Building {
       const f = this.free(id, spot, yaw), y = f.y ?? spot.y;
       t = { x: spot.x, y, z: spot.z, yaw, snap: false, why: f.why || this.why(id, spot.x, y, spot.z, yaw) };
     }
-    this.showGhost(id, t, dt);
+    if (t && id === 'gable') { t.type = this.gableShape(t.x, t.y, t.z, t.yaw); if (!t.type) { t.type = 'gable'; t.why = 'Rien à fermer ici'; } }
+    this.showGhost(t?.type ?? id, t, dt);
     if (!t) { this.target = null; this.snapKey = ''; return; }
     t.posts = this.postsFor(id, t.x, t.y, t.z, t.yaw);
-    t.id = id; t.ok = !t.why;
+    t.id = id; t.type ??= id; t.ok = !t.why;
     this.target = t;
     const key = t.snap ? `${t.x.toFixed(2)},${t.y.toFixed(2)},${t.z.toFixed(2)},${t.yaw.toFixed(2)}` : '';
     if (key && key !== this.snapKey) this.hooks.sound?.('snap');
     this.snapKey = key;
+  }
+
+  // a roof square already holding a panel at right angles to this one: the
+  // two make a hip corner -> { type, yaw, merge } or null
+  corner(c) {
+    for (const q of this.piecesNear(c.x, c.z, 1)) {
+      if (q.type !== 'roof' || Math.hypot(q.x - c.x, q.z - c.z) > 0.05 || Math.abs(q.y - c.y) > 0.05 || Math.abs(angDiff(q.yaw, c.yaw) - Q) > 0.1) continue;
+      // the corner's two eaves (+z, +x in its frame) are the two panels' low edges
+      const low = (y) => [Math.sin(y), Math.cos(y)], a = low(q.yaw), b = low(c.yaw);
+      const yaw = Math.cos(q.yaw) * b[0] - Math.sin(q.yaw) * b[1] > 0.9 ? q.yaw : c.yaw;
+      if (this.why('roofcorner', c.x, c.y, c.z, yaw, q)) return null;
+      return { type: 'roofcorner', yaw, merge: q };
+    }
+    return null;
+  }
+  // underside of the roof over (x, z), or null
+  roofOver(x, z) {
+    let best = null;
+    for (const p of this.piecesNear(x, z, 1)) {
+      if (p.type !== 'roof' && p.type !== 'roofcorner') continue;
+      const dx = x - p.x, dz = z - p.z, c = Math.cos(p.yaw), s = Math.sin(p.yaw);
+      const lx = dx * c - dz * s, lz = dx * s + dz * c;
+      if (Math.abs(lx) > 1.25 || lz < -1.1 || lz > 1.4 || (p.type === 'roofcorner' && lx < -1.1)) continue;
+      const y = p.y + 0.512 - 0.5 * (p.type === 'roof' ? lz : Math.max(lx, lz));
+      if (best == null || y > best) best = y;
+    }
+    return best;
+  }
+  // a gable fits when the roof over it is high at its high end, low at the other
+  gableFit(x, y, z, yaw) {
+    const c = Math.cos(yaw) * 0.9, s = Math.sin(yaw) * 0.9;
+    const hi = this.roofOver(x + c, z - s), lo = this.roofOver(x - c, z + s);
+    if (hi == null || lo == null) return 0;
+    return hi - lo > 0.4 ? -0.8 : lo - hi > 0.4 ? 0.8 : 0;
+  }
+  // under the high edge of a roof (high over both ends) the gable is a full panel
+  gableShape(x, y, z, yaw) {
+    const c = Math.cos(yaw) * 0.9, s = Math.sin(yaw) * 0.9;
+    const a = this.roofOver(x + c, z - s), b = this.roofOver(x - c, z + s);
+    if (a != null && b != null && a - y < 0.3 && b - y < 0.3) return null; // under the low edge: nothing to close
+    return a != null && b != null && a - y > 0.7 && b - y > 0.7 ? 'gablewall' : 'gable';
   }
 
   showGhost(id, t, dt) {
@@ -381,9 +438,10 @@ export class Building {
     const t = this.target;
     if (!t) return false;
     if (t.why) { this.hooks.message?.(t.why); this.hooks.sound?.('deny'); return false; }
-    const p = this.spawn(t.id, t.x, t.y, t.z, t.yaw, t.posts);
+    if (t.merge) this.unlink(t.merge);
+    const p = this.spawn(t.type, t.x, t.y, t.z, t.yaw, t.posts);
     this.save();
-    this.hooks.sound?.(`build:${PIECES[t.id].sound}`);
+    this.hooks.sound?.(`build:${PIECES[t.type].sound}`);
     this.hooks.rumble?.(0.25, 60);
     this.popping.push({ p, t: 0 });
     this.burst(p, false);
@@ -391,18 +449,21 @@ export class Building {
     return true;
   }
 
-  // take a piece back (axe blow, empty hand): returns its item id
+  // take a piece back (a blow of the axe): returns [item id, how many]
   remove(p) {
     this.burst(p, true);
     this.hooks.sound?.(`unbuild:${PIECES[p.type].mat}`);
     this.hooks.rumble?.(0.35, 80);
+    this.unlink(p);
+    this.save();
+    this.hooks.removed?.(p);
+    return PIECES[p.type].refund || [p.type, 1];
+  }
+  unlink(p) {
     this.batches[p.type].remove(p);
     this.drop(p);
     this.pieces.splice(this.pieces.indexOf(p), 1);
     this.popping = this.popping.filter((e) => e.p !== p);
-    this.save();
-    this.hooks.removed?.(p);
-    return p.type;
   }
 
   // dust at the foot of a piece set down, chips and dust when it is knocked apart

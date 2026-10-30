@@ -942,6 +942,85 @@ function roofModel() {
   }
   return { parts: [{ geo: merge([[slab], [merge(fringe)]]), tex: T.straw() }, { geo: merge([[rafters], [ridge]]), tex: T.log(BARK) }] };
 }
+// flat geometry from triangles [[x, y, z] x 3, uv(x, y, z)]: flat normals
+function tris(list) {
+  const pos = [], uv = [];
+  for (const [a, b, c, f] of list) for (const p of [a, b, c]) { pos.push(...p); uv.push(...f(p)); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
+// uv projected on the plane each face mostly faces, 1 unit = 1 m
+function boxUV(g) {
+  const P = g.attributes.position, N = g.attributes.normal, uv = [];
+  for (let i = 0; i < P.count; i++) {
+    const n = [Math.abs(N.getX(i)), Math.abs(N.getY(i)), Math.abs(N.getZ(i))], p = [P.getX(i), P.getY(i), P.getZ(i)];
+    const ax = n[0] > n[1] ? (n[0] > n[2] ? 0 : 2) : (n[1] > n[2] ? 1 : 2);
+    uv.push(...(ax === 0 ? [p[2], p[1]] : ax === 1 ? [p[0], p[2]] : [p[0], p[1]]));
+  }
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return g;
+}
+// Hip corner: two thatch faces meeting on a diagonal, low along the +z and
+// +x eaves (with the same overhang as a roof panel), up to the inner corner
+// at (-1, -1); a hip log on the diagonal, straw fringes along both eaves.
+function roofCornerModel() {
+  const E = 1.367, top = (h) => 0.668 - 0.5 * h, bot = (h) => 0.512 - 0.5 * h;
+  const fa = ([x, , z]) => [x, z], fb = ([x, , z]) => [z, x];
+  const A = (y) => [[-1, y(E), E], [E, y(E), E], [-1, y(-1), -1]]; // heights follow z
+  const B = (y) => [[E, y(E), -1], [E, y(E), E], [-1, y(-1), -1]]; // heights follow x
+  const At = A(top), Ab = A(bot), Bt = B(top), Bb = B(bot);
+  const strip = (p, q, f) => [[p, q, [q[0], q[1] - 0.156, q[2]], f], [p, [q[0], q[1] - 0.156, q[2]], [p[0], p[1] - 0.156, p[2]], f]];
+  const thatch = tris([
+    [...At, fa], [Ab[0], Ab[2], Ab[1], fa], [...Bt, fb], [Bb[0], Bb[2], Bb[1], fb],
+    ...strip(At[0], At[1], ([x, y]) => [x, y]), ...strip(Bt[0], Bt[1], ([, y, z]) => [z, y]),
+    ...strip(At[2], At[0], ([, y, z]) => [z, y]), ...strip(Bt[2], Bt[0], ([x, y]) => [x, y]),
+  ]);
+  const fringe = [], rnd = mulberry32(79);
+  for (let i = 0; i < 14; i++) {
+    const t = -1 + i * 0.17;
+    for (const [x, z] of [[t, E - 0.03], [E - 0.03, t]]) {
+      const tuft = lathe([[0, -0.2 - rnd() * 0.06], [0.018, -0.17], [0.05, -0.08], [0.07, 0]], 5, 1);
+      fringe.push([tuft, M(x, bot(E) - 0.02, z, 0.2, rnd() * 3, 0)]);
+    }
+  }
+  const hip = tube(line(V(E - 0.05, top(E) + 0.04, E - 0.05), V(-1, top(-1) + 0.05, -1)), () => 0.07, { rings: 6, radial: 8, up: V(0, 1, 0), vRep: 3 });
+  return { parts: [{ geo: thatch, tex: T.straw(), double: true }, { geo: merge(fringe), tex: T.straw() }, { geo: hip, tex: T.log(BARK) }] };
+}
+// Half gable: a triangle of boards standing on a wall top, from nothing at
+// -x up to 1 m at +x (under the slope of a roof panel), a teak batten along
+// its top edge.
+function gableModel() {
+  const sh = new THREE.Shape(); sh.moveTo(-1.05, 0); sh.lineTo(1.05, 0); sh.lineTo(1.05, 1.0); sh.lineTo(-1.05, 0);
+  const g = boxUV(new THREE.ExtrudeGeometry(sh, { depth: 0.26, bevelEnabled: false }).translate(0, 0, -0.13).toNonIndexed());
+  const len = Math.hypot(2.1, 1), batten = bevelBox(len, 0.08, 0.32, 0.02);
+  batten.applyMatrix4(new THREE.Matrix4().compose(V(0, 0.5, 0), new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), Math.atan2(1, 2.1)), V(1, 1, 1)));
+  const post = bevelBox(0.12, 1.0, 0.32, 0.02).translate(0.99, 0.5, 0);
+  return { parts: [{ geo: g, tex: BT.planks() }, { geo: merge([[batten], [post]]), tex: T.teak(), gloss: 0.3 }] };
+}
+// the gable under the high edge of a roof: a panel of boards 1 m tall
+function gableWallModel() {
+  const g = bevelBox(2.1, 1.0, 0.26, 0.02).translate(0, 0.5, 0);
+  const posts = merge([-0.99, 0.99].map((x) => [bevelBox(0.12, 1.0, 0.32, 0.02), M(x, 0.5, 0)]));
+  const top = bevelBox(2.1, 0.08, 0.32, 0.02).translate(0, 0.96, 0);
+  return { parts: [{ geo: g, tex: BT.planks() }, { geo: merge([[posts], [top]]), tex: T.teak(), gloss: 0.3 }] };
+}
+// Flat roof: a thick mat of thatch on two beams, top at y = 0, fringed all round
+function flatRoofModel() {
+  const slab = bevelBox(2.24, 0.16, 2.24, 0.05).translate(0, -0.08, 0);
+  const beams = merge([-0.7, 0.7].map((z) => { const g = logGeo(2.1, 0.07); g.rotateZ(-Math.PI / 2); return [g, M(-1.05, -0.22, z)]; }));
+  const fringe = [], rnd = mulberry32(83);
+  for (let i = 0; i < 13; i++) {
+    const t = -1.02 + i * 0.17;
+    for (const [x, z] of [[t, 1.1], [t, -1.1], [1.1, t], [-1.1, t]]) {
+      const tuft = lathe([[0, -0.14 - rnd() * 0.05], [0.016, -0.11], [0.045, -0.05], [0.06, 0]], 5, 1);
+      fringe.push([tuft, M(x, -0.12, z, 0, rnd() * 3, 0)]);
+    }
+  }
+  return { parts: [{ geo: merge([[slab], [merge(fringe)]]), tex: T.straw() }, { geo: beams, tex: T.log(BARK) }] };
+}
 // ten steps up one storey over 2 m, low end at z = +1, between stringers
 function stairsModel() {
   const treads = [], rnd = mulberry32(73), n = 10, run = 2 / n, rise = STOREY / n;
@@ -972,6 +1051,10 @@ export const MODELS = {
   door: () => once('m:door', doorModel),
   window: () => once('m:window', windowModel),
   roof: () => once('m:roof', roofModel),
+  roofcorner: () => once('m:roofc', roofCornerModel),
+  gable: () => once('m:gable', gableModel),
+  gablewall: () => once('m:gablew', gableWallModel),
+  flatroof: () => once('m:flatroof', flatRoofModel),
   stairs: () => once('m:stairs', stairsModel),
   spit: () => once('m:spit', spitModel),
   chest: () => once('m:chest', chestModel),

@@ -238,7 +238,7 @@ function pickPlaced() {
   if (!o) {
     const p = building.aimed();
     if (!p) return false;
-    giveItems([[building.remove(p), 1]]);
+    giveItems([building.remove(p)]);
     return true;
   }
   if (o.items?.some(Boolean)) { toast('Vide le coffre avant de le reprendre'); audio.sfx('deny'); return true; }

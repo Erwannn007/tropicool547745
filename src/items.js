@@ -25,7 +25,11 @@ export const ITEMS = {
   wall: { name: 'Mur en rondins', max: 32, cat: 'Construction', desc: 'Mur de 2 m. Se pose au bord d’un plancher, sur un autre mur ou à côté.', build: true },
   door: { name: 'Mur avec porte', max: 32, cat: 'Construction', desc: 'Un mur en rondins avec une ouverture pour passer.', build: true },
   window: { name: 'Mur avec fenêtre', max: 32, cat: 'Construction', desc: 'Un mur en rondins percé d’une fenêtre à croisillons de bambou.', build: true },
-  roof: { name: 'Toit de chaume', max: 32, cat: 'Construction', desc: 'Pan de toit qui se pose sur le haut d’un mur. Deux pans face à face font un faîte.', build: true },
+  gable: { name: 'Pignon', max: 32, cat: 'Construction', desc: 'Ferme le haut d’un mur sous un toit : triangle sous la pente (il se tourne tout seul), panneau plein sous le bord haut.', build: true },
+  flatroof: { name: 'Toit plat', max: 32, cat: 'Construction', desc: 'Natte de chaume épaisse posée à plat sur le haut des murs. On peut marcher dessus.', build: true },
+  gablewall: { name: 'Pignon', max: 32, cat: 'Construction', desc: 'Ferme le haut d’un mur sous le bord haut d’un toit.', build: true },
+  roofcorner: { name: 'Angle de toit', max: 32, cat: 'Construction', desc: 'Deux pans de toit qui tournent l’angle.', build: true },
+  roof: { name: 'Toit de chaume', max: 32, cat: 'Construction', desc: 'Pan de toit qui se pose sur le haut d’un mur. Deux pans face à face font un faîte ; deux pans en équerre font un angle tout seuls.', build: true },
   stairs: { name: 'Escalier', max: 16, cat: 'Construction', desc: 'Monte d’un étage (2 × 2 m). Se pose sur un plancher ou au bord pour y monter.', build: true },
 };
 
@@ -45,6 +49,8 @@ export const RECIPES = [
   { out: 'door', n: 1, need: [['wood', 3]] },
   { out: 'window', n: 1, need: [['wood', 3]] },
   { out: 'roof', n: 1, need: [['fibre', 8], ['wood', 1]] },
+  { out: 'gable', n: 1, need: [['wood', 2]] },
+  { out: 'flatroof', n: 1, need: [['fibre', 8], ['wood', 1]] },
   { out: 'stairs', n: 1, need: [['wood', 3]] },
 ];
 
