@@ -93,8 +93,8 @@ const MINI = {
 
 // Plain items: shown at about the same size whatever the model, turned to
 // read well (pitch, yaw, roll); fish lie across the hand, head to the left.
-const ITEM_SIZE = { 'wood:palm': 0.3, 'wood:tree': 0.3, fibre: 0.26, coconut: 0.15, stone: 0.17, 'block:wood': 0.15, 'block:stone': 0.15, floor: 0.17, wall: 0.17, door: 0.17, roof: 0.17, stairs: 0.17 };
-const ITEM_TURN = { 'wood:palm': [0.35, 0.5, 0.25], 'wood:tree': [0.35, 0.5, 0.25], coconut: [0.3, -0.4, 0], stone: [0.4, 0.3, 0], fibre: [0.2, 0.4, -0.5], wall: [0.3, 0.7, 0], door: [0.3, 0.7, 0], stairs: [0.3, -0.8, 0] };
+const ITEM_SIZE = { 'wood:palm': 0.3, 'wood:tree': 0.3, fibre: 0.26, coconut: 0.15, stone: 0.17, 'block:wood': 0.15, 'block:stone': 0.15, floor: 0.17, wall: 0.17, door: 0.17, window: 0.17, roof: 0.17, stairs: 0.17 };
+const ITEM_TURN = { 'wood:palm': [0.35, 0.5, 0.25], 'wood:tree': [0.35, 0.5, 0.25], coconut: [0.3, -0.4, 0], stone: [0.4, 0.3, 0], fibre: [0.2, 0.4, -0.5], wall: [0.3, 0.7, 0], door: [0.3, 0.7, 0], window: [0.3, 0.7, 0], stairs: [0.3, -0.8, 0] };
 
 // the pickaxe blow lands where the point of the pick really meets something
 // (blow.js): aim fixed at the end of the hang, a whiff once the strike pose

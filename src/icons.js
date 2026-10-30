@@ -13,7 +13,7 @@ const POSE = {
   axe: [0.15, 0.5, -0.72], pickaxe: [0.15, 0.5, -0.72], stone: [0.35, 0.6, 0.1], rod: [0.1, 0.4, -0.7], scythe: [1.45, 0, -0.35, 1.05],
   torch: [0.25, 0.6, -0.62, 1.55, 0.55], transat: [0.5, -2.4, 0], parasol: [0.18, 0.4, 0], campfire: [0.55, 0.4, 0],
   book: [0.25, 0.55, -0.12], chest: [0.42, -0.55, 0], 'wood:palm': [0.45, 0.7, 0.35], 'wood:tree': [0.45, 0.7, 0.35], coconut: [0.3, 0.6, 0], fibre: [0.2, 0.5, -0.6],
-  'block:wood': [0.5, 0.7, 0], 'block:stone': [0.5, 0.7, 0], floor: [0.6, 0.5, 0], wall: [0.35, 0.5, 0], door: [0.3, 0.45, 0], roof: [0.3, 0.7, 0], stairs: [0.25, -0.75, 0],
+  'block:wood': [0.5, 0.7, 0], 'block:stone': [0.5, 0.7, 0], floor: [0.6, 0.5, 0], wall: [0.35, 0.5, 0], door: [0.3, 0.45, 0], window: [0.3, 0.45, 0], roof: [0.3, 0.7, 0], stairs: [0.25, -0.75, 0],
 };
 let renderer = null, rt, scene, camera;
 const urls = new Map();

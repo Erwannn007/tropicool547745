@@ -31,13 +31,14 @@ export const PIECES = {
   floor: { mat: 'wood', boxes: [[0, 0, 1, 1, -0.22, 0]], mid: -0.1, grab: 0, r: 1.5, sound: 'big' },
   wall: { mat: 'wood', boxes: [[0, 0, 1, 0.24, 0, H]], mid: H / 2, grab: 0.3, r: 1.2, sound: 'big' },
   door: { mat: 'wood', boxes: [[-0.72, 0, 0.28, 0.24, 0, H], [0.72, 0, 0.28, 0.24, 0, H], [0, 0, 0.44, 0.24, 2.0, H]], check: [[0, 0, 1, 0.24, 0, H]], mid: H / 2, grab: 0.3, r: 1.2, sound: 'big' },
+  window: { mat: 'wood', boxes: [[0, 0, 1, 0.24, 0, 1], [-0.72, 0, 0.28, 0.24, 1, 2], [0.72, 0, 0.28, 0.24, 1, 2], [0, 0, 1, 0.24, 2, H]], check: [[0, 0, 1, 0.24, 0, H]], mid: H / 2, grab: 0.3, r: 1.2, sound: 'big' },
   roof: { mat: 'thatch', boxes: [], ray: ROOF_RAY, check: [[0, 0, 1, 1, 0.05, 1]], mid: 0.5, grab: 0.3, r: 1.6, snapOnly: true, sound: 'wood', facing: true },
   stairs: { mat: 'wood', boxes: STEPS, check: [[0, 0, 1, 1, 0, H]], mid: H / 2, grab: 0.4, r: 1.5, sound: 'big', facing: true },
 };
 export const isPiece = (id) => !!PIECES[id];
 
 // sockets: where a new piece of one of `types` goes relative to a piece
-const WALLS = ['wall', 'door'], BLOCKS = ['block:wood', 'block:stone'];
+const WALLS = ['wall', 'door', 'window'], BLOCKS = ['block:wood', 'block:stone'];
 const S = (types, x, y, z, yaw = 0) => ({ types, x, y, z, yaw });
 const SOCKETS = {
   floor: [
@@ -57,7 +58,7 @@ const SOCKETS = {
   roof: [S(['roof'], 2, 0, 0), S(['roof'], -2, 0, 0), S(['roof'], 0, 1, -2, 0), S(['roof'], 0, 0, -2, 2 * Q)], // along, up the slope, ridge
   stairs: [S(['floor'], 0, H, -2), S(['stairs'], 0, H, -2), S(['floor'], 0, 0, 2), S(WALLS, 1, 0, 0, Q), S(WALLS, -1, 0, 0, Q)],
 };
-SOCKETS.door = SOCKETS.wall;
+SOCKETS.door = SOCKETS.window = SOCKETS.wall;
 SOCKETS['block:wood'] = SOCKETS['block:stone'] = SOCKETS.block;
 
 const angDiff = (a, b) => { const d = ((a - b) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI; return Math.abs(d); };
@@ -72,13 +73,16 @@ function worldBox([cx, cz, hx, hz, y0, y1], x, y, z, yaw, shrink = 0) {
   };
 }
 // do two boxes overlap (separating axes in the ground plane, then height)?
+// Pieces that only touch (a corner of two walls) must pass whatever the
+// rounding of their turned axes: 2 cm of play.
+const PLAY = 0.02;
 function overlap(a, b) {
-  if (a.y0 >= b.y1 || b.y0 >= a.y1) return false;
+  if (a.y0 >= b.y1 - PLAY || b.y0 >= a.y1 - PLAY) return false;
   const dx = b.x - a.x, dz = b.z - a.z;
   for (const [ax, az] of [[a.ux, a.uz], [a.vx, a.vz], [b.ux, b.uz], [b.vx, b.vz]]) {
     const ra = a.hx * Math.abs(a.ux * ax + a.uz * az) + a.hz * Math.abs(a.vx * ax + a.vz * az);
     const rb = b.hx * Math.abs(b.ux * ax + b.uz * az) + b.hz * Math.abs(b.vx * ax + b.vz * az);
-    if (Math.abs(dx * ax + dz * az) >= ra + rb) return false;
+    if (Math.abs(dx * ax + dz * az) >= ra + rb - PLAY) return false;
   }
   return true;
 }

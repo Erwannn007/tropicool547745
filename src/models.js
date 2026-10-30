@@ -908,6 +908,21 @@ function doorModel() {
   const frame = merge([[bevelBox(0.1, 2.0, 0.34, 0.02), M(-0.49, 1.0, 0)], [bevelBox(0.1, 2.0, 0.34, 0.02), M(0.49, 1.0, 0)], [bevelBox(1.08, 0.1, 0.36, 0.02), M(0, 2.0, 0)]]);
   return { parts: [{ geo: wallLogs(spans), tex: T.log(TRUNK) }, { geo: frame, tex: T.teak(), gloss: 0.4 }] };
 }
+// a wall with a window at eye level: short logs either side of the opening,
+// a teak frame with a sill jutting out, a cross of bamboo bars
+function windowModel() {
+  const spans = [[-1.1, 1.1, 0], [-1.1, 1.1, 1], [-1.1, 1.1, 4]];
+  for (const k of [2, 3]) spans.push([-1.1, -0.44, k], [0.44, 1.1, k]);
+  const frame = merge([
+    [bevelBox(0.1, 1.0, 0.34, 0.02), M(-0.49, 1.5, 0)], [bevelBox(0.1, 1.0, 0.34, 0.02), M(0.49, 1.5, 0)],
+    [bevelBox(1.08, 0.1, 0.36, 0.02), M(0, 2.0, 0)], [bevelBox(1.22, 0.08, 0.52, 0.02), M(0, 1.0, 0)], // lintel, sill
+  ]);
+  const bars = merge([
+    [tube(line(V(0, 1.04, 0), V(0, 1.96, 0)), () => 0.024, { rings: 2, radial: 6, up: V(1, 0, 0), vRep: 1 })],
+    [tube(line(V(-0.45, 1.52, 0), V(0.45, 1.52, 0)), () => 0.022, { rings: 2, radial: 6, up: V(0, 1, 0), vRep: 1 })],
+  ]);
+  return { parts: [{ geo: wallLogs(spans), tex: T.log(TRUNK) }, { geo: frame, tex: T.teak(), gloss: 0.4 }, { geo: bars, tex: T.bamboo() }] };
+}
 // thatch panel rising 1 m over 2 m (low edge at z = +1), on two rafters,
 // a ridge log on top and a fringe of straw hanging off the low edge
 function roofModel() {
@@ -955,6 +970,7 @@ export const MODELS = {
   floor: () => once('m:floor', floorModel),
   wall: () => once('m:wall', wallModel),
   door: () => once('m:door', doorModel),
+  window: () => once('m:window', windowModel),
   roof: () => once('m:roof', roofModel),
   stairs: () => once('m:stairs', stairsModel),
   spit: () => once('m:spit', spitModel),

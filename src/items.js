@@ -24,6 +24,7 @@ export const ITEMS = {
   floor: { name: 'Plancher', max: 32, cat: 'Construction', desc: 'Plancher de 2 × 2 m. Monté sur pilotis si le sol est en pente ou dans l’eau.', build: true },
   wall: { name: 'Mur en rondins', max: 32, cat: 'Construction', desc: 'Mur de 2 m. Se pose au bord d’un plancher, sur un autre mur ou à côté.', build: true },
   door: { name: 'Mur avec porte', max: 32, cat: 'Construction', desc: 'Un mur en rondins avec une ouverture pour passer.', build: true },
+  window: { name: 'Mur avec fenêtre', max: 32, cat: 'Construction', desc: 'Un mur en rondins percé d’une fenêtre à croisillons de bambou.', build: true },
   roof: { name: 'Toit de chaume', max: 32, cat: 'Construction', desc: 'Pan de toit qui se pose sur le haut d’un mur. Deux pans face à face font un faîte.', build: true },
   stairs: { name: 'Escalier', max: 16, cat: 'Construction', desc: 'Monte d’un étage (2 × 2 m). Se pose sur un plancher ou au bord pour y monter.', build: true },
 };
@@ -42,6 +43,7 @@ export const RECIPES = [
   { out: 'floor', n: 1, need: [['wood', 2], ['fibre', 2]] },
   { out: 'wall', n: 1, need: [['wood', 3]] },
   { out: 'door', n: 1, need: [['wood', 3]] },
+  { out: 'window', n: 1, need: [['wood', 3]] },
   { out: 'roof', n: 1, need: [['fibre', 8], ['wood', 1]] },
   { out: 'stairs', n: 1, need: [['wood', 3]] },
 ];
