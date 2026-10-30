@@ -13,7 +13,8 @@ const POSE = {
   axe: [0.15, 0.5, -0.72], pickaxe: [0.15, 0.5, -0.72], stone: [0.35, 0.6, 0.1], rod: [0.1, 0.4, -0.7], scythe: [1.45, 0, -0.35, 1.05],
   boat: [0.42, -0.65, 0], torch: [0.25, 0.6, -0.62, 1.55, 0.55], transat: [0.5, -2.4, 0], parasol: [0.18, 0.4, 0], campfire: [0.55, 0.4, 0],
   book: [0.25, 0.55, -0.12], chest: [0.42, -0.55, 0], 'wood:palm': [0.45, 0.7, 0.35], 'wood:tree': [0.45, 0.7, 0.35], coconut: [0.3, 0.6, 0], fibre: [0.2, 0.5, -0.6],
-  'block:wood': [0.5, 0.7, 0], 'block:stone': [0.5, 0.7, 0], floor: [0.6, 0.5, 0], wall: [0.35, 0.5, 0], door: [0.3, 0.45, 0], window: [0.3, 0.45, 0], gate: [0.15, 0.5, 0], bed: [0.5, -0.6, 0], gable: [0.2, 0.5, 0], flatroof: [0.6, 0.5, 0], roof: [0.3, 0.7, 0], stairs: [0.25, -0.75, 0],
+  'block:wood': [0.5, 0.7, 0], 'block:obsidian': [0.5, 0.7, 0], 'block:gold': [0.5, 0.7, 0], 'block:copper': [0.5, 0.7, 0],
+  'ore:copper': [0.35, 0.6, 0.1], 'ore:iron': [0.35, 0.6, 0.1], 'ore:gold': [0.35, 0.6, 0.1], obsidian: [0.5, 0.6, 0.1], amethyst: [0.2, 0.5, 0.1], lantern: [0.2, 0.6, 0], compass: [0.9, 0.3, 0], 'block:stone': [0.5, 0.7, 0], floor: [0.6, 0.5, 0], wall: [0.35, 0.5, 0], door: [0.3, 0.45, 0], window: [0.3, 0.45, 0], gate: [0.15, 0.5, 0], bed: [0.5, -0.6, 0], gable: [0.2, 0.5, 0], flatroof: [0.6, 0.5, 0], roof: [0.3, 0.7, 0], stairs: [0.25, -0.75, 0],
 };
 let renderer = null, rt, scene, camera;
 const urls = new Map();

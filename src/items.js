@@ -20,6 +20,14 @@ export const ITEMS = {
   coconut: { name: 'Noix de coco', max: 64, cat: 'Nourriture', desc: 'Son huile fait brûler les torches.' },
   stone: { name: 'Pierre', max: 64, cat: 'Matériau', desc: 'Éclat de basalte veiné de quartz, taillé à la pioche.' },
   fibre: { name: 'Fibres végétales', max: 64, cat: 'Matériau', desc: 'Herbe fauchée, tressée en botte.' },
+  // ores (geology.js), mined from the veins of wild islands or found in chests
+  'ore:copper': { name: 'Minerai de cuivre', max: 64, cat: 'Minerai', desc: 'Roche veinée de malachite verte et de cuivre natif.' },
+  'ore:iron': { name: 'Minerai de fer', max: 64, cat: 'Minerai', desc: 'Lourd, couleur de rouille. Dur à la pioche.' },
+  'ore:gold': { name: 'Pépite d’or', max: 64, cat: 'Minerai', desc: 'Rare et brillante. Les filons d’or ne se trouvent que sur quelques îles.' },
+  obsidian: { name: 'Obsidienne', max: 64, cat: 'Minerai', desc: 'Verre volcanique noir aux reflets violets. Aime les îles montagneuses.' },
+  amethyst: { name: 'Améthyste', max: 64, cat: 'Minerai', desc: 'Cristaux violets tirés d’une géode. Ils luisent un peu la nuit.' },
+  compass: { name: 'Boussole', max: 1, cat: 'Outil', desc: 'Tiens-la en main : elle t’indique le lieu inexploré le plus proche de l’île.' },
+  lantern: { name: 'Lanterne de cristal', max: 8, cat: 'Objet à poser', desc: 'Une améthyste qui brille dans une cage de fer. Lumière douce et violette.', place: 'lantern' },
   // building pieces (building.js): they snap onto each other
   'block:wood': { name: 'Bloc de bois', max: 64, cat: 'Construction', desc: 'Caisse en planches d’un mètre. S’empile et se colle aux autres blocs.', build: true },
   'block:stone': { name: 'Bloc de pierre', max: 64, cat: 'Construction', desc: 'Moellon de basalte taillé d’un mètre. S’empile et se colle aux autres blocs.', build: true },
@@ -33,6 +41,9 @@ export const ITEMS = {
   gablewall: { name: 'Pignon', max: 32, cat: 'Construction', desc: 'Ferme le haut d’un mur sous le bord haut d’un toit.', build: true },
   roofcorner: { name: 'Angle de toit', max: 32, cat: 'Construction', desc: 'Deux pans de toit qui tournent l’angle.', build: true },
   roof: { name: 'Toit de chaume', max: 32, cat: 'Construction', desc: 'Pan de toit qui se pose sur le haut d’un mur. Deux pans face à face font un faîte ; deux pans en équerre font un angle tout seuls.', build: true },
+  'block:obsidian': { name: 'Bloc d’obsidienne', max: 64, cat: 'Construction', desc: 'Dalle de verre volcanique poli. S’empile et se colle aux autres blocs.', build: true },
+  'block:gold': { name: 'Bloc d’or', max: 64, cat: 'Construction', desc: 'Lingots empilés. Pour un trône, un phare, ou juste pour briller.', build: true },
+  'block:copper': { name: 'Bloc de cuivre', max: 64, cat: 'Construction', desc: 'Plaques rivetées, verdies par l’air marin. S’empile et se colle aux autres blocs.', build: true },
   stairs: { name: 'Escalier', max: 16, cat: 'Construction', desc: 'Monte d’un étage (2 × 2 m). Se pose sur un plancher ou au bord pour y monter.', build: true },
 };
 
@@ -58,6 +69,11 @@ export const RECIPES = [
   { out: 'gable', n: 1, need: [['wood', 2]] },
   { out: 'flatroof', n: 1, need: [['fibre', 8], ['wood', 1]] },
   { out: 'stairs', n: 1, need: [['wood', 3]] },
+  { out: 'compass', n: 1, need: [['ore:iron', 2], ['ore:copper', 1], ['wood', 1]] },
+  { out: 'lantern', n: 2, need: [['amethyst', 1], ['ore:iron', 1]] },
+  { out: 'block:copper', n: 2, need: [['ore:copper', 3]] },
+  { out: 'block:obsidian', n: 2, need: [['obsidian', 3]] },
+  { out: 'block:gold', n: 1, need: [['ore:gold', 4]] },
 ];
 
 export function itemDef(id) {
@@ -78,4 +94,4 @@ export function itemDef(id) {
   return { id, name: id, max: 64, cat: '', desc: '' };
 }
 
-export const CAT_COLOR = { Construction: '#c8f07a', Outil: '#8fd8ff', 'Objet à poser': '#ffd34d', Matériau: '#e8c890', Nourriture: '#ffb08e', Poisson: '#7ee0dc' };
+export const CAT_COLOR = { Construction: '#c8f07a', Outil: '#8fd8ff', 'Objet à poser': '#ffd34d', Matériau: '#e8c890', Minerai: '#d8a8ff', Nourriture: '#ffb08e', Poisson: '#7ee0dc' };

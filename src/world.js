@@ -2,6 +2,8 @@
 import * as THREE from 'three';
 import { makeSimplex, mulberry32, clamp, lerp, smoothstep } from './noise.js';
 import { sunDir } from './shaders.js';
+import { islandGeology } from './geology.js';
+import { planSites } from './sites.js';
 
 export const WORLD_SIZE = 512;
 export const MAP_N = 512; // 1 texel per metre
@@ -285,6 +287,36 @@ export function generateWorld(cfg, felled = new Set()) {
   }
   props.rocks.length = 0;
 
+  // ---- veins of ore (wild islands) ------------------------------------
+  // which ores and how many veins: geology.js. A vein is a big ore stone with
+  // smaller ones round it, on dry land, rather up on rocky ground. Appended
+  // after every other stone and drawn from its own stream: the keys of the
+  // stones before them never move.
+  const ores = cfg.wild ? islandGeology(cfg, clamp(islands.reduce((a, i) => a + i.r * i.r, 0) / (62 * 62 * 1.4), 0.6, 1.5)) : {};
+  const ornd = mulberry32(cfg.seed + 9091);
+  for (const [mineral, veins] of Object.entries(ores)) {
+    for (let k = 0; k < veins; k++) for (let t = 0; t < 80; t++) {
+      const isl = islands[Math.floor(ornd() * islands.length)];
+      const a = ornd() * Math.PI * 2, d = Math.sqrt(ornd()) * isl.r * 0.9;
+      const x = isl.x + Math.cos(a) * d, z = isl.z + Math.sin(a) * d, h = heightAt(x, z);
+      if (h < 1.4 || occ.has(occKey(x, z))) continue;
+      const i = clamp(Math.floor((x + half) / cell), 0, N - 1), j = clamp(Math.floor((z + half) / cell), 0, N - 1);
+      const high = rock[j * N + i] * 0.7 + smoothstep(2, mineral === 'obsidian' ? 12 : 8, h); // ore likes high rocky ground
+      if (ornd() > 0.25 + high) continue;
+      const geode = mineral === 'amethyst', coreS = geode ? 0.95 + ornd() * 0.35 : 0.95 + ornd() * 0.45;
+      const core = { x, y: heightAt(x, z) - 0.06, z, s: coreS, rot: ornd() * 6.28, v: geode ? 3 : Math.floor(ornd() * 3), mineral };
+      const list = [core];
+      const ring = 2 + Math.floor(ornd() * 3);
+      for (let q = 0; q < ring; q++) {
+        const b = (q / ring) * Math.PI * 2 + ornd() * 0.9, ss = coreS * (0.35 + ornd() * 0.3), dd = (coreS + ss) * 0.5 * (0.9 + ornd() * 0.4);
+        const sx = x + Math.cos(b) * dd, sz = z + Math.sin(b) * dd;
+        list.push({ x: sx, y: heightAt(sx, sz) - 0.06, z: sz, s: ss, rot: ornd() * 6.28, v: geode && ornd() < 0.5 ? 3 : Math.floor(ornd() * 3), mineral });
+      }
+      for (const p of list) { occ.set(occKey(p.x, p.z), 1); props.stones.push(p); }
+      break;
+    }
+  }
+
   // ---- baked canopy shadows -------------------------------------------
   // shadows are painted along the light direction; the day cycle re-paints
   // them as the sun moves (elevation clamped so evening shadows stay sane)
@@ -307,6 +339,12 @@ export function generateWorld(cfg, felled = new Set()) {
   };
   // every prop gets a stable key so felled trees can be remembered per world
   for (const type of Object.keys(props)) props[type].forEach((p, i) => { p.type = type; p.key = `${type}:${i}`; p.gone = felled.has(p.key); });
+  // places left by others on a wild island (sites.js): what grew or lay where
+  // they stand is cleared away (not felled: nothing is recorded)
+  const sites = cfg.wild ? planSites(cfg, islands, heightAt, normalAt, (x, z) => exclusion(x, z, 0) || Math.hypot(x - best.cx, z - best.cz) < 18) : []; // (never on the landing beach)
+  for (const site of sites) for (const type of Object.keys(props)) for (const p of props[type]) {
+    if (!p.gone && Math.hypot(p.x - site.x, p.z - site.z) < site.r + (type === 'palms' || type === 'trees' ? 1.2 : 0.4)) p.gone = p.cleared = true;
+  }
   // stones whose support was mined in an earlier session lie lower
   for (let k = 0; k < clusters.length; k++) for (let pass = 0; pass < 3; pass++) for (const p of clusters[k]) { const y = restingY(p); if (y < p.y) p.y = y; }
 
@@ -384,6 +422,6 @@ export function generateWorld(cfg, felled = new Set()) {
     tex.needsUpdate = true;
   }
 
-  api = { cfg, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex, removeProp, setShadowDir, clusters, restingY };
+  api = { cfg, sites, ores, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex, removeProp, setShadowDir, clusters, restingY };
   return api;
 }

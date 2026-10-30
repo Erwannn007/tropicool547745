@@ -874,6 +874,7 @@ const BT = {
   })),
 };
 
+export const BTEX = BT;
 export const STOREY = 2.5;
 function blockWood() { return { parts: [{ geo: bevelBox(1, 1, 1, 0.045, [0.5, 0.5, 0.5]).translate(0, 0.5, 0), tex: BT.crate() }] }; }
 function blockStone() { return { parts: [{ geo: bevelBox(1, 1, 1, 0.07, [0.5, 0.5, 0.5]).translate(0, 0.5, 0), tex: BT.masonry() }] }; }
@@ -1271,6 +1272,151 @@ function boatModel() {
   };
 }
 
+// ---------------------------------------------------------------- ores and
+// what is made of them (geology.js, sites.js)
+const MALACHITE = ['#0e3a30', '#145444', '#1d7058', '#2a8e6c', '#48ae84', '#7ad2a4'];
+const CUPRITE = ['#5a2410', '#7e3618', '#a44e24', '#c86c34', '#e8925a'];
+const RUST = ['#3a1a10', '#5a2412', '#7e3418', '#a04a22', '#c46a32', '#e09050'];
+const NUGGET = ['#7a4e0e', '#a87218', '#d09a28', '#ecc040', '#fae078', '#fff4c0'];
+const OBSID = ['#0c0a10', '#16121c', '#221c2c', '#342a44', '#4c3e64', '#7a68a0'];
+const AMETH = ['#3a1a52', '#56287a', '#7440a0', '#9662c4', '#b890e0', '#e2d0fa'];
+const VERDI = ['#1c4a40', '#24604e', '#30785c', '#46946c', '#68b080', '#9ad0a0'];
+const OT = {
+  // a lump of rock crossed by bands of the ore, flecks scattered over it
+  lump: (key, rock, ore, seed) => once('ore:' + key, () => pixTex(32, 32, (g, w, h) => {
+    const r = mulberry32(seed);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const band = Math.sin((x * 0.6 + y * 0.9) * 0.55 + Math.sin(x * 0.3) * 1.5);
+      if (band > 0.55 || r() < 0.12) ramp(g, ore, x, y, 2 + band * 2 + (r() - 0.5) * 1.5);
+      else ramp(g, rock, x, y, 2.4 + (r() - 0.5) * 1.6);
+    }
+  })),
+  nugget: () => once('ore:gold', () => pixTex(16, 16, (g, w, h) => { const r = mulberry32(81); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, NUGGET, x, y, 3 + Math.sin(x * 1.3 + y * 0.7) * 1.1 + (r() - 0.5) * 1.6 - (r() < 0.08 ? 2.5 : 0)); })),
+  // volcanic glass: conchoidal ripples, violet sheen
+  glass: () => once('ore:obs', () => pixTex(16, 16, (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const d = Math.hypot(x - 4, y - 11); ramp(g, OBSID, x, y, (d % 4 < 1 ? 3.6 : 1.4) + (x + y === 12 ? 2 : 0)); } })),
+  gem: () => once('ore:ame', () => pixTex(8, 16, (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, AMETH, x, y, 1.5 + y / h * 3 + (x === 2 ? 1.2 : x === 6 ? -0.8 : 0)); })),
+  // a block of obsidian: polished slabs with violet streaks
+  obsBlock: () => once('b:obs', () => pixTex(32, 32, (g, w, h) => {
+    const r = mulberry32(83);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const e = Math.min(x, y, w - 1 - x, h - 1 - y);
+      let k = 1.4 + (r() - 0.5) * 0.6 + (Math.abs(((x - y) % 11 + 11) % 11 - 5) < 1 ? 1.6 : 0);
+      if (e === 0) k = 0.2; else if (e === 1) k = 3.4;
+      if ((x * 5 + y * 3) % 37 === 0) k = 5;
+      ramp(g, OBSID, x, y, k);
+    }
+  })),
+  // gold ingots stacked in courses, each lit on its top edge
+  goldBlock: () => once('b:gold', () => pixTex(32, 32, (g, w, h) => {
+    const r = mulberry32(84);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const row = Math.floor(y / 8), fx = (x + (row % 2) * 8) % 16, fy = y % 8;
+      let k = 2.8 + (r() - 0.5) * 0.6;
+      if (fx === 0 || fy === 0) k = 0.6; else if (fy === 1 || fx === 1) k = 4.6; else if (fy === 7 || fx === 15) k = 1.6;
+      ramp(g, NUGGET, x, y, k);
+    }
+  })),
+  // riveted copper plates gone green with the sea air, bright where worn
+  copperBlock: () => once('b:cu', () => pixTex(32, 32, (g, w, h) => {
+    const r = mulberry32(85);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const fx = x % 16, fy = y % 16;
+      if (fx === 0 || fy === 0) { ramp(g, CUPRITE, x, y, 0.5); continue; }
+      if ((fx === 2 || fx === 14) && (fy === 2 || fy === 14)) { ramp(g, CUPRITE, x, y, 4); continue; } // rivets
+      const worn = Math.sin(x * 0.4) + Math.cos(y * 0.33) > 1.3;
+      if (worn) ramp(g, CUPRITE, x, y, 3 + (r() - 0.5));
+      else ramp(g, VERDI, x, y, 2.6 + (r() - 0.5) * 1.6 + (fy === 1 ? 1.2 : 0));
+    }
+  })),
+  // compass card: a star of eight points on cream, N in red
+  rose: () => once('rose', () => pixTex(32, 32, (g, w, h) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const dx = x - 15.5, dy = y - 15.5, d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+      const star = Math.abs(Math.cos(a * 4)) * 11 + 3 > d, big = Math.abs(Math.cos(a * 2)) * 14 + 2 > d && Math.abs(Math.cos(a * 2)) > 0.92;
+      let c = d > 14.5 ? '#8a5c1e' : d > 13 ? '#f2e6c4' : '#e8dcb8';
+      if (star) c = (dx > 0) === (dy > 0) ? '#b8a888' : '#d4c6a4';
+      if (big) c = dy < 0 && Math.abs(dx) < 3 ? '#cc4a3c' : '#2e3a52';
+      if (d < 1.5) c = '#d8a443';
+      g.fillStyle = c; g.fillRect(x, y, 1, 1);
+    }
+  })),
+};
+function oreLump(seed, tex, sx = 1, sy = 0.8) {
+  const g = rockGeo(seed, 0.13);
+  g.scale(sx, sy, 1);
+  return g;
+}
+function copperModel() { return { parts: [{ geo: oreLump(91), tex: OT.lump('cu', ['#3a3436', '#4e4648', '#645a5a', '#7a706c', '#908680'], MALACHITE, 91) }, { geo: oreLump(92).scale(0.4, 0.5, 0.4).translate(0.07, 0.06, 0.03), tex: OT.lump('cu2', CUPRITE, CUPRITE, 92), metal: 1 }] }; }
+function ironModel() { return { parts: [{ geo: oreLump(93, 1.1, 0.75), tex: OT.lump('fe', ['#3a3436', '#4e4648', '#645a5a', '#7a706c', '#908680'], RUST, 93), metal: 0.5 }] }; }
+function goldModel() {
+  const a = oreLump(94, 0.75, 0.6), b = oreLump(95, 0.45, 0.5).translate(0.07, 0.03, -0.04);
+  return { parts: [{ geo: merge([[a], [b]]), tex: OT.nugget(), metal: 1 }] };
+}
+function obsidianModel() {
+  // a glassy flake: a flattened, sharp-edged lump
+  const g = rockGeo(96, 0.16);
+  const P = g.attributes.position;
+  for (let i = 0; i < P.count; i++) P.setY(i, P.getY(i) * 0.5 + P.getX(i) * 0.25);
+  g.computeVertexNormals();
+  return { parts: [{ geo: g, tex: OT.glass(), metal: 1, gloss: 0.6 }] };
+}
+// crystals: six-sided prisms with a pointed tip, a cluster on a stub of rock
+function crystalCluster(n, seed, s = 1) {
+  const r = mulberry32(seed), list = [];
+  for (let i = 0; i < n; i++) {
+    const h = (0.14 + r() * 0.12) * s, rad = (0.025 + r() * 0.02) * s;
+    const g = lathe([[0, 0], [rad, 0], [rad, h * 0.72], [0, h]], 6);
+    const a = (i / n) * Math.PI * 2, tilt = i ? 0.35 + r() * 0.3 : 0;
+    list.push([g, M(Math.cos(a) * 0.03 * s * (i ? 1 : 0), 0, Math.sin(a) * 0.03 * s * (i ? 1 : 0), Math.sin(a) * tilt, 0, -Math.cos(a) * tilt)]);
+  }
+  return merge(list);
+}
+function amethystModel() {
+  const base = rockGeo(97, 0.07); base.scale(1.3, 0.6, 1.1);
+  return { parts: [{ geo: crystalCluster(6, 97), tex: OT.gem(), metal: 1, glow: 0.12 }, { geo: base, tex: T.stone() }] };
+}
+// lantern: a crystal glowing in a wrought-iron cage, a ring to carry it
+function lanternModel() {
+  const base = lathe([[0, 0], [0.13, 0], [0.14, 0.03], [0.1, 0.05], [0, 0.05]], 10);
+  const cap = lathe([[0, 0.36], [0.12, 0.36], [0.14, 0.38], [0.06, 0.45], [0, 0.47]], 10);
+  const bars = [];
+  for (let i = 0; i < 4; i++) {
+    const a = i / 4 * Math.PI * 2 + Math.PI / 4, x = Math.cos(a) * 0.1, z = Math.sin(a) * 0.1;
+    bars.push([tube((t) => V(x * (1 - 0.15 * Math.sin(t * Math.PI)), 0.05 + t * 0.31, z * (1 - 0.15 * Math.sin(t * Math.PI))), () => 0.009, { rings: 4, radial: 4 })]);
+  }
+  const ring = tube((t) => V(Math.cos(t * Math.PI) * 0.05, 0.47 + Math.sin(t * Math.PI) * 0.06, 0), () => 0.008, { rings: 8, radial: 4 });
+  const iron = OT.lump('iron', ['#1c1a20', '#2c2830', '#3e3842', '#544a52', '#6e6068'], ['#2c2830', '#3e3842'], 98);
+  return {
+    parts: [
+      { geo: merge([[base], [cap], ...bars, [ring]]), tex: iron, metal: 1 },
+      { geo: crystalCluster(4, 99, 1.2).translate(0, 0.06, 0), tex: OT.gem(), glow: 0.9 },
+    ],
+  };
+}
+// compass: a brass case with a hinged lid thrown back, the card and a red
+// and blue needle under the glass
+function compassModel() {
+  const caseG = lathe([[0, 0], [0.085, 0], [0.095, 0.008], [0.095, 0.026], [0.088, 0.03], [0.08, 0.026], [0, 0.026]], 16);
+  const card = lathe([[0, 0], [0.079, 0], [0, 0.0005]], 16);
+  const cu = card.attributes.uv, cp = card.attributes.position;
+  for (let i = 0; i < cp.count; i++) cu.setXY(i, cp.getX(i) / 0.16 + 0.5, cp.getZ(i) / 0.16 + 0.5);
+  const lid = lathe([[0, 0], [0.09, 0], [0.095, 0.01], [0, 0.012]], 16);
+  const needle = merge([[bevelBox(0.012, 0.004, 0.06, 0.002), M(0, 0.03, -0.03)]]);
+  const tail = merge([[bevelBox(0.012, 0.004, 0.06, 0.002), M(0, 0.03, 0.03)]]);
+  const bow = tube((t) => V(Math.cos(t * Math.PI) * 0.018, 0.015, -0.1 - Math.sin(t * Math.PI) * 0.02), () => 0.005, { rings: 6, radial: 4 });
+  const brass = once('brass8', () => pixTex(8, 8, (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, BRASS, x, y, 2.4 + (y < 2 ? 1.2 : y > 5 ? -1 : 0)); }));
+  const red = once('needleR', () => pixTex(2, 2, (g) => { g.fillStyle = '#cc4a3c'; g.fillRect(0, 0, 2, 2); }));
+  const blue = once('needleB', () => pixTex(2, 2, (g) => { g.fillStyle = '#2e3a52'; g.fillRect(0, 0, 2, 2); }));
+  return {
+    parts: [
+      { geo: merge([[caseG], [lid, M(0, 0.03, -0.095, -1.9)], [bow]]), tex: brass, metal: 1 },
+      { geo: card.translate(0, 0.027, 0), tex: OT.rose() },
+      { geo: needle, tex: red }, { geo: tail, tex: blue },
+    ],
+  };
+}
+const oreBlock = (tex) => () => ({ parts: [{ geo: bevelBox(1, 1, 1, 0.06, [0.5, 0.5, 0.5]).translate(0, 0.5, 0), tex: tex(), metal: tex === OT.goldBlock ? 1 : 0, gloss: tex === OT.obsBlock ? 0.6 : 0 }] });
+
 export const MODELS = {
   boat: () => once('m:boat', boatModel),
   'block:wood': () => once('m:bw', blockWood),
@@ -1303,6 +1449,16 @@ export const MODELS = {
   'wood:tree': () => once('m:logt', () => logModel(BARK)),
   coconut: () => once('m:coco', coconutModel),
   fibre: () => once('m:fibre', fibreModel),
+  'ore:copper': () => once('m:cu', copperModel),
+  'ore:iron': () => once('m:fe', ironModel),
+  'ore:gold': () => once('m:au', goldModel),
+  obsidian: () => once('m:obs', obsidianModel),
+  amethyst: () => once('m:ame', amethystModel),
+  lantern: () => once('m:lantern', lanternModel),
+  compass: () => once('m:compass', compassModel),
+  'block:obsidian': () => once('m:bobs', oreBlock(OT.obsBlock)),
+  'block:gold': () => once('m:bau', oreBlock(OT.goldBlock)),
+  'block:copper': () => once('m:bcu', oreBlock(OT.copperBlock)),
 };
 export function fishModelFor(id, colors, cook = 0) { return once(`m:${id}:${cook}`, () => fishModel(colors, cook)); }
 // the model of any item id: MODELS, a fish ('fish:N'), a grilled one

@@ -31,6 +31,11 @@ import { Cooking, cookStage, cookedId, COOK } from './cooking.js';
 import { Building, PIECES, isPiece } from './building.js';
 import { Boats } from './boat.js';
 import { listIsles, findIsle, writeIsle, deleteIsle, randomSeed, randomIsleCfg, isleName } from './discover.js';
+import { buildSites, chestSpot, SITES } from './sites.js';
+import { Fauna, SPECIES as FAUNA } from './fauna.js';
+import { MINERALS, ORES, MINERAL_OF } from './geology.js';
+import { getCodex, noteFind } from './codex.js';
+import { getW, setW } from './store.js';
 
 const $ = (s) => document.querySelector(s);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -187,7 +192,8 @@ const quarry = new Quarry(scene, camera, {
   rumble: (s, ms) => input.rumble(s, ms),
   freeze: (s, tool) => (tool === 'axe' ? axe.sprite : hands.view).freeze(s),
   flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
-  shattered: () => {
+  shattered: (p) => {
+    if (p.mineral) discovered('ores', p.mineral);
     if (shatterTip) return;
     shatterTip = true;
     const how = input.lastDevice === 'gamepad' ? '○' : input.lastDevice === 'touch' ? '✋' : 'G / clic droit';
@@ -211,6 +217,12 @@ const cooking = new Cooking(scene, camera, {
 const boats = new Boats(scene, camera, {
   sound: (n) => audio.sfx(n), message: toast, rumble: (s, ms) => input.rumble(s, ms),
   ripple: (x, z, s) => waterFx.ripple(x, z, s), drop: (...a) => waterFx.drop(...a), splash: (p, k) => waterFx.splash(p, k),
+});
+// animals of the islands
+const fauna = new Fauna(scene, {
+  seen: (kind) => discovered('fauna', kind),
+  splash: (p, k) => { waterFx.splash(p, k); },
+  sound: (n, a) => { if (Math.hypot(a.x - camera.position.x, a.z - camera.position.z) < 25) audio.sfx(n); },
 });
 // blocks, floors, walls, roofs, stairs
 const building = new Building(scene, camera, {
@@ -265,6 +277,7 @@ function pickPlaced() {
 // camp fire under the crosshair, and what can be done there with what is in hand
 function aimedFire() { const o = placement.aimed(); return o?.id === 'campfire' ? o : null; }
 const isRawFish = (id) => !!id?.startsWith('fish:');
+let foundTimer;
 function useFire(o, held) {
   if (o.cook) {
     const id = cooking.take(o);
@@ -338,7 +351,7 @@ function openChest(o) {
 }
 function aimedChest() { const o = placement.aimed(); return o?.items ? o : null; }
 
-const ACTION_ICON = { boat: '📍', book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍', bed: '📍' };
+const ACTION_ICON = { compass: '🧭', lantern: '📍', boat: '📍', book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍', bed: '📍' };
 let lastHeld, stashing = false;
 function onHeldChange(held) {
   const id = held?.id ?? null;
@@ -424,7 +437,7 @@ function promptHud(dt) {
       promptTarget = { html: `<div class="pname">${itemDef(b.kind).name}</div>${kb(K.grab)} Prendre ${kb(K.stash)} Ranger`, at: () => _anchor.copy(b.mesh.position).setY(b.mesh.position.y + b.r + 0.12) };
     } else if (held === 'pickaxe') {
       const a = quarry.aim();
-      if (a?.kind === 'stone') promptTarget = { html: `<div class="pname">Pierre</div>${kb(K.use)} Miner`, at: () => _anchor.set(a.prop.x, a.prop.y + 0.75 * a.prop.s, a.prop.z) };
+      if (a?.kind === 'stone') promptTarget = { html: `<div class="pname">${MINERALS[a.prop.mineral || 'basalt'].label}</div>${kb(K.use)} Miner`, at: () => _anchor.set(a.prop.x, a.prop.y + 0.75 * a.prop.s, a.prop.z) };
       else if (a?.kind === 'rock') promptTarget = { html: '<div class="pname">Rocher</div>Trop gros pour la pioche', at: () => _anchor.copy(a.point).setY(a.point.y + 0.4) };
     } else if (held === 'axe') {
       const t = axe.target();
@@ -453,6 +466,7 @@ function promptHud(dt) {
       if (o) promptTarget = { html: `<div class="pname">${itemDef(o.id).name}</div>${kb(K.use)} Reprendre`, at: () => _anchor.set(o.x, o.y + (PLACEABLE[o.id].h ?? 0.9) + 0.4, o.z) };
       else if (p) promptTarget = { html: `<div class="pname">${itemDef(p.type).name}</div>${kb(K.use)} Démonter`, at: () => _anchor.set(p.x, p.y + PIECES[p.type].mid + 0.4, p.z) };
     }
+    if (!promptTarget && state === 'play' && !carrying && held === 'compass') promptTarget = { html: compassText(), bottom: true };
     if (!promptTarget && state === 'play' && !carrying && itemDef(held ?? '').eat) promptTarget = { html: `${kb(K.use)} Manger ${kb(K.drop)} Déposer`, bottom: true };
     else if (!promptTarget && state === 'play' && !carrying && isRawFish(held)) promptTarget = { html: `Grille-le sur un feu de camp ${kb(K.drop)} Déposer`, bottom: true };
     if (!promptTarget && state === 'play' && !carrying && held !== 'axe') {
@@ -474,7 +488,7 @@ function promptHud(dt) {
   el.style.left = `${Math.round((v.x * 0.5 + 0.5) * innerWidth)}px`;
   el.style.top = `${Math.round((-v.y * 0.5 + 0.5) * innerHeight)}px`;
 }
-const TOOLS_IN_HAND = new Set(['rod', 'axe', 'scythe', 'pickaxe', 'book', 'torch']);
+const TOOLS_IN_HAND = new Set(['rod', 'axe', 'scythe', 'pickaxe', 'book', 'torch', 'compass']);
 let grabUi = '';
 function grabHud() {
   const carrying = !!hands.carried, piece = !carrying && state === 'play' ? debris.aimed : null;
@@ -542,7 +556,7 @@ function buildWorld() {
     current.grass.dispose();
     current.veg.dispose();
     current.structures.group.removeFromParent();
-    current.structures.group.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+    current.structures.group.traverse((o) => { o.geometry?.dispose(); if (!o.userData.keepMat) o.material?.dispose(); });
     current.world.texture.dispose();
   }
   const t0 = performance.now();
@@ -560,14 +574,18 @@ function buildWorld() {
   const veg = new Vegetation(scene, world, tex, settings.quality);
   veg.setDistanceScale({ low: 0.6, medium: 0.8, high: 1 }[settings.quality]);
   const structures = buildStructures(world, tex);
+  const sites = buildSites(world, veg); // ruins, wreck... of a wild island (their materials are shared)
+  sites.group.traverse((o) => { o.userData.keepMat = true; });
+  structures.group.add(sites.group);
   scene.add(structures.group);
-  player.setWorld(world, [...vegColliders(world), ...structures.colliders], structures.surfaces);
+  player.setWorld(world, [...vegColliders(world), ...structures.colliders, ...sites.colliders], structures.surfaces);
   player.spawn(world.spawn);
   if (pendingSpawn) { player.spawn(pendingSpawn); pendingSpawn = null; }
   fishing.setWorld(world);
   axe.setWorld(world, veg, player);
   mower.setWorld(world, veg);
   building.setWorld(world, player); // (flattens the grass under what was built)
+  for (const b of sites.boxes) building.addStatic(b);
   boats.setWorld(world, player);
   debris.setWorld(world, veg, player);
   waterFx.clear();
@@ -575,15 +593,84 @@ function buildWorld() {
   quarry.setWorld(world, veg, player, debris, structures);
   quarry.prewarm(renderer, camera);
   placement.setWorld(world, player);
+  fillSiteChests(world);
+  fauna.setWorld(world, player);
   world.setShadowDir(globals.uSunDir.value);
   day.shadowDir.copy(globals.uSunDir.value);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights, building, cooking, boats };
+  window.__game = { fauna, player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights, building, cooking, boats };
   console.log(`[tropicool] world ${settings.world.seed} (${world.cfg.seed}) built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
     bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length, stones: world.props.stones.length,
   });
+}
+
+// the chests of the places of a wild island are put out the first time it
+// is built, filled with their loot; after that they are ordinary chests
+function siteState(world = current.world) { return getW('sites', worldKey(world.cfg)) || { found: [] }; }
+function fillSiteChests(world) {
+  const st = siteState(world);
+  if (st.seeded || !world.sites.length) return;
+  for (const site of world.sites) {
+    const c = chestSpot(site), slots = Array(18).fill(null);
+    site.loot.forEach((l, k) => { slots[k] = { id: l.id, n: Math.min(l.n, itemDef(l.id).max) }; });
+    placement.spawn('chest', c.x, player.groundAt(c.x, c.z, 99), c.z, c.yaw, slots);
+  }
+  placement.save();
+  setW('sites', worldKey(world.cfg), { ...st, seeded: true });
+}
+// discoveries: a place come upon, an animal seen, an ore broken open. The
+// first time ever: a card; the island of the registry notes it too
+let foundQueue = [], foundBusy = false;
+function discovered(kind, id) {
+  const first = noteFind(kind, id);
+  const isle = settings.mode === 'discover' ? findIsle(settings.world.instance) : null;
+  if (isle) {
+    const log = { fauna: [], ores: [], sites: [], ...isle.log };
+    if (!log[kind].includes(id)) { log[kind] = [...log[kind], id]; writeIsle({ id: isle.id, log }); }
+  }
+  const what = kind === 'fauna' ? FAUNA[id] : kind === 'ores' ? { ...MINERALS[id], name: MINERALS[id].label } : SITES[id];
+  if (kind === 'sites' || first) {
+    const badge = kind === 'sites' ? '★ Lieu découvert !' : kind === 'fauna' ? '★ Nouvelle espèce observée !' : '★ Nouveau minerai !';
+    const info = kind === 'sites' ? 'Il y a peut-être un coffre par ici…' : kind === 'fauna' ? `${FAUNA[id].where} · ajoutée au journal` : `${MINERALS[id].name} · ajouté au journal`;
+    foundQueue.push([badge, `${what.icon} ${what.name}`, info]);
+    nextFound();
+  }
+}
+function nextFound() {
+  if (foundBusy || !foundQueue.length) return;
+  foundBusy = true;
+  const [badge, name, info] = foundQueue.shift();
+  $('#found-badge').textContent = badge; $('#found-name').textContent = name; $('#found-info').textContent = info;
+  const card = $('#found');
+  card.classList.add('hidden'); void card.offsetWidth; card.classList.remove('hidden');
+  audio.sfx('discover');
+  clearTimeout(foundTimer); foundTimer = setTimeout(() => { card.classList.add('hidden'); foundBusy = false; setTimeout(nextFound, 300); }, 4200);
+}
+// coming close to a place of the island not yet found
+function siteTick() {
+  const w = current?.world;
+  if (!w?.sites?.length || state !== 'play') return;
+  const st = siteState(), p = player.pos;
+  w.sites.forEach((site, k) => {
+    if (st.found?.includes(k) || Math.hypot(site.x - p.x, site.z - p.z) > site.r + 7) return;
+    setW('sites', worldKey(w.cfg), { ...st, found: [...(st.found || []), k] });
+    discovered('sites', site.type);
+  });
+}
+// the compass in hand: the nearest place not yet found
+const ARROWS = ['⬆️', '↗️', '➡️', '↘️', '⬇️', '↙️', '⬅️', '↖️'];
+function compassText() {
+  const w = current.world, st = siteState(), p = player.pos;
+  if (!w.sites?.length) return '🧭 L’aiguille tourne en rond… rien à trouver sur cette île.';
+  let best = null;
+  w.sites.forEach((s, k) => { if (!st.found?.includes(k)) { const d = Math.hypot(s.x - p.x, s.z - p.z); if (!best || d < best.d) best = { s, d }; } });
+  if (!best) return '🧭 Tous les lieux de cette île sont découverts ✓';
+  const f = camera.getWorldDirection(new THREE.Vector3());
+  const rel = Math.atan2(best.s.x - p.x, best.s.z - p.z) - Math.atan2(f.x, f.z);
+  const k = ((Math.round(-rel / (Math.PI / 4)) % 8) + 8) % 8;
+  return `🧭 ${ARROWS[k]} Quelque chose à ${best.d < 1000 ? Math.round(best.d / 5) * 5 : '1000+'} m`;
 }
 
 function regenerate() {
@@ -719,10 +806,29 @@ document.querySelectorAll('.tab').forEach((t) => (t.onclick = () => showTab(t.da
 
 function renderJournal() {
   const list = $('#journal-list'); list.innerHTML = '';
+  // what was found on the islands: animals, ores, places
+  const cx = getCodex();
+  const section = (title, entries, kind) => {
+    const head = document.createElement('div');
+    head.className = 'jhead'; head.textContent = `${title} · ${entries.filter(([id]) => cx[kind][id]).length} / ${entries.length}`;
+    list.appendChild(head);
+    for (const [id, e, meta] of entries) {
+      const got = cx[kind][id], row = document.createElement('div');
+      row.className = 'jrow' + (got ? '' : ' unknown');
+      row.innerHTML = '<span class="jicon"></span><div><div class="name"></div><div class="meta"></div></div>';
+      row.querySelector('.jicon').textContent = got ? e.icon : '❔';
+      row.querySelector('.name').textContent = got ? e.name : '???';
+      row.querySelector('.meta').textContent = got ? `${meta} · ${kind === 'fauna' ? 'vue' : kind === 'ores' ? 'minée' : 'trouvé'} ${got.n} fois` : meta;
+      list.appendChild(row);
+    }
+  };
+  section('Faune', Object.entries(FAUNA).map(([id, e]) => [id, e, e.where]), 'fauna');
+  section('Minerais', ORES.map((id) => [id, { ...MINERALS[id], name: MINERALS[id].name }, MINERALS[id].label]), 'ores');
+  section('Lieux', Object.entries(SITES).map(([id, e]) => [id, e, 'Îles sauvages (Découverte)']), 'sites');
   const j = fishing.journal;
   const caught = SPECIES.filter((s) => j[s.name]).length;
   const head = document.createElement('div');
-  head.className = 'meta'; head.textContent = `Espèces découvertes : ${caught} / ${SPECIES.length}`;
+  head.className = 'jhead'; head.textContent = `Poissons · ${caught} / ${SPECIES.length}`;
   list.appendChild(head);
   SPECIES.forEach((s, i) => {
     const e = j[s.name];
@@ -795,16 +901,11 @@ function discoverIsle() {
   };
   writeIsle(isle);
   goIsle(isle.id, true);
-  setTimeout(() => { showFound(isle); audio.sfx('catch'); }, 450);
+  setTimeout(() => showFound(isle), 450);
 }
-let foundTimer;
 function showFound(isle) {
-  $('#found-badge').textContent = `★ Île n°${isle.n} découverte !`;
-  $('#found-name').textContent = isle.name;
-  $('#found-info').textContent = `${isle.cfg.islands === 1 ? 'Une seule île' : `${isle.cfg.islands} îles`} · graine « ${isle.cfg.seed} »`;
-  const card = $('#found');
-  card.classList.add('hidden'); void card.offsetWidth; card.classList.remove('hidden');
-  clearTimeout(foundTimer); foundTimer = setTimeout(() => card.classList.add('hidden'), 5200);
+  foundQueue.unshift([`★ Île n°${isle.n} découverte !`, isle.name, `${isle.cfg.islands === 1 ? 'Une seule île' : `${isle.cfg.islands} îles`} · graine « ${isle.cfg.seed} »`]);
+  nextFound();
 }
 const islesTxt = (n) => (n === 1 ? '1 île' : `${n} îles`);
 function renderIsles() {
@@ -824,7 +925,8 @@ function renderIsles() {
     info.innerHTML = '<b><small></small></b><span></span>';
     info.querySelector('small').textContent = `n°${isle.n}`;
     info.querySelector('b').append(isle.name);
-    info.querySelector('span').textContent = `${islesTxt(isle.cfg.islands)} · graine « ${isle.cfg.seed} » · ${fmtDate(isle.found)}`;
+    const lg = isle.log || {}, finds = [...(lg.sites || []).map((k) => SITES[k]?.icon), ...(lg.ores || []).map((k) => MINERALS[k]?.icon), ...(lg.fauna || []).map((k) => FAUNA[k]?.icon)].filter(Boolean).join('');
+    info.querySelector('span').textContent = `${islesTxt(isle.cfg.islands)} · graine « ${isle.cfg.seed} » · ${fmtDate(isle.found)}${finds ? ' · ' + finds : ''}`;
     const go = document.createElement('button');
     go.textContent = isCur ? 'Ici' : 'Y aller'; go.className = isCur ? '' : 'primary'; go.disabled = isCur;
     go.onclick = () => { goIsle(isle.id); closeMenu(); setTimeout(() => toast(`⛵ Cap sur « ${isle.name} »`), 200); };
@@ -977,6 +1079,7 @@ function hudTick(dt) {
     if (lastPeriod && state === 'play') { const c = $('#clock'); c.classList.remove('change'); void c.offsetWidth; c.classList.add('change'); }
     lastPeriod = name;
   }
+  siteTick();
   const t = placement.target || building.target || boats.target;
   $('#place-tip').textContent = state === 'play' && t && !t.ok ? t.why : '';
   audio.setRain(day.rain * 0.9);
@@ -1096,6 +1199,7 @@ function frame() {
     boats.aim(state === 'play' && !hands.carried ? inventory.held?.id : null);
     boats.update(dt);
     cooking.update(dt);
+    fauna.update(dt, camera);
     const px = renderer.getDrawingBufferSize(_px).y * 0.5;
     building.setScale(px); cooking.setScale(px);
     current.grass.update(camera);

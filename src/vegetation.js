@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { makeMaterial } from './shaders.js';
 import { mulberry32, makeSimplex } from './noise.js';
+import { MINERALS } from './geology.js';
 
 class Builder {
   constructor() { this.p = []; this.n = []; this.uv = []; this.sw = []; this.idx = []; }
@@ -378,17 +379,66 @@ export function makeStone(seed, detail = 2, r0 = 0.6) {
   return cutBlock(platePlanes(r, 22, 0.64, 0.95, 0.08), { subdiv: detail, scale: [r0 * 1.05, r0 * 0.95, r0], lift: 0.12 * r0 }).geo;
 }
 
+// Amethyst geode: a loose stone split open on top, bristling with six-sided
+// crystals with pointed tips. The crystals carry aTone = -1, which the ORE
+// shader paints as faceted translucent crystal instead of rock.
+export function makeGeode(seed) {
+  const stone = makeStone(seed), r = mulberry32(seed + 5);
+  const pos = [], nor = [];
+  const prism = (base, dir, rad, len) => {
+    const u = new THREE.Vector3().crossVectors(dir, Math.abs(dir.y) > 0.9 ? V(1, 0, 0) : UP).normalize(), w = new THREE.Vector3().crossVectors(dir, u);
+    const ring = (c, k) => Array.from({ length: 6 }, (_, i) => { const a = i / 6 * Math.PI * 2; return c.clone().addScaledVector(u, Math.cos(a) * rad * k).addScaledVector(w, Math.sin(a) * rad * k); });
+    const b0 = ring(base.clone().addScaledVector(dir, -0.05), 0.8), b1 = ring(base.clone().addScaledVector(dir, len * 0.7), 1), tip = base.clone().addScaledVector(dir, len);
+    const tri = (a, b, c) => {
+      const n = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
+      for (const q of [a, b, c]) { pos.push(q.x, q.y, q.z); nor.push(n.x, n.y, n.z); }
+    };
+    for (let i = 0; i < 6; i++) {
+      const j = (i + 1) % 6;
+      tri(b0[i], b0[j], b1[j]); tri(b0[i], b1[j], b1[i]); tri(b1[i], b1[j], tip);
+    }
+  };
+  const n = 7 + Math.floor(r() * 4);
+  for (let k = 0; k < n; k++) {
+    const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 0.3;
+    const base = V(Math.cos(a) * d, 0.36 + 0.12 * (1 - d / 0.3), Math.sin(a) * d);
+    const dir = V(Math.cos(a) * (0.2 + d * 1.6) + (r() - 0.5) * 0.3, 1, Math.sin(a) * (0.2 + d * 1.6) + (r() - 0.5) * 0.3).normalize();
+    prism(base, dir, 0.045 + r() * 0.05, 0.22 + r() * 0.3);
+  }
+  const m = pos.length / 3, S = stone.attributes;
+  const cat = (name, extra, size) => {
+    const a = S[name].array, out = new Float32Array(a.length + m * size);
+    out.set(a); out.set(extra, a.length);
+    return new THREE.BufferAttribute(out, size);
+  };
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', cat('position', pos, 3));
+  g.setAttribute('normal', cat('normal', nor, 3));
+  g.setAttribute('aEdge', cat('aEdge', new Float32Array(m * 3).fill(9), 3));
+  g.setAttribute('aSeam', cat('aSeam', new Float32Array(m * 3), 3));
+  g.setAttribute('aTone', cat('aTone', new Float32Array(m).fill(-1), 1));
+  g.setAttribute('aSway', cat('aSway', new Float32Array(m), 1));
+  g.computeBoundingSphere();
+  stone.dispose();
+  return g;
+}
+
+// ore: veins and flecks of colour in the stone's own space (pixel cells),
+// glinting in the sun; crystals (aTone < 0) shaded as faceted gems.
 // crack: blows are local; uHits = up to MAX_HITS points in the stone's own
 // space (xyz) with how hard they were hit (w). obj: a loose moving piece
 // (fragment), textured by its own uvs so nothing swims as it tumbles, with
 // fresh pale fracture faces (aFresh) and a highlight (uHi) when aimed at.
 export const MAX_HITS = 8;
-function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, translucent = 0, rock = false, tint = 0.12, gain = 1, cut = false, stone = false, crack = false, obj = false } = {}) {
+function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, translucent = 0, rock = false, tint = 0.12, gain = 1, cut = false, stone = false, crack = false, obj = false, ore = null } = {}) {
+  const o = ore || { a: [0, 0, 0], b: [0, 0, 0], k: 0, base: [1, 1, 1], glint: 0 };
   return makeMaterial({
     side: alphaTest > 0 ? THREE.DoubleSide : THREE.FrontSide,
     extensions: { derivatives: true }, // fwidth() for the pixel-thin plate seams
-    defines: { ...(rock ? { ROCK: 1, PLATES: 1 } : {}), ...(cut ? { CUT: 1 } : {}), ...(stone ? { STONE: 1 } : {}), ...(crack ? { CRACK: 1, MAX_HITS } : {}), ...(obj ? { OBJ: 1 } : {}) },
+    defines: { ...(rock ? { ROCK: 1, PLATES: 1 } : {}), ...(cut ? { CUT: 1 } : {}), ...(stone ? { STONE: 1 } : {}), ...(crack ? { CRACK: 1, MAX_HITS } : {}), ...(obj ? { OBJ: 1 } : {}), ...(ore ? { ORE: 1 } : {}) },
     uniforms: {
+      uOreA: { value: new THREE.Vector3(...o.a) }, uOreB: { value: new THREE.Vector3(...o.b) }, uOreBase: { value: new THREE.Vector3(...o.base) },
+      uOreK: { value: o.k }, uGlint: { value: o.glint },
       uCrack: { value: 0 }, uHi: { value: 0 },
       uHits: { value: Array.from({ length: MAX_HITS }, () => new THREE.Vector4(0, 0, 0, 0)) },
       uMap: { value: map }, uAlphaTest: { value: alphaTest }, uWind: { value: wind },
@@ -415,6 +465,9 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         varying float vFresh;
         varying vec3 vLocal;
       #endif
+      #ifdef ORE
+        varying vec3 vOreP;
+      #endif
       #ifdef PLATES
         attribute vec3 aEdge, aSeam;
         attribute float aTone;
@@ -429,6 +482,9 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
           vCut = aCut;
         #endif
         vec3 pos = position;
+        #ifdef ORE
+          vOreP = position;
+        #endif
         #ifdef CRACK
           vLocal = position;
           // each blow knocks a real chip out: the surface sinks around it
@@ -482,6 +538,11 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
       #ifdef PLATES
         varying vec3 vEdge, vSeam;
         varying float vTone;
+      #endif
+      #ifdef ORE
+        uniform vec3 uOreA, uOreB, uOreBase;
+        uniform float uOreK, uGlint;
+        varying vec3 vOreP;
       #endif
       #ifdef CRACK
         uniform float uCrack;
@@ -542,6 +603,19 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
           }
           col *= 1.0 + uHi * (0.22 + 0.1 * sin(uTime * 6.0));
         #endif
+        #ifdef ORE
+          // the rock around the ore takes its tint; veins wander through it
+          // and flecks are scattered, all in 1/18 m pixel cells
+          col *= uOreBase;
+          vec3 oq = floor(vOreP * 18.0), op = oq / 18.0;
+          float ok = uOreK;
+          #ifdef OBJ
+            ok = min(0.95, uOreK * (vFresh > 0.5 ? 2.2 : 1.6)); // a broken piece is mostly ore
+          #endif
+          float vein = abs(fract(dot(op, vec3(2.3, 3.1, 1.7)) + vnoise(op.xz * 5.0 + op.y * 3.0) * 0.9) - 0.5);
+          float oreM = max(step(vein, 0.03 + ok * 0.09), step(1.0 - ok * 0.38, hash12(oq.xy + oq.z * 7.31)));
+          col = mix(col, hash12(oq.zy + 3.7) < 0.35 ? uOreB : uOreA, oreM);
+        #endif
         #if defined(STONE) && !defined(OBJ) && !defined(PLATES)
           // lichen and moss in pixel clumps on the top of the stone
           float mossy = step(0.8, n.y) * step(0.78, hash12(floor(vWorld.xz * 4.0)) * 0.6 + hash12(floor(vWorld.xz * 16.0)) * 0.5);
@@ -578,6 +652,18 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         vec3 V = normalize(uCamPos - vWorld);
         float back = pow(max(dot(-V, uSunDir), 0.0), 3.0) * uTrans;
         col = col * lit * uGain + col * back * vec3(0.9, 1.0, 0.5);
+        #ifdef ORE
+          // metal and glassy flecks catch the sun, and twinkle now and then
+          float spec = pow(max(dot(reflect(-uSunDir, n), V), 0.0), 10.0);
+          col += oreM * uGlint * (step(0.55, spec) * 0.7 * uSunColor + step(0.992, hash12(oq.xy * 1.7 + oq.z + floor(uTime * 2.0))) * 0.8);
+          if (vTone < -0.5) { // a crystal: banded facets, a lit rim, a faint glow of its own (seen at night)
+            float l = dot(n, uSunDir);
+            vec3 cc = l > 0.45 ? uOreB : l > -0.1 ? mix(uOreA, uOreB, 0.45) : uOreA;
+            float rim = 1.0 - max(dot(n, V), 0.0);
+            col = cc * (lit * 0.85 + 0.3) + step(0.55, rim) * uOreB * 0.35;
+            col += step(0.6, pow(max(dot(reflect(-uSunDir, n), V), 0.0), 16.0)) * uSunColor * 0.8;
+          }
+        #endif
         gl_FragColor = vec4(applyFog(col, vWorld), 1.0);
       }`,
   });
@@ -613,6 +699,7 @@ export class Vegetation {
     const ferns = [0, 1].map((i) => makeFern(seed * 17 + i * 19));
     const rocks = [0, 1, 2].map((i) => makeRock(seed * 19 + i * 7));
     const stones = this.stones = [0, 1, 2].map((i) => makeStone(seed * 23 + i * 13));
+    stones.push(makeGeode(seed * 29 + 3)); // v = 3: an amethyst geode
     this.rocks = rocks;
     this.geometries = [...palms.flatMap((p) => [p.trunk, p.fronds, p.near]), ...trees.flatMap((t) => [t.trunk, t.leaves]), ...bushes, ...ferns, ...rocks, ...stones];
 
@@ -622,7 +709,7 @@ export class Vegetation {
       bushes: (v) => [[bushes[v], mats.bush]],
       ferns: (v) => [[ferns[v], mats.fern]],
       rocks: (v) => [[rocks[v], mats.rock]],
-      stones: (v) => [[stones[v], mats.stone]],
+      stones: (v, m) => [[stones[v], m === 'basalt' ? mats.stone : this.oreMaterial(m)]],
     };
     const range = { palms: 260, trees: 240, bushes: 120, ferns: 70, rocks: 200, stones: 150 };
 
@@ -631,15 +718,15 @@ export class Vegetation {
     for (const type of Object.keys(parts)) {
       for (const p of world.props[type]) {
         if (p.gone) continue;
-        const key = `${type}|${p.v}|${Math.floor(p.x / CELL)}|${Math.floor(p.z / CELL)}`;
+        const key = `${type}|${p.v}|${Math.floor(p.x / CELL)}|${Math.floor(p.z / CELL)}|${p.mineral || 'basalt'}`;
         if (!buckets.has(key)) buckets.set(key, []);
         buckets.get(key).push(p);
       }
     }
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), t = new THREE.Vector3();
     for (const [key, list] of buckets) {
-      const [type, v, cx, cz] = key.split('|');
-      for (const [geo, mat, lod] of parts[type](+v)) {
+      const [type, v, cx, cz, mineral] = key.split('|');
+      for (const [geo, mat, lod] of parts[type](+v, mineral)) {
         const im = new THREE.InstancedMesh(geo, mat, list.length);
         list.forEach((p, i) => {
           q.setFromAxisAngle(UP, p.rot);
@@ -675,18 +762,30 @@ export class Vegetation {
   // A stone being mined: same shape as its instance, with its own material so
   // the cracks can open blow after blow (dispose the material when done).
   detailStone(p) {
-    return { geo: this.stones[p.v], material: foliageMaterial(this.tex.stone, { alphaTest: 0, wrap: 0.2, rock: true, tint: 0.3, stone: true, crack: true }) };
+    return { geo: this.stones[p.v], material: foliageMaterial(this.tex.stone, { alphaTest: 0, wrap: 0.2, rock: true, tint: 0.3, stone: true, crack: true, ore: MINERALS[p.mineral || 'basalt'].ore }) };
   }
 
-  // loose pieces of stone (fragments): one shared material, one lit up for
-  // the piece the player is aiming at
-  fragmentMaterials() {
-    if (!this.fragMats) {
-      const make = (hi) => { const m = foliageMaterial(this.tex.stone, { alphaTest: 0, wrap: 0.2, rock: true, tint: 0.3, stone: true, obj: true }); m.uniforms.uHi.value = hi; return m; };
-      this.fragMats = { base: make(0), hi: make(1) };
-      Object.values(this.fragMats).forEach((m) => this.ownMats.push(m));
+  // the instanced material of the stones of an ore (one per mineral)
+  oreMaterial(mineral) {
+    this.oreMats ||= {};
+    if (!this.oreMats[mineral]) {
+      this.oreMats[mineral] = foliageMaterial(this.tex.stone, { alphaTest: 0, wrap: 0.2, rock: true, tint: 0.3, stone: true, ore: MINERALS[mineral].ore });
+      this.ownMats.push(this.oreMats[mineral]);
     }
-    return this.fragMats;
+    return this.oreMats[mineral];
+  }
+
+  // loose pieces of stone or ore (fragments): one shared material per
+  // mineral, one lit up for the piece the player is aiming at
+  fragmentMaterials(mineral = 'basalt') {
+    this.fragMats ||= {};
+    if (!this.fragMats[mineral]) {
+      const ore = MINERALS[mineral]?.ore;
+      const make = (hi) => { const m = foliageMaterial(this.tex.stone, { alphaTest: 0, wrap: 0.2, rock: true, tint: 0.3, stone: true, obj: true, ore }); m.uniforms.uHi.value = hi; return m; };
+      this.fragMats[mineral] = { base: make(0), hi: make(1) };
+      Object.values(this.fragMats[mineral]).forEach((m) => this.ownMats.push(m));
+    }
+    return this.fragMats[mineral];
   }
 
   setDistanceScale(k) { this.distScale = k; }

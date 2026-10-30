@@ -1,5 +1,5 @@
 // What changed in each world (trees felled, grass mowed, objects placed,
-// builds, boats) lives in IndexedDB, the browser's own database: far more
+// builds, boats, the places of a wild island already found) lives in IndexedDB, the browser's own database: far more
 // room than localStorage (about 5 MB shared by everything), and one record
 // per world and per kind, so saving one island never rewrites the others.
 // A world's records are read into memory before it is built (loadWorld());
@@ -7,7 +7,7 @@
 // background. Without IndexedDB (some private modes) records fall back to
 // localStorage, one key each. Older saves, one localStorage map per kind
 // holding every world, move over on the first run.
-export const KINDS = { felled: 'tropicool.felled.v1', mowed: 'tropicool.mowed.v1', placed: 'tropicool.placed.v1', build: 'tropicool.build.v1', boat: 'tropicool.boat.v1' };
+export const KINDS = { felled: 'tropicool.felled.v1', mowed: 'tropicool.mowed.v1', placed: 'tropicool.placed.v1', build: 'tropicool.build.v1', boat: 'tropicool.boat.v1', sites: 'tropicool.sites.v1' }; // sites: chests put out, places found (sites.js)
 const DB = 'tropicool', OS = 'worlds', LS = 'tropicool.w:';
 const mem = new Map(), loaded = new Set();
 let db = null;

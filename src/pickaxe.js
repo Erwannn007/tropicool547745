@@ -13,6 +13,8 @@
 import * as THREE from 'three';
 import { saveFelled } from './axe.js';
 import { MAX_HITS } from './vegetation.js';
+import { MINERALS, mineralOf } from './geology.js';
+export { MINERALS };
 
 const GREYS = [[0.29, 0.27, 0.31], [0.44, 0.42, 0.43], [0.53, 0.5, 0.49], [0.62, 0.58, 0.55], [0.71, 0.67, 0.62], [0.91, 0.88, 0.82]];
 const SPARKS = [[1, 0.96, 0.7], [1, 0.78, 0.25], [1, 0.5, 0.12]];
@@ -21,16 +23,13 @@ const SOIL = [[0.42, 0.3, 0.18], [0.3, 0.62, 0.15], [0.36, 0.7, 0.18], [0.53, 0.
 const WOOD = [[0.66, 0.48, 0.27], [0.85, 0.71, 0.48], [0.53, 0.38, 0.23]];
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
-// What the stones are made of and what the tools can do to them. A stone's
-// strength is its size times the hardness of its mineral; a good square blow
-// takes off the tool's power, a glancing one much less.
-export const MINERALS = {
-  basalt: { name: 'Basalte', hardness: 1, chips: GREYS, item: 'stone' },
-};
+// What the stones are made of (geology.js) and what the tools can do to
+// them. A stone's strength is its size times the hardness of its mineral; a
+// good square blow takes off the tool's power, a glancing one much less.
 export const TOOLS = {
   pickaxe: { power: 1, glancing: 0.35 },
 };
-const strengthOf = (p) => (2 + Math.round(p.s * 2.4)) * MINERALS[p.mineral || 'basalt'].hardness; // 3 blows for a pebble, 5 for a big one
+const strengthOf = (p) => Math.round((2 + Math.round(p.s * 2.4)) * mineralOf(p).hardness); // 3 blows for a pebble, 5 for a big one
 
 // square particles flying under gravity; drag > 0 slows them in the air
 class Bits {
@@ -159,7 +158,7 @@ export class Quarry {
     if (builds) for (const b of this.builds) {
       if (!this.ray.ray.intersectsBox(b.box)) continue;
       const hit = this.ray.intersectObject(b.mesh, false)[0];
-      if (hit) take('build', hit.distance, hit.point, hit.face.normal.clone().transformDirection(b.mesh.matrixWorld));
+      if (hit) take('build', hit.distance, hit.point, hit.face.normal.clone().transformDirection(b.mesh.matrixWorld), { mat: b.mesh.userData.mat });
     }
     const built = builds && this.building?.ray(o, dir, max); // what the player built (building.js)
     if (built) take('build', built.dist, built.point, built.normal, { mat: built.mat, piece: built.piece });
@@ -293,7 +292,8 @@ export class Quarry {
     m.t = 0; m.amp = good ? 0.6 + prog * 0.8 : 0.35;
     // chips and dust leave the very spot, sparks skid off along the blow
     const out = at.clone().addScaledVector(n, 0.03);
-    for (let k = 0; k < (good ? 9 : 4); k++) this.chip(out, n, 1.6, pick(MINERALS[p.mineral || 'basalt'].chips));
+    for (let k = 0; k < (good ? 9 : 4); k++) this.chip(out, n, 1.6, pick(mineralOf(p).chips));
+    if (p.mineral && good) this.spray(out, n, dir, 4, 1.2); // ore sparkles as it chips
     this.spray(out, n, dir, good ? 6 : 10, 1.8);
     for (let k = 0; k < (good ? 4 : 1); k++) this.grit.emit(out, new THREE.Vector3(n.x * 0.5 + (Math.random() - 0.5) * 0.6, 0.3 + Math.random() * 0.4, n.z * 0.5 + (Math.random() - 0.5) * 0.6), pick(GREYS.slice(3)), 0.5 + Math.random() * 0.4);
     if (m.hp <= 0) { this.impact(0.07, 0.85, 200, 1.5, 0.016); this.shatter(m, dir); return 0.2; }
@@ -314,15 +314,16 @@ export class Quarry {
     const c = new THREE.Vector3(p.x, p.y + 0.26 * p.s, p.z);
     const push = new THREE.Vector3(dir.x, 0, dir.z); if (push.lengthSq() < 1e-4) push.set(p.x - this.camera.position.x, 0, p.z - this.camera.position.z); push.normalize();
     const sizes = [0.34, 0.3, 0.25, 0.23, 0.2, 0.15, 0.13, 0.12].slice(0, 6 + Math.round(p.s * 2));
+    const M = mineralOf(p);
     sizes.forEach((k, i) => {
       const a = (i / sizes.length) * Math.PI * 2 + Math.random() * 0.7;
       const off = new THREE.Vector3(Math.cos(a) * 0.3 * p.s, (Math.random() - 0.3) * 0.18 * p.s, Math.sin(a) * 0.3 * p.s);
       const out = off.clone().normalize(), sp = (1.1 + Math.random() * 1.4) * (1.25 - k * 1.5);
       const v = out.multiplyScalar(sp).addScaledVector(push, 1.1).add(new THREE.Vector3(0, 1.6 + Math.random() * 1.8, 0));
       const spin = new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
-      this.debris.spawn(c.clone().add(off), k * p.s * 0.85, v, spin, { shape: i % this.debris.shards.length, kind: MINERALS[p.mineral || 'basalt'].item });
+      this.debris.spawn(c.clone().add(off), k * p.s * 0.85, v, spin, { shape: i % this.debris.shards.length, kind: i === 0 || Math.random() < M.yield ? M.item : 'stone' }); // an ore stone is partly plain rock
     });
-    for (let k = 0; k < 18; k++) this.chip(c, new THREE.Vector3(0, 1, 0), 2.4, pick(GREYS));
+    for (let k = 0; k < 18; k++) this.chip(c, new THREE.Vector3(0, 1, 0), 2.4, pick(M.chips));
     for (let k = 0; k < 18; k++) { // a short puff of grit, low so the pieces stay visible
       const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 1.4;
       this.grit.emit(c, new THREE.Vector3(Math.cos(a) * sp, 0.15 + Math.random() * 0.6, Math.sin(a) * sp), pick(GREYS.slice(2)), 0.6 + Math.random() * 0.6);

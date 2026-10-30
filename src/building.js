@@ -28,6 +28,9 @@ const ROOF_RAY = Array.from({ length: 4 }, (_, k) => [0, 0.75 - 0.5 * k, 1.15, 0
 export const PIECES = {
   'block:wood': { mat: 'wood', boxes: [[0, 0, 0.5, 0.5, 0, 1]], mid: 0.5, grab: 0.5, r: 0.8, sound: 'wood' },
   'block:stone': { mat: 'stone', boxes: [[0, 0, 0.5, 0.5, 0, 1]], mid: 0.5, grab: 0.5, r: 0.8, sound: 'stone' },
+  'block:obsidian': { mat: 'stone', boxes: [[0, 0, 0.5, 0.5, 0, 1]], mid: 0.5, grab: 0.5, r: 0.8, sound: 'stone' },
+  'block:gold': { mat: 'stone', boxes: [[0, 0, 0.5, 0.5, 0, 1]], mid: 0.5, grab: 0.5, r: 0.8, sound: 'stone' },
+  'block:copper': { mat: 'stone', boxes: [[0, 0, 0.5, 0.5, 0, 1]], mid: 0.5, grab: 0.5, r: 0.8, sound: 'stone' },
   floor: { mat: 'wood', boxes: [[0, 0, 1, 1, -0.22, 0]], mid: -0.1, grab: 0, r: 1.5, sound: 'big' },
   wall: { mat: 'wood', boxes: [[0, 0, 1, 0.24, 0, H]], mid: H / 2, grab: 0.3, r: 1.2, sound: 'big' },
   door: { mat: 'wood', boxes: [[-0.72, 0, 0.28, 0.24, 0, H], [0.72, 0, 0.28, 0.24, 0, H], [0, 0, 0.44, 0.24, 2.0, H]], check: [[0, 0, 1, 0.24, 0, H]], mid: H / 2, grab: 0.3, r: 1.2, sound: 'big' },
@@ -48,7 +51,7 @@ export const PIECES = {
 export const isPiece = (id) => !!PIECES[id];
 
 // sockets: where a new piece of one of `types` goes relative to a piece
-const WALLS = ['wall', 'door', 'window'], BLOCKS = ['block:wood', 'block:stone'], FLOORS = ['floor', 'flatroof'];
+const WALLS = ['wall', 'door', 'window'], BLOCKS = ['block:wood', 'block:stone', 'block:obsidian', 'block:gold', 'block:copper'], FLOORS = ['floor', 'flatroof'];
 const S = (types, x, y, z, yaw = 0) => ({ types, x, y, z, yaw });
 const RIDGE = 1.17; // the top of a roof panel's high edge over its level
 const SOCKETS = {
@@ -83,7 +86,7 @@ SOCKETS.flatroof = [
   ...SOCKETS.floor,
   S(['roof'], 0, -RIDGE, 2, 0), S(['roof'], 2, -RIDGE, 0, Q), S(['roof'], 0, -RIDGE, -2, 2 * Q), S(['roof'], -2, -RIDGE, 0, -Q), // slopes down from its edges
 ];
-SOCKETS['block:wood'] = SOCKETS['block:stone'] = SOCKETS.block;
+for (const b of BLOCKS) SOCKETS[b] = SOCKETS.block;
 
 const angDiff = (a, b) => { const d = ((a - b) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI; return Math.abs(d); };
 
@@ -205,6 +208,14 @@ export class Building {
   // ---------------------------------------------------------------- pieces
   cells(x, z, r, fn) {
     for (let i = Math.floor((x - r) / 4); i <= Math.floor((x + r) / 4); i++) for (let j = Math.floor((z - r) / 4); j <= Math.floor((z + r) / 4); j++) fn(`${i},${j}`);
+  }
+  // a solid box that belongs to no piece (the ruins of sites.js): walked on
+  // and bumped into like the pieces, never taken back
+  addStatic(b) {
+    this.cells(b.x, b.z, Math.hypot(b.hx, b.hz) + 0.1, (k) => {
+      if (!this.grid.has(k)) this.grid.set(k, { pieces: [], boxes: [] });
+      this.grid.get(k).boxes.push(b);
+    });
   }
   // solid boxes around (x, z) (player.js: walking on them, bumping into them)
   near(x, z) { return this.grid.get(`${Math.floor(x / 4)},${Math.floor(z / 4)}`)?.boxes ?? EMPTY; }

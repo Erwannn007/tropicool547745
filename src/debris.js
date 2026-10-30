@@ -13,6 +13,7 @@ import { itemModel } from './models.js';
 import { ITEMS } from './items.js';
 import { dress } from './dress.js';
 import { cutBlock, platePlanes } from './vegetation.js';
+import { MINERAL_OF } from './geology.js';
 
 const G = 11;
 const MAX_BODIES = 36;       // older pieces crumble away past this
@@ -96,15 +97,17 @@ export class Debris {
     for (const b of this.bodies) b.mesh.removeFromParent();
     this.bodies = []; this.carried = null; this.aimed = null;
     this.world = world; this.player = player;
+    this.veg = veg;
     this.mats = veg.fragmentMaterials();
   }
 
   // a new piece of `kind` at pos (world), of size s (metres, about its radius)
   spawn(pos, s, vel, spin, { shape, kind = 'stone', value = 1 } = {}) {
     const sh = this.shards[shape ?? Math.floor(Math.random() * this.shards.length)];
-    const mesh = new THREE.Mesh(sh.geo, this.mats.base);
+    const mats = this.veg.fragmentMaterials(MINERAL_OF[kind] || 'basalt'); // stone or ore
+    const mesh = new THREE.Mesh(sh.geo, mats.base);
     mesh.quaternion.setFromEuler(new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6));
-    return this.add(mesh, sh, s, pos, vel, spin, kind, value, { base: [this.mats.base], hi: [this.mats.hi] });
+    return this.add(mesh, sh, s, pos, vel, spin, kind, value, { base: [mats.base], hi: [mats.hi] });
   }
 
   // a modelled item (a log, a coconut) dropped into the world
@@ -181,7 +184,7 @@ export class Debris {
     const water = p.y < 0;
     if (water && !b.wet) this.hooks.splash?.(p, Math.min(1.5, -b.v.y * 0.16 + b.r * 2.2)); // into the lagoon
     b.wet = water;
-    const floats = b.kind !== 'stone'; // wood and coconuts float, stones sink slowly
+    const floats = !MINERAL_OF[b.kind]; // wood and coconuts float, stones and ores sink slowly
     b.v.y -= G * (water ? 0.45 : 1) * h;
     if (water && floats) b.v.y += G * 1.6 * Math.min(1, -p.y / (b.r * 0.8)) * h;
     if (water) { const k = Math.exp(-2.4 * h); b.v.multiplyScalar(k); b.w.multiplyScalar(k); }
@@ -458,7 +461,7 @@ export class Debris {
     if (this.lineClear && !this.lineClear(o, at)) at.copy(o).addScaledVector(f, 0.25).setY(o.y - 0.3);
     const vel = new THREE.Vector3(f.x * 1.6 + playerVel.x, 0.8, f.z * 1.6 + playerVel.z);
     const spin = new THREE.Vector3((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4);
-    const b = kind === 'stone'
+    const b = MINERAL_OF[kind]
       ? this.spawn(at, 0.09, vel, spin, { kind })
       : this.spawnItem(kind, at, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.atan2(-f.x, -f.z) + 1.2, 0)), vel, spin);
     b.mesh.position.y = Math.max(b.mesh.position.y, this.ground(at.x, at.z, o.y) + b.r);
