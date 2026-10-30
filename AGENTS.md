@@ -20,19 +20,19 @@ Tropicool est un jeu cozy en 3D à la première personne (archipel tropical proc
 - `src/lights.js` : lumières ponctuelles (torches, feux), les 8 plus proches envoyées aux shaders.
 - `src/textures.js` : toutes les textures pixel art procédurales.
 - `src/terrain.js`, `src/water.js`, `src/sky.js`, `src/grass.js` : sol, lagon, ciel et nuages, herbe instanciée.
-- `src/vegetation.js` : palmiers, arbres, buissons, fougères, rochers, pierres à miner (géométrie + instancing par cellules de 64 m ; `detailStone()` donne le matériau à fissures d'une pierre qu'on mine).
-- `src/structures.js` : ponton, paillote.
+- `src/vegetation.js` : palmiers, arbres, buissons, fougères, rochers, pierres à miner (géométrie + instancing par cellules de 64 m ; `detailStone()` donne le matériau à fissures d'une pierre qu'on mine). Rochers, pierres et éclats sont des blocs taillés en plaques (`cutBlock()` + `platePlanes()`), joints clairs d'un pixel dessinés par le define `PLATES`.
+- `src/structures.js` : ponton, paillote (sol et bois vernis avec reflets `varnish()` de `shaders.js`, canapés à coussins arrondis).
 - `src/player.js`, `src/input.js` : déplacement, collisions ; clavier/souris, tactile, manette.
 - `src/items.js` : registre des objets (nom, pile, catégorie, description, objet à poser) et recettes.
 - `src/inventory.js` : inventaire 9 + 27 cases + fabrication, panneaux pixel assortis aux menus.
 - `src/models.js` : modèles 3D des objets (torche tiki, transat, parasol, feu de camp, faux, bûches, noix de coco, fibres, canne, poissons) ; `src/dress.js` : leurs matériaux (monde, main, icône, hologramme, flamme).
 - `src/icons.js` : icônes d'inventaire rendues depuis les modèles 3D (30 px + contour).
-- `src/held.js` : objet tenu générique (même recette que la hache ; pivot autour de la main, inertie au regard, vibration d'impact) ; `src/hands.js` : faux, pioche tenue dans le poing (avant-bras posé chaque image vers le coude), torche, objets à poser, pierre portée dans la main ouverte.
+- `src/held.js` : objet tenu générique (même recette que la hache ; pivot autour de la main, inertie au regard, vibration d'impact) ; `src/hands.js` : faux, pioche (tenue comme la hache, coup visé sur ce que montre le viseur), torche, objets à poser, morceau ramassé porté devant à droite (il suit le regard avec un léger retard). Pas de main visible.
 - `src/placement.js` : aperçu bleu/rouge, règles de pose, collisions, lumières, braises, sauvegarde par archipel.
 - `src/saves.js` : mondes enregistrés ; chaque monde joué a un id d'instance (`settings.world.instance`) sous lequel sont rangés arbres abattus, herbe fauchée et objets posés (`worldKey()` dans `src/axe.js`).
 - `src/book.js` : carnet de voyage (pages à écrire, sauvegarde locale).
 - `src/pickaxe.js` : minage des pierres de surface. `Quarry.cast()` lance un rayon contre les vrais maillages (pierres, rochers), troncs, sol et morceaux ; le coup part là où la pointe de la pioche touche réellement (balayage de la pointe dans `hands.js`), creuse un éclat et ouvre des fissures autour du point frappé (`uHits` du matériau à fissures), puis la pierre éclate en morceaux physiques. Tables `MINERALS` (dureté) et `TOOLS` (puissance). Rien ne va dans l'inventaire automatiquement. Densité : réglage « Pierres » du générateur (`cfg.stones`, flux aléatoire à part).
-- `src/debris.js` : objets physiques posés dans le monde (morceaux de pierre irréguliers) : petit solide rigide (contacts sur les points de l'enveloppe, rebonds, frottement, troncs, pierres, lagon), sommeil quand immobile, plafond de 36 morceaux ; visée, saisie, lâcher, lancer et rangement dans le sac (actions séparées : G / clic droit, clic, V ; ○, □, R3 ; boutons ✋ ⤓ ➶ 🎒 en tactile).
+- `src/debris.js` : objets physiques posés dans le monde (éclats de pierre, bûches et noix de coco des arbres abattus, `spawnItem()` pour tout modèle de `models.js`) : petit solide rigide (contacts sur les points de l'enveloppe, rebonds, frottement, troncs, pierres, lagon), sommeil quand immobile, plafond de 36 morceaux ; visée, saisie, lâcher, lancer et rangement dans le sac (actions séparées : G / clic droit, clic, V ; ○, □, R3 ; boutons ✋ ⤓ ➶ 🎒 en tactile).
 - `src/scythe.js` : fauchage (carte d'herbe coupée lue par `grass.js`, repousse, fougères, fibres).
 - `src/fishing.js`, `src/axe.js`, `src/axeModel.js` : pêche ; hache (abattage, entailles creusées dans la géométrie du tronc via `Vegetation.detailTrunk`) et son modèle tenu en main.
 - `sw.js`, `manifest.webmanifest` : PWA (service worker « réseau d'abord »).

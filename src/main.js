@@ -79,7 +79,7 @@ resize();
 initIcons(renderer);
 
 const tex = {
-  grass: T.grassTexture(), sand: T.sandTexture(), rock: T.rockTexture(), stone: T.stoneTexture(), trunk: T.trunkTexture(),
+  grass: T.grassTexture(), sand: T.sandTexture(), rock: T.plateTexture(3), stone: T.plateTexture(13), trunk: T.trunkTexture(),
   frond: T.frondTexture(), leaflet: T.leafletTexture(), fern: T.frondTexture(12, ['#174f16', '#1f661b', '#2a7f22', '#38972a', '#4cae33', '#68c440', '#8fd85a']),
   leaf: T.leafClusterTexture(), leaf2: T.leafClusterTexture(21, ['#1a5418', '#246e1e', '#2f8a26', '#3fa42f', '#55bd39', '#73d248', '#9de46a']),
   wood: T.woodTexture(), thatch: T.thatchTexture(), cushion: T.cushionTexture(), clouds: T.cloudAtlas(),
@@ -141,8 +141,29 @@ const fishing = new Fishing(scene, camera, tex, {
 const axe = new Axe(scene, camera, tex, {
   sound: (n) => audio.sfx(n),
   rumble: (s, ms) => input.rumble(s, ms),
-  drops: (list) => giveItems(list),
+  fallen: (p, away) => scatterTree(p, away),
 });
+// a felled tree leaves its trunk cut in logs along where it fell (and a
+// coconut or two under a palm's crown): real pieces, picked up by hand
+function scatterTree(p, away) {
+  const kind = p.type === 'palms' ? 'wood:palm' : 'wood:tree', w = current.world;
+  const n = 3 + Math.floor(Math.random() * 3), len = 4.2 * p.s;
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), away);
+  const roll = new THREE.Quaternion();
+  for (let k = 0; k < n; k++) {
+    const d = 0.7 + (k + 0.5) / n * len, side = (Math.random() - 0.5) * 0.5;
+    const x = p.x + away.x * d - away.z * side, z = p.z + away.z * d + away.x * side;
+    const at = new THREE.Vector3(x, player.groundAt(x, z, p.y + 3) + 0.35, z);
+    roll.setFromAxisAngle(away, Math.random() * 6);
+    const tw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), (Math.random() - 0.5) * 0.6);
+    debris.spawnItem(kind, at, tw.multiply(q.clone()).multiply(roll), new THREE.Vector3(away.x * 0.6, 1.2 + Math.random(), away.z * 0.6), new THREE.Vector3((Math.random() - 0.5) * 4, 0, (Math.random() - 0.5) * 4));
+  }
+  if (p.type === 'palms') for (let k = Math.floor(Math.random() * 3); k > 0; k--) {
+    const d = len * 1.05 + Math.random() * 0.8, x = p.x + away.x * d + (Math.random() - 0.5), z = p.z + away.z * d + (Math.random() - 0.5);
+    const y = Math.max(w.heightAt(x, z), player.groundAt(x, z, p.y + 3)) + 0.6;
+    debris.spawnItem('coconut', new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(away.x * 2, 2, away.z * 2), new THREE.Vector3(Math.random() * 6, 0, Math.random() * 6));
+  }
+}
 const mower = new Mower(scene);
 // loose pieces of broken stone lying in the world (picked up by hand)
 const debris = new Debris(scene, { sound: (n) => audio.sfx(n), flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o) });
@@ -229,7 +250,7 @@ function onHeldChange(held) {
 function grabPiece(b) {
   if (hands.carried || !debris.grab(b)) return;
   fishing.setEquipped(false); axe.setEquipped(false);
-  hands.carry(b);
+  hands.carry(b, player);
   $('#btn-fish').textContent = '➶';
 }
 function letGo(how) {
@@ -246,6 +267,52 @@ function endCarry() {
   hands.endCarry();
   onHeldChange(inventory.held);
 }
+// ---- what can be done with what is under the crosshair: white pixel words
+// over the thing itself (or above the bar while carrying), with the keys of
+// the device in use
+const KEYS = {
+  keyboard: { use: 'Clic', grab: 'G', stash: 'V', turn: 'R' },
+  gamepad: { use: '□', grab: '○', stash: 'R3', turn: '◀ ▶' },
+  touch: { use: '●', grab: '✋', stash: '🎒', turn: '' },
+};
+const kb = (k) => (k ? `<kbd>${k}</kbd>` : '');
+let promptHtml = '', promptAcc = 0, promptTarget = null;
+const _anchor = new THREE.Vector3();
+function promptHud(dt) {
+  const el = $('#prompt'), carrying = !!hands.carried, K = KEYS[input.lastDevice] || KEYS.keyboard;
+  if ((promptAcc -= dt) <= 0 || carrying) { // look for something to talk about a few times a second
+    promptAcc = 0.12;
+    promptTarget = null;
+    const held = inventory.held?.id;
+    if (state !== 'play') { /* nothing */ } else if (carrying) {
+      const b = hands.carried.body;
+      promptTarget = { html: `${kb(K.use)} Lancer ${kb(K.grab)} Lâcher ${kb(K.stash)} Ranger${K.turn ? ` ${kb(K.turn)} Tourner` : ''}`, bottom: true };
+    } else if (debris.aimed) {
+      const b = debris.aimed;
+      promptTarget = { html: `<div class="pname">${itemDef(b.kind).name}</div>${kb(K.grab)} Prendre`, at: () => _anchor.copy(b.mesh.position).setY(b.mesh.position.y + b.r + 0.12) };
+    } else if (held === 'pickaxe') {
+      const a = quarry.aim();
+      if (a?.kind === 'stone') promptTarget = { html: `<div class="pname">Pierre</div>${kb(K.use)} Miner`, at: () => _anchor.set(a.prop.x, a.prop.y + 0.75 * a.prop.s, a.prop.z) };
+      else if (a?.kind === 'rock') promptTarget = { html: '<div class="pname">Rocher</div>Trop gros pour la pioche', at: () => _anchor.copy(a.point).setY(a.point.y + 0.4) };
+    } else if (held === 'axe') {
+      const t = axe.target();
+      if (t) promptTarget = { html: `<div class="pname">${t.type === 'palms' ? 'Palmier' : 'Arbre'}</div>${kb(K.use)} Abattre`, at: () => _anchor.set(t.x, Math.min(camera.position.y + 0.5, t.y + 2.2), t.z) };
+    }
+    if (!promptTarget && state === 'play' && !carrying && held !== 'axe') {
+      const c = aimedChest();
+      if (c) promptTarget = { html: `<div class="pname">Coffre</div>${kb(K.use)} Ouvrir`, at: () => _anchor.set(c.x, (c.y ?? camera.position.y - 1) + 0.9, c.z) };
+    }
+  }
+  const t = promptTarget;
+  if (!t) { if (promptHtml) { el.classList.add('hidden'); promptHtml = ''; } return; }
+  if (t.html !== promptHtml) { el.innerHTML = t.html; promptHtml = t.html; el.classList.remove('hidden'); }
+  el.classList.toggle('bottom', !!t.bottom);
+  if (t.bottom) { el.style.left = ''; el.style.top = ''; return; }
+  const v = t.at().project(camera);
+  if (v.z > 1) { el.classList.add('hidden'); promptHtml = ''; return; }
+  el.style.left = `${Math.round((v.x * 0.5 + 0.5) * innerWidth)}px`;
+  el.style.top = `${Math.round((-v.y * 0.5 + 0.5) * innerHeight)}px`;
+}
 let grabUi = '';
 function grabHud() {
   const carrying = !!hands.carried, piece = !carrying && state === 'play' ? debris.aimed : null;
@@ -257,6 +324,7 @@ function grabHud() {
   $('#btn-grab').textContent = carrying ? '⤓' : '✋';
   $('#btn-stash').classList.toggle('hidden', !carrying);
 }
+
 const inventory = new Inventory({ sound: (n) => audio.sfx(n), toast, onChange: onHeldChange });
 onHeldChange(inventory.held);
 inventory.closeRequest = () => closeInventory();
@@ -702,6 +770,7 @@ function frame() {
     quarry.update(dt);
     debris.update(dt, state === 'play' ? camera : null);
     grabHud();
+    promptHud(dt);
     placement.aim(state === 'play' && !hands.carried ? inventory.held?.id : null);
     placement.update(dt);
     current.grass.update(camera);

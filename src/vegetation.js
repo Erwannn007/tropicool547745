@@ -282,46 +282,100 @@ function makeFern(seed) {
   return b.build();
 }
 
-function makeRock(seed) {
-  const sx = makeSimplex(seed);
-  const g = new THREE.IcosahedronGeometry(1, 3);
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const v = V(p.getX(i), p.getY(i), p.getZ(i));
-    const d = 1 + sx.noise(v.x * 1.3 + v.z, v.y * 1.3) * 0.22 + sx.noise(v.x * 3.1, v.z * 3.1 + v.y) * 0.08;
-    v.multiplyScalar(d);
-    v.y = v.y > 0 ? v.y * 0.72 : v.y * 0.4;
-    // a couple of flat facets for a chiselled look
-    if (v.x > 0.65) v.x = 0.65 + (v.x - 0.65) * 0.3;
-    if (v.y > 0.55) v.y = 0.55 + (v.y - 0.55) * 0.3;
-    p.setXYZ(i, v.x, v.y, v.z);
+// Boulders cut into big flat plates (like the reference: a block of grey
+// stone made of polygonal facets with light seams between them). A block is
+// clipped by planes spread round the sphere; each plane leaves one polygonal
+// plate. Plates are fanned and subdivided (dents and cracks need vertices);
+// aEdge holds each corner's distance to the opposite edge (interpolated: the
+// distance to the three edges) and aSeam which edges are plate outlines, for
+// the PLATES shader. Returns the geometry and each triangle's plane index.
+export function cutBlock(planes, { subdiv = 2, scale = [1, 1, 1], lift = 0 } = {}) {
+  const C = 1.2;
+  const quad = (a, b, c, d) => ({ pts: [a, b, c, d].map(([x, y, z]) => V(x * C, y * C, z * C)), id: -1 });
+  let faces = [
+    quad([1, -1, -1], [1, 1, -1], [1, 1, 1], [1, -1, 1]), quad([-1, -1, 1], [-1, 1, 1], [-1, 1, -1], [-1, -1, -1]),
+    quad([-1, 1, -1], [-1, 1, 1], [1, 1, 1], [1, 1, -1]), quad([-1, -1, 1], [-1, -1, -1], [1, -1, -1], [1, -1, 1]),
+    quad([-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]), quad([1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1]),
+  ];
+  planes.forEach(({ n, c }, id) => {
+    const out = [], cap = [];
+    for (const f of faces) {
+      const res = [], P = f.pts;
+      for (let i = 0; i < P.length; i++) {
+        const a = P[i], b = P[(i + 1) % P.length], da = a.dot(n) - c, db = b.dot(n) - c;
+        if (da <= 0) res.push(a);
+        if ((da < 0 && db > 0) || (da > 0 && db < 0)) { const q = a.clone().lerp(b, da / (da - db)); res.push(q); cap.push(q); }
+      }
+      if (res.length >= 3) out.push({ pts: res, id: f.id });
+    }
+    const uniq = [];
+    for (const q of cap) if (!uniq.some((u) => u.distanceToSquared(q) < 1e-10)) uniq.push(q);
+    if (uniq.length >= 3) { // the new plate, wound round its outward normal
+      const ctr = uniq.reduce((acc, q) => acc.add(q), V(0, 0, 0)).divideScalar(uniq.length);
+      const u = (Math.abs(n.y) < 0.9 ? V(0, 1, 0) : V(1, 0, 0)).cross(n).normalize(), w = n.clone().cross(u);
+      uniq.sort((a, b) => Math.atan2(a.clone().sub(ctr).dot(w), a.clone().sub(ctr).dot(u)) - Math.atan2(b.clone().sub(ctr).dot(w), b.clone().sub(ctr).dot(u)));
+      out.push({ pts: uniq, id });
+    }
+    faces = out;
+  });
+  const pos = [], edge = [], seam = [], ids = [], tone = [];
+  const toneOf = (id) => 0.5 + 0.5 * Math.sin(id * 12.9898 + planes.length * 4.1) * 0.999; // each plate its own shade
+  const S = V(...scale);
+  const emit = (a, b, c, f, id) => {
+    const pts = [a, b, c].map((q) => q.clone().multiply(S).add(V(0, lift, 0)));
+    const area2 = pts[1].clone().sub(pts[0]).cross(pts[2].clone().sub(pts[0])).length();
+    for (let j = 0; j < 3; j++) {
+      pos.push(pts[j].x, pts[j].y, pts[j].z);
+      const e = [0, 0, 0]; e[j] = area2 / Math.max(1e-6, pts[(j + 1) % 3].distanceTo(pts[(j + 2) % 3]));
+      edge.push(...e); seam.push(...f); tone.push(toneOf(id));
+    }
+    ids.push(id);
+  };
+  const split = (a, b, c, f, id, l) => {
+    if (!l) return emit(a, b, c, f, id);
+    const ab = a.clone().lerp(b, 0.5), bc = b.clone().lerp(c, 0.5), ca = c.clone().lerp(a, 0.5);
+    split(a, ab, ca, [0, f[1], f[2]], id, l - 1);
+    split(ab, b, bc, [f[0], 0, f[2]], id, l - 1);
+    split(ca, bc, c, [f[0], f[1], 0], id, l - 1);
+    split(ab, bc, ca, [0, 0, 0], id, l - 1);
+  };
+  for (const f of faces) {
+    const ctr = f.pts.reduce((acc, q) => acc.add(q), V(0, 0, 0)).divideScalar(f.pts.length);
+    for (let i = 0; i < f.pts.length; i++) split(ctr, f.pts[i], f.pts[(i + 1) % f.pts.length], [1, 0, 0], f.id, subdiv);
   }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aEdge', new THREE.Float32BufferAttribute(edge, 3));
+  g.setAttribute('aSeam', new THREE.Float32BufferAttribute(seam, 3));
+  g.setAttribute('aTone', new THREE.Float32BufferAttribute(tone, 1));
+  g.setAttribute('aSway', new THREE.BufferAttribute(new Float32Array(pos.length / 3), 1));
   g.computeVertexNormals();
-  const sw = new Float32Array(p.count);
-  g.setAttribute('aSway', new THREE.BufferAttribute(sw, 1));
   g.computeBoundingSphere();
-  return g;
+  return { geo: g, ids };
 }
 
-// Loose stone (radius ~0.5 before scaling): a rounded boulder sitting a little
-// sunk in the ground, one flatter knapped face, a lumpy crown.
-export function makeStone(seed, detail = 3, r0 = 0.6) {
-  const sx = makeSimplex(seed);
-  const g = new THREE.IcosahedronGeometry(1, detail);
-  const p = g.attributes.position;
-  const cut = new THREE.Vector3(sx.noise(seed, 1), 0.25, sx.noise(2, seed)).normalize();
-  for (let i = 0; i < p.count; i++) {
-    const v = V(p.getX(i), p.getY(i), p.getZ(i));
-    v.multiplyScalar(1 + sx.noise(v.x * 1.6 + v.z, v.y * 1.6 - v.z) * 0.18 + sx.noise(v.x * 4.2, v.z * 4.2 + v.y) * 0.05);
-    const f = v.dot(cut) - 0.62; // a flatter fractured face
-    if (f > 0) v.addScaledVector(cut, -f * 0.75);
-    v.y = v.y > 0 ? v.y * 0.92 : v.y * 0.45;
-    p.setXYZ(i, v.x * r0, v.y * r0, v.z * r0);
+// planes spread evenly round the sphere (jittered), at distances in [d0, d1]
+export function platePlanes(rnd, count, d0, d1, flatTop = 0) {
+  const list = [];
+  for (let i = 0; i < count; i++) {
+    const y = 1 - (i + 0.5) / count * 2, r = Math.sqrt(1 - y * y), a = i * 2.39996 + rnd() * 0.8;
+    const n = V(Math.cos(a) * r + (rnd() - 0.5) * 0.35, y + (rnd() - 0.5) * 0.35, Math.sin(a) * r + (rnd() - 0.5) * 0.35).normalize();
+    list.push({ n, c: d0 + rnd() * (d1 - d0) - (n.y > 0.8 ? flatTop : 0) });
   }
-  g.computeVertexNormals();
-  g.setAttribute('aSway', new THREE.BufferAttribute(new Float32Array(p.count), 1));
-  g.computeBoundingSphere();
-  return g;
+  return list;
+}
+
+// big boulders on the islands (radius ~1 before scaling): tall blocks
+function makeRock(seed) {
+  const r = mulberry32(seed);
+  return cutBlock(platePlanes(r, 30, 0.64, 0.96, 0.1), { scale: [1.05, 0.85 + r() * 0.25, 0.95] }).geo;
+}
+
+// Loose stone (radius ~0.6 before scaling): a chunky block of a few big
+// plates sitting a little sunk in the ground.
+export function makeStone(seed, detail = 2, r0 = 0.6) {
+  const r = mulberry32(seed);
+  return cutBlock(platePlanes(r, 22, 0.64, 0.95, 0.08), { subdiv: detail, scale: [r0 * 1.05, r0 * 0.95, r0], lift: 0.12 * r0 }).geo;
 }
 
 // crack: blows are local; uHits = up to MAX_HITS points in the stone's own
@@ -332,7 +386,8 @@ export const MAX_HITS = 8;
 function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, translucent = 0, rock = false, tint = 0.12, gain = 1, cut = false, stone = false, crack = false, obj = false } = {}) {
   return makeMaterial({
     side: alphaTest > 0 ? THREE.DoubleSide : THREE.FrontSide,
-    defines: { ...(rock ? { ROCK: 1 } : {}), ...(cut ? { CUT: 1 } : {}), ...(stone ? { STONE: 1 } : {}), ...(crack ? { CRACK: 1, MAX_HITS } : {}), ...(obj ? { OBJ: 1 } : {}) },
+    extensions: { derivatives: true }, // fwidth() for the pixel-thin plate seams
+    defines: { ...(rock ? { ROCK: 1, PLATES: 1 } : {}), ...(cut ? { CUT: 1 } : {}), ...(stone ? { STONE: 1 } : {}), ...(crack ? { CRACK: 1, MAX_HITS } : {}), ...(obj ? { OBJ: 1 } : {}) },
     uniforms: {
       uCrack: { value: 0 }, uHi: { value: 0 },
       uHits: { value: Array.from({ length: MAX_HITS }, () => new THREE.Vector4(0, 0, 0, 0)) },
@@ -360,7 +415,16 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         varying float vFresh;
         varying vec3 vLocal;
       #endif
+      #ifdef PLATES
+        attribute vec3 aEdge, aSeam;
+        attribute float aTone;
+        varying vec3 vEdge, vSeam;
+        varying float vTone;
+      #endif
       void main() {
+        #ifdef PLATES
+          vEdge = aEdge; vSeam = aSeam; vTone = aTone;
+        #endif
         #ifdef CUT
           vCut = aCut;
         #endif
@@ -414,6 +478,10 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
         uniform float uHi;
         varying float vFresh;
         varying vec3 vLocal;
+      #endif
+      #ifdef PLATES
+        varying vec3 vEdge, vSeam;
+        varying float vTone;
       #endif
       #ifdef CRACK
         uniform float uCrack;
@@ -474,7 +542,7 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
           }
           col *= 1.0 + uHi * (0.22 + 0.1 * sin(uTime * 6.0));
         #endif
-        #if defined(STONE) && !defined(OBJ)
+        #if defined(STONE) && !defined(OBJ) && !defined(PLATES)
           // lichen and moss in pixel clumps on the top of the stone
           float mossy = step(0.8, n.y) * step(0.78, hash12(floor(vWorld.xz * 4.0)) * 0.6 + hash12(floor(vWorld.xz * 16.0)) * 0.5);
           col = mix(col, hash12(floor(vWorld.xz * 16.0) + 3.0) < 0.5 ? vec3(0.36, 0.62, 0.17) : vec3(0.49, 0.74, 0.22), mossy);
@@ -496,6 +564,16 @@ function foliageMaterial(map, { alphaTest = 0.5, wind = 1, wrap = 0.5, transluce
           }
         #endif
         vec3 lit = lightAt(n, uWrap, shadow, vWorld);
+        #ifdef PLATES
+          // light seams round each plate, a shade darker just inside them
+          col *= 0.84 + vTone * 0.3;
+          vec3 e = vEdge + (1.0 - vSeam) * 9.0;
+          float de = min(e.x, min(e.y, e.z)), px = fwidth(de);
+          col = de < px * 1.3 ? vec3(0.86, 0.86, 0.89) : de < px * 2.6 ? col * 0.82 : col; // a pixel-thin light seam
+          // plates turned from the light go cool slate blue
+          float ndl = dot(n, uSunDir);
+          col *= ndl < -0.05 ? vec3(0.5, 0.55, 0.78) : ndl < 0.25 ? vec3(0.76, 0.79, 0.94) : vec3(1.05, 1.03, 1.0);
+        #endif
         // light passing through leaves when the sun is behind them
         vec3 V = normalize(uCamPos - vWorld);
         float back = pow(max(dot(-V, uSunDir), 0.0), 3.0) * uTrans;

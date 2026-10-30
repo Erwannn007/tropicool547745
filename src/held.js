@@ -26,8 +26,6 @@ export class HeldView {
     this.quadScene.add(quad);
     this.item = null; this.anim = null; this.t = -1; this.hitStop = 0; this.raise = 1;
     this.lag = new THREE.Vector2(); this.shake = 0;
-    this.extra = new THREE.Group(); // arms and the like, posed by the caller each frame
-    this.scene.add(this.extra);
     this.camera.updateMatrixWorld();
 
     // wind trail behind a fast blade (anim.trail = { tip, inner, from, to })

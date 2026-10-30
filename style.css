@@ -35,6 +35,21 @@ html, body {
   background-repeat: no-repeat; filter: drop-shadow(0 0 1px rgba(0,0,0,.6)); animation: grabpulse .8s steps(2) infinite; }
 @keyframes grabpulse { 50% { transform: scale(1.18); } }
 #crosshair.carry { opacity: .5; }
+/* what can be done with what is aimed at: white pixel words over it */
+#prompt {
+  position: absolute; transform: translate(-50%, -100%); white-space: nowrap; text-align: center;
+  font-family: var(--font); font-size: 15px; line-height: 1.5; color: #fff;
+  text-shadow: 2px 2px 0 rgba(10, 30, 50, .75), -1px -1px 0 rgba(10, 30, 50, .35);
+  -webkit-font-smoothing: none; font-smooth: never; image-rendering: pixelated;
+}
+#prompt .pname { font-size: 13px; opacity: .85; }
+#prompt kbd {
+  display: inline-block; min-width: 14px; margin: 0 2px 0 6px; padding: 0 4px; font: inherit; font-size: 13px; line-height: 17px;
+  color: #fff; background: rgba(10, 30, 50, .45); border: 2px solid #fff; box-shadow: 2px 2px 0 rgba(10, 30, 50, .6);
+}
+#prompt kbd:first-of-type { margin-left: 0; }
+#prompt.bottom { left: 50% !important; top: auto !important; bottom: calc(78px + env(safe-area-inset-bottom)); transform: translateX(-50%); }
+body.inv-open #prompt, body.book-open #prompt { display: none !important; }
 #bite {
   position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%) scale(0);
   font-size: 64px; font-weight: 700; color: var(--accent);

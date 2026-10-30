@@ -1,6 +1,6 @@
 // Axe: modelled pixel-art viewmodel (see axeModel.js), chop palms / jungle
 // trees: each blow carves a real wedge into the trunk geometry (fresh pale
-// wood inside), chips, shake, fall, and drops.
+// wood inside), chips, shake, fall, and logs left on the ground to pick up.
 // Felled trees are remembered per world and grow back after a while.
 import * as THREE from 'three';
 import { AxeModel } from './axeModel.js';
@@ -270,15 +270,11 @@ export class Axe {
       const t = k / 3;
       this.burst(p.x + tip.x * t, p.y + 0.4, p.z + tip.z * t, 6, k % 2 ? [0.3, 0.7, 0.2] : [0.55, 0.36, 0.18], 2);
     }
-    const rnd = Math.random;
-    const drops = p.type === 'palms'
-      ? [['wood:palm', 3 + Math.floor(rnd() * 3)], ['coconut', Math.floor(rnd() * 3)]]
-      : [['wood:tree', 3 + Math.floor(rnd() * 3)]];
     this.gust(p.x + tip.x * 0.55, p.z + tip.z * 0.55, f.away, 5 * p.s);
     this.hooks.sound?.('thud:' + p.type);
     this.hooks.rumble?.(0.8, 220);
     this.camShake = 1.6;
-    this.hooks.drops(drops.filter(([, n]) => n > 0));
+    this.hooks.fallen?.(p, f.away); // the trunk breaks into logs lying on the ground (debris.js)
   }
 
   // the crown slams down: dust, sand and leaf bits rush out along the ground,

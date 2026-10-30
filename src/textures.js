@@ -104,70 +104,23 @@ export function sandTexture(seed = 2) {
   return p.texture();
 }
 
-// Chunky stones with light top-left bevels and dark joints (furnace/cliff look).
-export function rockTexture(seed = 3) {
+// Boulders and stones: cool grey stone in soft mottled patches, four or five
+// flat levels (the plates, their light seams and the blue shadow faces come
+// from the geometry and the shader, see cutBlock() in vegetation.js).
+// 64 px over the 3 m triplanar ROCK mapping.
+export function plateTexture(seed = 3) {
   const S = 64, p = new Pix(S, S), rnd = mulberry32(seed);
-  const pts = [];
-  for (let i = 0; i < 40; i++) pts.push([rnd() * S, rnd() * S, 0.75 + rnd() * 0.4]);
-  const base = hex('#8a8a86');
+  const pal = ['#6f6e78', '#83828c', '#9897a0', '#abaab2', '#bdbcc3', '#cfced4'].map(hex);
+  const big = tileNoise(rnd, 6), mid = tileNoise(rnd, 12), fine = tileNoise(rnd, 32);
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    let d1 = 1e9, d2 = 1e9, id = 0;
-    for (let i = 0; i < pts.length; i++) {
-      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-        const dx = x - pts[i][0] - ox * S, dy = y - pts[i][1] - oy * S;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        if (d < d1) { d2 = d1; d1 = d; id = i; } else if (d < d2) d2 = d;
-      }
-    }
-    const edge = d2 - d1;
-    let k = pts[id][2] * (0.92 + rnd() * 0.12);
-    if (edge < 1.3) k = 0.45;
-    else if (edge < 2.6) k *= 1.18;
-    p.set(x, y, shade(base, k));
-  }
-  for (let i = 0; i < 90; i++) {
-    const x = Math.floor(rnd() * S), y = Math.floor(rnd() * S);
-    p.set(x, y, shade(base, 0.62));
+    const v = big(x / S * 6, y / S * 6) * 0.55 + mid(x / S * 12, y / S * 12) * 0.35 + fine(x / 2, y / 2) * 0.1;
+    let k = Math.floor(v * 5.2 - 0.2); // flat camo patches
+    if (rnd() < 0.03) k -= 1;          // a few dark grains
+    p.set(x, y, pal[Math.max(0, Math.min(5, k + 1))]);
   }
   return p.texture();
 }
 
-// Loose surface stones (mined with the pickaxe): warm basalt in rounded
-// cells, cracks between them, and pale quartz veins as the signature detail.
-// 96 px over 3 m of the triplanar ROCK mapping = 32 px/m.
-export function stoneTexture(seed = 13) {
-  const S = 96, p = new Pix(S, S), rnd = mulberry32(seed);
-  const pal = ['#4a4450', '#5c5560', '#716a6e', '#877f7e', '#9d948d', '#b4aa9e'].map(hex);
-  const quartz = ['#cfc6b8', '#e8e0d0', '#f8f2e6'].map(hex);
-  const n = tileNoise(rnd, 12);
-  const pts = [];
-  for (let i = 0; i < 26; i++) pts.push([rnd() * S, rnd() * S, 2.2 + rnd() * 1.6]);
-  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    let d1 = 1e9, d2 = 1e9, id = 0;
-    for (let i = 0; i < pts.length; i++) for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-      const d = Math.hypot(x - pts[i][0] - ox * S, y - pts[i][1] - oy * S);
-      if (d < d1) { d2 = d1; d1 = d; id = i; } else if (d < d2) d2 = d;
-    }
-    const edge = d2 - d1;
-    let k = pts[id][2] + (n(x / 8, y / 8) - 0.5) * 1.6 - d1 * 0.03;
-    if (edge < 1.2) k = 0.3; else if (edge < 2.4) k += 0.9; // crack, then a lit lip
-    p.set(x, y, pal[Math.max(0, Math.min(5, Math.round(k)))]);
-  }
-  // quartz veins wandering across the cells
-  for (let v = 0; v < 5; v++) {
-    let x = rnd() * S, y = rnd() * S, a = rnd() * 6.28;
-    const len = 30 + rnd() * 50;
-    for (let s = 0; s < len; s++) {
-      a += (rnd() - 0.5) * 0.5; x += Math.cos(a); y += Math.sin(a);
-      p.set(Math.floor(x), Math.floor(y), quartz[s % 7 === 0 ? 2 : 1]);
-      if (rnd() < 0.35) p.set(Math.floor(x), Math.floor(y) + 1, quartz[0]);
-    }
-  }
-  for (let i = 0; i < 120; i++) p.set(Math.floor(rnd() * S), Math.floor(rnd() * S), rnd() < 0.5 ? pal[0] : quartz[0]); // grit
-  return p.texture();
-}
-
-// Palm trunk: stacked fibrous rings.
 export function trunkTexture(seed = 4) {
   const W = 32, H = 32, p = new Pix(W, H), rnd = mulberry32(seed);
   const pal = ['#5a3a1e', '#6e4a27', '#86603a', '#9d7448', '#b28856', '#c49a66'].map(hex);
@@ -240,17 +193,20 @@ export function leafClusterTexture(seed = 6, palette) {
 }
 
 // Wood planks with strong swirling grain (pier, hut).
+// Hut and pier planks: varnished tropical wood with a strong figure, wavy
+// dark growth lines with a lit lip, one plank per 16 rows.
 export function woodTexture(seed = 7) {
   const S = 64, p = new Pix(S, S), rnd = mulberry32(seed);
-  const pal = ['#3e2814', '#5a3b1e', '#71492a', '#875a34', '#9c6c40', '#b07d4c'].map(hex);
-  const n = tileNoise(rnd, 4);
+  const pal = ['#2e1d12', '#4a3020', '#64442c', '#7a5638', '#8e6846', '#a87e56'].map(hex);
+  const n = tileNoise(rnd, 4), m = tileNoise(rnd, 8);
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const plank = Math.floor(y / 16);
-    const w = n(x / 16 + plank * 1.7, y / 16) * 7 + y * 0.9 + plank * 13;
-    const g = Math.sin(w * 1.25) * 0.5 + 0.5;
-    let ci = 2 + Math.round(g * 2.4 + rnd() * 0.6) - (g < 0.15 ? 2 : 0);
-    if (y % 16 === 0) ci = 0;
-    if (y % 16 === 1) ci = 4;
+    const plank = Math.floor(y / 16), py = y % 16;
+    const f = n(x / 16 + plank * 1.7, (py + plank * 5) / 16) * 1.5 + m(x / 8, y / 8) * 0.15 + Math.abs(py - 7.5) / 16 * 1.1;
+    const ring = ((f * 2.6) % 1 + 1) % 1;
+    let ci = 3 + (rnd() < 0.12 ? -1 : 0);
+    if (ring < 0.14) ci = 0; else if (ring < 0.24) ci = 1; else if (ring > 0.88) ci = 5;
+    if (py === 0) ci = 0;
+    if (py === 1) ci = Math.min(ci + 1, 5);
     p.set(x, y, pal[Math.max(0, Math.min(5, ci))]);
   }
   return p.texture();

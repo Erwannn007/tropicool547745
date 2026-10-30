@@ -32,13 +32,13 @@ const flameMat = new THREE.ShaderMaterial({
 });
 
 const worldCache = new Map();
-function worldMat(part) {
-  const key = (part.tex?.uuid || '') + (part.vcol ? 'c' : '') + (part.double ? 'd' : '') + (part.glow || '') + (part.metal ? 'm' : '');
+function worldMat(part, hi = 0) {
+  const key = (part.tex?.uuid || '') + (part.vcol ? 'c' : '') + (part.double ? 'd' : '') + (part.glow || '') + (part.metal ? 'm' : '') + (part.gloss ? 'g' + part.gloss : '') + (hi ? 'h' : '');
   if (worldCache.has(key)) return worldCache.get(key);
   const m = makeMaterial({
     side: part.double ? THREE.DoubleSide : THREE.FrontSide,
     defines: part.vcol ? { VCOL: 1 } : {},
-    uniforms: { uMap: { value: part.tex }, uGlow: { value: part.glow || 0 }, uMetal: { value: part.metal || 0 } },
+    uniforms: { uMap: { value: part.tex }, uGlow: { value: part.glow || 0 }, uMetal: { value: part.metal || 0 }, uGloss: { value: part.gloss || 0 }, uHi: { value: hi } },
     vertex: /* glsl */`
       varying vec2 vUv; varying vec3 vN; varying vec3 vWorld; varying vec3 vCol;
       #ifdef VCOL
@@ -55,7 +55,7 @@ function worldMat(part) {
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragment: /* glsl */`
-      uniform sampler2D uMap; uniform float uGlow, uMetal;
+      uniform sampler2D uMap; uniform float uGlow, uMetal, uGloss, uHi;
       varying vec2 vUv; varying vec3 vN; varying vec3 vWorld; varying vec3 vCol;
       void main() {
         vec3 tex = texture2D(uMap, vUv).rgb * vCol;
@@ -70,6 +70,8 @@ function worldMat(part) {
         vec3 V = normalize(uCamPos - vWorld);
         col += uMetal * step(0.75, pow(max(dot(reflect(-uSunDir, n), V), 0.0), 22.0)) * 0.4 * uSunColor;
         col += tex * uGlow * (0.8 + 0.2 * sin(uTime * 7.0 + vWorld.x * 9.0));
+        if (uGloss > 0.0) col = varnish(col, tex, n, V, shadow * ndl, uGloss, 0.0);
+        col *= 1.0 + uHi * (0.28 + 0.12 * sin(uTime * 6.0));
         col *= 1.0 - uWet * 0.12 * step(0.0, n.y);
         gl_FragColor = vec4(applyFog(col, vWorld), 1.0);
       }`,
@@ -115,6 +117,7 @@ export function dress(model, kind, light) {
     let mat;
     if (part.flame) mat = kind === 'ghost' ? ghostMat : flameMat;
     else if (kind === 'world') mat = worldMat(part);
+    else if (kind === 'worldHi') mat = worldMat(part, 1); // lit up: the thing under the crosshair
     else if (kind === 'ghost') mat = ghostMat;
     else if (part.glow && kind !== 'icon') mat = glowMat(part);
     else mat = heldMat(part, kind === 'icon' ? light : null);

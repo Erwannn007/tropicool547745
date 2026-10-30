@@ -40,9 +40,9 @@ Les images de référence du projet sont des captures de jeux indé pixel-art 3D
 - Bambou : `#7a5a20 #9a7a2e #b8963e #d2b052 #e8c86a #f6dc88` · tressage : `#5e3e16 #7d5622 #9c7030 #b88a40 #d2a656 #e6c070`
 - Teck : `#5a3418 #74461f #8f5a2a #a86e36 #c08446 #d49a5a` · toile corail : `#a8342e #cc4a3c #e8644c #f88a68 #ffb08e`
 - Bois frais (entailles, sections) : `#a97a45 #c49a5e #d9b47a #e8c890 #f2d7a2 #f8e6c0`
-- Pierre (basalte) : `#4a4450 #5c5560 #716a6e #877f7e #9d948d #b4aa9e` · quartz : `#cfc6b8 #e8e0d0 #f8f2e6`
+- Pierre (rochers en plaques) : `#6f6e78 #83828c #9897a0 #abaab2 #bdbcc3 #cfced4`, joints `#dbdbe3`, faces à l'ombre bleu ardoise · cassures fraîches plus claires
+- Bois verni (paillote, meubles) : `#2e1d12 #4a3020 #64442c #7a5638 #8e6846 #a87e56`, veines ondulées sombres + reflets en paliers (`varnish()`)
 - Flamme : `#fff5b2 #ffc740 #ff801f #e64214` (bandes nettes, jamais de dégradé)
-- Peau (main et avant-bras) : `#6e3a2c #8a4e34 #a8683f #c4824e #d89c64 #eab67c` · bracelet en fibres tressées (détail signature)
 
 ## Mouvement
 Anticipation, temps mort, geste rapide, impact marqué (arrêt d'environ 70 ms, secousse, particules carrées), retour en douceur. Référence : le coup de hache (0 → 0,16 → 0,20 → impact 0,255 → 0,29 → 0,36 → 0,62 s) ; la pioche suit le même rythme (armé 0,17, temps mort 0,21, impact 0,255, recul 0,30, retour 0,66 s).

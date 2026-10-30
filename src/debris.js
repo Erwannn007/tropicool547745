@@ -1,4 +1,5 @@
-// Loose physical objects lying in the world: the pieces of a broken stone.
+// Loose physical objects lying in the world: the pieces of a broken stone,
+// the logs and coconuts of a felled tree.
 // Each piece is a small rigid body (irregular shard, gravity, contacts with
 // the ground on its own hull points so it tumbles and comes to rest on a
 // flat face, a bounce or two, rolling friction, trunks and stones in the
@@ -7,7 +8,10 @@
 // (it then sits in the hand, see hands.js), drop it, throw it, or put it in
 // the bag: picking up and storing are separate actions.
 import * as THREE from 'three';
-import { makeSimplex, mulberry32 } from './noise.js';
+import { mulberry32 } from './noise.js';
+import { MODELS } from './models.js';
+import { dress } from './dress.js';
+import { cutBlock, platePlanes } from './vegetation.js';
 
 const G = 11;
 const MAX_BODIES = 36;       // older pieces crumble away past this
@@ -15,47 +19,34 @@ const REACH = 2.6;           // how far the hand reaches to pick a piece up
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _r = new THREE.Vector3(), _n = new THREE.Vector3(), _t = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
-// Irregular shard (radius ~1): a lumpy ball cut by two or three fracture
-// planes. Faces lying on a cut are fresh stone (aFresh = 1); the rest keeps
-// the weathered skin of the boulder. Returns the geometry plus a few hull
-// points used for the contacts.
+// Irregular shard (radius ~1): a block of the boulder's old plates with two
+// or three fresh fracture planes through it (aFresh = 1 on those, pale new
+// stone). Returns the geometry plus a few hull points used for the contacts.
 export function makeShard(seed, stretch) {
-  const sx = makeSimplex(seed), rnd = mulberry32(seed * 7 + 3);
-  const g = new THREE.IcosahedronGeometry(1, 2);
-  const P = g.attributes.position;
-  const cuts = [];
+  const rnd = mulberry32(seed * 7 + 3);
   const nc = 2 + (rnd() < 0.6 ? 1 : 0);
-  for (let i = 0; i < nc; i++) cuts.push({ n: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(), c: 0.35 + rnd() * 0.3 });
-  for (let i = 0; i < P.count; i++) {
-    const v = _v.fromBufferAttribute(P, i);
-    v.multiplyScalar(1 + sx.noise(v.x * 1.7 + seed, v.y * 1.7 - v.z) * 0.22 + sx.noise(v.x * 4, v.z * 4 + v.y) * 0.05);
-    v.multiply(stretch);
-    for (const k of cuts) { const f = v.dot(k.n) - k.c; if (f > 0) v.addScaledVector(k.n, -f); }
-    P.setXYZ(i, v.x, v.y, v.z);
-  }
-  // fresh faces, uvs boxed along the dominant axis of each face (pixel stone at
-  // about the density of the boulders), pale vertex colour for the held copy
+  const breaks = [];
+  for (let i = 0; i < nc; i++) breaks.push({ n: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(), c: 0.35 + rnd() * 0.3 });
+  const { geo: g, ids } = cutBlock([...platePlanes(rnd, 9, 0.7, 0.95), ...breaks], { subdiv: 1, scale: stretch.toArray() });
+  const P = g.attributes.position, N = g.attributes.normal;
   const fresh = new Float32Array(P.count), uv = new Float32Array(P.count * 2), col = new Float32Array(P.count * 3);
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
-  for (let i = 0; i < P.count; i += 3) {
-    a.fromBufferAttribute(P, i); b.fromBufferAttribute(P, i + 1); c.fromBufferAttribute(P, i + 2);
-    const on = cuts.some((k) => Math.abs(a.dot(k.n) - k.c) < 1e-4 && Math.abs(b.dot(k.n) - k.c) < 1e-4 && Math.abs(c.dot(k.n) - k.c) < 1e-4);
-    const n = _n.subVectors(b, a).cross(_t.subVectors(c, a)), ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
-    for (let j = 0; j < 3; j++) {
-      const p = [a, b, c][j];
-      fresh[i + j] = on ? 1 : 0;
-      const [u, w] = ay > ax && ay > az ? [p.x, p.z] : ax > az ? [p.z, p.y] : [p.x, p.y];
-      uv[(i + j) * 2] = u * 0.11; uv[(i + j) * 2 + 1] = w * 0.11;
-      col.set(on ? [1.25, 1.2, 1.12] : [1, 1, 1], (i + j) * 3);
-    }
+  for (let i = 0; i < P.count; i++) {
+    const on = ids[Math.floor(i / 3)] >= 9;
+    fresh[i] = on ? 1 : 0;
+    const ax = Math.abs(N.getX(i)), ay = Math.abs(N.getY(i)), az = Math.abs(N.getZ(i));
+    const [u, w] = ay > ax && ay > az ? [P.getX(i), P.getZ(i)] : ax > az ? [P.getZ(i), P.getY(i)] : [P.getX(i), P.getY(i)];
+    uv[i * 2] = u * 0.11; uv[i * 2 + 1] = w * 0.11;
+    col.set(on ? [1.25, 1.2, 1.12] : [1, 1, 1], i * 3);
   }
   g.setAttribute('aFresh', new THREE.BufferAttribute(fresh, 1));
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  g.setAttribute('aSway', new THREE.BufferAttribute(new Float32Array(P.count), 1));
-  g.computeVertexNormals();
-  g.computeBoundingSphere();
-  // hull: the furthest vertex in each of 26 directions
+  return { geo: g, ...hullOf(P), mean: (stretch.x + stretch.y + stretch.z) / 3 };
+}
+
+// a few points of the outline (the furthest vertex in each of 26
+// directions) for the ground contacts, and the radius
+function hullOf(P) {
   const hull = [];
   for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) {
     if (!x && !y && !z) continue;
@@ -67,7 +58,23 @@ export function makeShard(seed, stretch) {
   }
   let r = 0;
   for (const h of hull) r = Math.max(r, h.length());
-  return { geo: g, hull, r, mean: (stretch.x + stretch.y + stretch.z) / 3 };
+  return { hull, r };
+}
+
+// shape of a modelled item lying in the world (log, coconut): its parts
+// merged for the hull, centred on its middle
+const itemShapes = new Map();
+function itemShape(kind) {
+  if (!itemShapes.has(kind)) {
+    const model = MODELS[kind]();
+    const box = new THREE.Box3();
+    for (const p of model.parts) { p.geo.computeBoundingBox(); box.union(p.geo.boundingBox); }
+    const centre = box.getCenter(new THREE.Vector3());
+    const pts = [];
+    for (const p of model.parts) { const P = p.geo.attributes.position; for (let i = 0; i < P.count; i++) pts.push(P.getX(i) - centre.x, P.getY(i) - centre.y, P.getZ(i) - centre.z); }
+    itemShapes.set(kind, { model, centre, ...hullOf(new THREE.Float32BufferAttribute(pts, 3)) });
+  }
+  return itemShapes.get(kind);
 }
 
 // a few shapes: chunky lumps, flat slabs, long wedges
@@ -94,12 +101,27 @@ export class Debris {
   spawn(pos, s, vel, spin, { shape, kind = 'stone', value = 1 } = {}) {
     const sh = this.shards[shape ?? Math.floor(Math.random() * this.shards.length)];
     const mesh = new THREE.Mesh(sh.geo, this.mats.base);
-    mesh.position.copy(pos);
     mesh.quaternion.setFromEuler(new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6));
+    return this.add(mesh, sh, s, pos, vel, spin, kind, value, { base: [this.mats.base], hi: [this.mats.hi] });
+  }
+
+  // a modelled item (a log, a coconut) dropped into the world
+  spawnItem(kind, pos, quat, vel, spin, value = 1) {
+    const sh = itemShape(kind);
+    const mesh = new THREE.Group(), inner = dress(sh.model, 'world'), hiG = dress(sh.model, 'worldHi');
+    inner.position.copy(sh.centre).negate();
+    mesh.add(inner);
+    mesh.quaternion.copy(quat);
+    const mats = { base: inner.children.map((m) => m.material), hi: hiG.children.map((m) => m.material) };
+    return this.add(mesh, sh, 1, pos, vel, spin, kind, value, mats);
+  }
+
+  add(mesh, sh, s, pos, vel, spin, kind, value, mats) {
+    mesh.position.copy(pos);
     mesh.scale.setScalar(s);
     this.scene.add(mesh);
     const b = {
-      id: ++this.id, mesh, shard: sh, s, r: sh.r * s, kind, value,
+      id: ++this.id, mesh, shard: sh, s, r: sh.r * s, kind, value, mats,
       v: vel.clone(), w: spin.clone(), sleeping: false, still: 0, wet: pos.y < 0, age: 0, fade: 0, bounces: 0,
     };
     this.bodies.push(b);
@@ -307,17 +329,24 @@ export class Debris {
       }
     }
     if (best !== this.aimed) {
-      if (this.aimed && this.aimed.mesh.material === this.mats.hi) this.aimed.mesh.material = this.mats.base;
-      if (best) best.mesh.material = this.mats.hi;
+      if (this.aimed) this.light(this.aimed, false);
+      if (best) this.light(best, true);
       this.aimed = best;
     }
     return best;
   }
 
+  // the piece being aimed at lights up a little
+  light(b, on) {
+    const list = on ? b.mats.hi : b.mats.base;
+    if (b.mesh.isMesh) b.mesh.material = list[0];
+    else b.mesh.children[0].children.forEach((m, i) => { m.material = list[i]; });
+  }
+
   grab(b) {
     if (!b || this.carried) return null;
     b.mesh.visible = false;
-    b.mesh.material = this.mats.base;
+    this.light(b, false);
     b.sleeping = true; b.v.set(0, 0, 0); b.w.set(0, 0, 0);
     this.unflatten(b);
     this.carried = b; this.aimed = null;

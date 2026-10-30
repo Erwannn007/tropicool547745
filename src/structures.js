@@ -2,6 +2,25 @@
 import * as THREE from 'three';
 import { makeMaterial } from './shaders.js';
 import { mulberry32 } from './noise.js';
+import { merge } from './models.js';
+
+// A soft cushion: a box with rounded edges and corners, its top a little
+// puffed up in the middle.
+function cushionGeo(w, h, d, r) {
+  const g = new THREE.BoxGeometry(w, h, d, 5, 3, 5).toNonIndexed();
+  const P = g.attributes.position, v = new THREE.Vector3(), inner = new THREE.Vector3();
+  const half = new THREE.Vector3(w / 2 - r, h / 2 - r, d / 2 - r);
+  for (let i = 0; i < P.count; i++) {
+    v.fromBufferAttribute(P, i);
+    inner.copy(v).clamp(half.clone().negate(), half);
+    const off = v.clone().sub(inner);
+    if (off.lengthSq() > 1e-8) v.copy(inner).addScaledVector(off.normalize(), r);
+    if (v.y > 0) v.y += (1 - Math.abs(v.x) / (w / 2)) * (1 - Math.abs(v.z) / (d / 2)) * h * 0.18;
+    P.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
 
 class BoxBatch {
   constructor() { this.p = []; this.n = []; this.uv = []; this.idx = []; }
@@ -44,10 +63,13 @@ class BoxBatch {
   }
 }
 
-function simpleMaterial(map, { tint = 1, alphaTest = 0 } = {}) {
+// gloss: varnished, mirrors the sky (or the roof overhead when roof = 1);
+// banded: light in flat steps (cushions)
+function simpleMaterial(map, { tint = 1, alphaTest = 0, gloss = 0, roof = 0, banded = false } = {}) {
   return makeMaterial({
     side: alphaTest ? THREE.DoubleSide : THREE.FrontSide,
-    uniforms: { uMap: { value: map }, uK: { value: tint }, uAT: { value: alphaTest } },
+    defines: banded ? { BANDED: 1 } : {},
+    uniforms: { uMap: { value: map }, uK: { value: tint }, uAT: { value: alphaTest }, uGloss: { value: gloss }, uRoof: { value: roof } },
     vertex: /* glsl */`
       varying vec2 vUv; varying vec3 vN; varying vec3 vWorld;
       void main() {
@@ -56,7 +78,7 @@ function simpleMaterial(map, { tint = 1, alphaTest = 0 } = {}) {
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragment: /* glsl */`
-      uniform sampler2D uMap; uniform float uK, uAT;
+      uniform sampler2D uMap; uniform float uK, uAT, uGloss, uRoof;
       varying vec2 vUv; varying vec3 vN; varying vec3 vWorld;
       void main() {
         vec4 t = texture2D(uMap, vUv);
@@ -64,7 +86,14 @@ function simpleMaterial(map, { tint = 1, alphaTest = 0 } = {}) {
         vec4 d = worldData(vWorld.xz);
         vec3 n = normalize(gl_FrontFacing ? vN : -vN);
         float shadow = 1.0 - d.b * 0.5 * uShade * step(n.y, 0.5);
-        vec3 col = t.rgb * uK * lightAt(n, 0.2, shadow, vWorld);
+        vec3 lit = lightAt(n, 0.2, shadow, vWorld);
+        #ifdef BANDED
+          float l = dot(lit, vec3(0.33));
+          lit *= (l > 0.95 ? 1.12 : l > 0.7 ? 0.92 : l > 0.45 ? 0.74 : 0.6) / max(l, 0.05);
+          lit = mix(lit, lit * vec3(0.86, 0.88, 1.08), step(l, 0.7)); // lavender in the shade
+        #endif
+        vec3 col = t.rgb * uK * lit;
+        if (uGloss > 0.0) col = varnish(col, t.rgb, n, normalize(uCamPos - vWorld), shadow, uGloss, uRoof);
         gl_FragColor = vec4(applyFog(col, vWorld), 1.0);
       }`,
   });
@@ -75,7 +104,8 @@ export function buildStructures(world, tex) {
   const rnd = mulberry32(world.cfg.seed + 3);
   const { pier, hut } = world;
   const yaw = Math.atan2(pier.dx, pier.dz);
-  const wood = new BoxBatch();
+  const wood = new BoxBatch();  // pier deck
+  const floor = new BoxBatch(); // hut floor, sofa frames, table (varnished, under the roof)
   const posts = new BoxBatch();
 
   // pier deck: planks across the walkway
@@ -106,7 +136,7 @@ export function buildStructures(world, tex) {
   const local = (lx, lz) => [hut.x + lx * Math.cos(hr) + lz * Math.sin(hr), hut.z - lx * Math.sin(hr) + lz * Math.cos(hr)];
   for (let k = -3; k < 3; k += 0.5) {
     const [x, z] = local(0, k + 0.25);
-    wood.box(x, hy - 0.08, z, 6.4, 0.16, 0.46, hr, 1.6);
+    floor.box(x, hy - 0.08, z, 6.4, 0.16, 0.46, hr, 1.6);
   }
   const hutPosts = [[-2.9, -2.9], [2.9, -2.9], [-2.9, 2.9], [2.9, 2.9], [0, 0]];
   for (const [lx, lz] of hutPosts) {
@@ -116,18 +146,23 @@ export function buildStructures(world, tex) {
     posts.box(x, (g + top) / 2, z, 0.42, top - g, 0.42, hr, 1.2);
     colliders.push({ x, z, r: 0.35 });
   }
-  // benches (pale cushions) + low table
-  const cushion = new BoxBatch();
+  // two long sofas (pale soft cushions on a varnished frame) + low table
+  const cushions = [];
+  const at = (lx, ly, lz) => { const [x, z] = local(lx, lz); return new THREE.Matrix4().compose(new THREE.Vector3(x, hy + ly, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), hr), new THREE.Vector3(1, 1, 1)); };
   for (const side of [-1, 1]) {
-    const [x, z] = local(side * 2.1, -0.4);
-    wood.box(x, hy + 0.22, z, 0.9, 0.44, 3.2, hr, 1.2);
-    cushion.box(x, hy + 0.52, z, 0.86, 0.16, 3.1, hr, 1);
-    const [bx, bz] = local(side * 2.5, -0.4);
-    cushion.box(bx, hy + 0.85, bz, 0.22, 0.6, 3.1, hr, 1);
+    const [x, z] = local(side * 2.15, -0.4);
+    floor.box(x, hy + 0.17, z, 0.95, 0.34, 3.3, hr, 1.2);
+    for (let k = -1; k <= 1; k++) {
+      cushions.push([cushionGeo(0.8, 0.2, 1.0, 0.07), at(side * 2.1, 0.44, -0.4 + k * 1.03)]);               // seat
+      const back = cushionGeo(0.2, 0.62, 1.0, 0.08);
+      back.rotateZ(side * 0.12);
+      cushions.push([back, at(side * 2.5, 0.82, -0.4 + k * 1.03)]);                                         // back
+    }
+    for (const end of [-1, 1]) cushions.push([cushionGeo(0.95, 0.5, 0.2, 0.08), at(side * 2.15, 0.6, -0.4 + end * 1.68)]); // arms
   }
   const [tx, tz] = local(0, -0.8);
-  wood.box(tx, hy + 0.35, tz, 1.6, 0.1, 1.6, hr, 1);
-  wood.box(tx, hy + 0.15, tz, 0.3, 0.3, 0.3, hr, 1);
+  floor.box(tx, hy + 0.35, tz, 1.6, 0.1, 1.6, hr, 1);
+  floor.box(tx, hy + 0.15, tz, 0.3, 0.3, 0.3, hr, 1);
 
   // roof: thatched pyramid with an overhang
   const roof = new THREE.ConeGeometry(4.9, 2.4, 4, 3, true);
@@ -142,12 +177,14 @@ export function buildStructures(world, tex) {
   under.position.copy(roofMesh.position).y -= 0.05;
   under.rotation.y = hr;
 
-  const woodMat = simpleMaterial(tex.wood, { tint: 1.0 });
-  const postMat = simpleMaterial(tex.wood, { tint: 0.85 });
-  const cushionMat = simpleMaterial(tex.cushion, { tint: 1.0 });
+  const woodMat = simpleMaterial(tex.wood, { tint: 1.1, gloss: 0.3 });
+  const floorMat = simpleMaterial(tex.wood, { tint: 1.15, gloss: 0.85, roof: 1 });
+  const postMat = simpleMaterial(tex.wood, { tint: 0.95, gloss: 0.35 });
+  const cushionMat = simpleMaterial(tex.cushion, { tint: 1.05, banded: true });
   group.add(new THREE.Mesh(wood.geometry(), woodMat));
+  group.add(new THREE.Mesh(floor.geometry(), floorMat));
   group.add(new THREE.Mesh(posts.geometry(), postMat));
-  group.add(new THREE.Mesh(cushion.geometry(), cushionMat));
+  group.add(new THREE.Mesh(merge(cushions), cushionMat));
   group.add(roofMesh, under);
 
   // walkable surfaces

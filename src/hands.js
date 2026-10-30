@@ -1,10 +1,11 @@
 // What the hands show for the new items: the scythe (mowing sweep), the
-// pickaxe (overhead stroke, held in the player's fist), the tiki
+// pickaxe (overhead stroke, held like the axe), the tiki
 // torch (lights the way, flickers), a small version of any placeable, and a
-// piece of stone carried in the open hand (picked up from the ground).
+// loose piece picked up from the ground (stone, log, coconut), carried in
+// front a little to the right, trailing the view slightly when turning.
 import * as THREE from 'three';
 import { HeldView } from './held.js';
-import { MODELS, PICK, handModel } from './models.js';
+import { MODELS, PICK } from './models.js';
 import { basis, bandedMaterial } from './axeModel.js';
 import { dress } from './dress.js';
 import { PLACEABLE } from './placement.js';
@@ -53,31 +54,25 @@ const SCYTHE = {
   trail: { tip: [-0.6, 0, 0.25], inner: [-0.18, 0, 0.0], from: 0.29, to: 0.47, life: 0.2 },
 };
 
-// Pickaxe: held upright in the right hand, the head just above the middle of
-// the screen, turned a little to the left. Blow: rocked back over the
-// shoulder, a held beat, a fast overhead stroke down in front, a small recoil
-// off the stone and a soft return. The model's handle is +Y, its point -X.
-// pk(t, position, pitch (+ = top towards the player), yaw (+ = left), roll (+ = top leans left))
-const pk = (t, p, pitch, yaw, roll, e) => {
-  const eu = new THREE.Euler(pitch, yaw, roll, 'YXZ');
-  return { t, p, q: basis(new THREE.Vector3(0, 1, 0).applyEuler(eu).toArray(), new THREE.Vector3(0, 0, -1).applyEuler(eu).toArray()), e };
-};
-// the fist on the handle sits in the bottom-right corner, in view
-const up = ([x, y, z]) => [x + 0.06, y + 0.12, z];
-const P_IDLE = pk(0, [0.48, -0.44, -0.7], -0.08, 0.85, 0.2); // leaning a little to the side
+// Pickaxe: held like the axe (axeModel.js), the long handle reaching from the
+// bottom-right corner, the point turned forward a little to the left. Blow:
+// raised over the right shoulder, a held beat, a fast stroke down in front
+// (aimed at what the crosshair shows, see aimSwing), a recoil off the stone
+// and a soft return. The model's handle is +Y, its point -X.
+const P_IDLE = { t: 0, p: [0.25, -0.76, -0.32], q: basis([-0.1, 0.9, -0.42], [-0.33, 0.05, -0.94]) };
 const PICKAXE = {
   idle: P_IDLE,
   scale: 0.86,
-  pivot: new THREE.Vector3(0, 0.29, 0), // the fist on the handle (models.js HAND)
+  pivot: new THREE.Vector3(0, 0.12, 0), // where the (unseen) hands hold it
   contact: true,
   keys: [
     P_IDLE,
-    pk(0.17, up([0.34, -0.55, -0.72]), 0.42, 0.7, -0.05, 'out'),   // raised back over the shoulder
-    pk(0.21, up([0.35, -0.54, -0.72]), 0.48, 0.69, -0.06, 'inOut'), // hang
-    pk(0.255, up([0.2, -0.68, -0.66]), -0.68, 0.5, 0.1, 'in'),      // strike down in front (aimed, hands.js)
-    pk(0.3, up([0.21, -0.66, -0.66]), -0.52, 0.52, 0.09, 'out'),    // recoil off the stone
-    pk(0.36, up([0.22, -0.67, -0.67]), -0.6, 0.54, 0.09, 'inOut'),  // settle
-    { ...P_IDLE, t: 0.66, e: 'inOut' },                              // back up
+    { t: 0.17, p: [0.3, -0.5, -0.3], q: basis([0.26, 0.86, -0.22], [-0.22, 0.4, -0.89]), e: 'out' },     // raised over the right shoulder
+    { t: 0.21, p: [0.31, -0.48, -0.28], q: basis([0.28, 0.87, -0.16], [-0.22, 0.45, -0.86]), e: 'inOut' }, // hang
+    { t: 0.255, p: [0.16, -0.36, -0.4], q: basis([-0.38, 0.3, -0.87], [-0.42, -0.9, 0.0]), e: 'in' },     // strike down in front
+    { t: 0.3, p: [0.15, -0.37, -0.4], q: basis([-0.36, 0.38, -0.85], [-0.4, -0.88, 0.1]), e: 'out' },     // recoil off the stone
+    { t: 0.36, p: [0.14, -0.38, -0.4], q: basis([-0.38, 0.32, -0.86], [-0.4, -0.9, 0.05]), e: 'inOut' },  // settle
+    { ...P_IDLE, t: 0.66, e: 'inOut' },                                                                   // back up
   ],
   impact: 0.255,
   trail: { tip: PICK.TIP.toArray(), inner: [-0.08, PICK.HY, 0], from: 0.2, to: 0.26, life: 0.12 },
@@ -98,15 +93,15 @@ const MINI = {
 const LOCK = 0.21;      // end of the hang: the aim is fixed, the stroke starts
 const SWEEP_END = 0.262; // strike pose passed and nothing met: the stroke went through air
 const REACH = 2.3;
-const ELBOW = new THREE.Vector3(0.42, -0.8, 0.05); // held space, out of view at the bottom right
+// a loose piece in hand: in front, a little to the right and low
 const CARRY = {
-  idle: { p: [0.16, -0.17, -0.5], q: Q(0.45, 0.75, -0.1) }, // fingers curled round the stone on the left
+  idle: { p: [0.2, -0.07, -0.5], q: Q(0, 0, 0) },
   scale: 1,
   keys: [
-    { t: 0, p: [0.16, -0.17, -0.5], q: Q(0.45, 0.75, -0.1) },
-    { t: 0.13, p: [0.24, -0.09, -0.36], q: Q(0.7, -0.35, 0.1), e: 'out' },   // drawn back by the shoulder
-    { t: 0.24, p: [0.05, -0.02, -0.72], q: Q(-0.2, -0.05, 0), e: 'in' },     // flung forward: it leaves the hand here
-    { t: 0.5, p: [0.14, -0.32, -0.55], q: Q(0.1, -0.2, 0), e: 'out' },       // hand follows through and drops away
+    { t: 0, p: [0.2, -0.07, -0.5], q: Q(0, 0, 0) },
+    { t: 0.13, p: [0.24, -0.06, -0.38], q: Q(0.5, -0.2, 0.1), e: 'out' },   // drawn back by the shoulder
+    { t: 0.24, p: [0.04, 0.0, -0.75], q: Q(-0.3, 0, 0), e: 'in' },          // flung forward: it leaves the hand here
+    { t: 0.5, p: [0.2, -0.07, -0.5], q: Q(0, 0, 0), e: 'out' },
   ],
   impact: 0.22,
 };
@@ -119,61 +114,48 @@ export class Hands {
     this.hooks = hooks;
     this.light = lights.add({ x: 0, y: -999, z: 0, radius: 7, r: 0.75, g: 0.45, b: 0.2, off: true, flicker: 1.4 });
     this.id = null; this.heldId = null;
-    this.carried = null; // { body, stone, spin, spinTo, thrown }
-    // forearm and its woven bracelet, stretched from the wrist to the elbow
-    const arm = handModel('arm');
-    this.forearm = dress(arm, 'held'); this.band = dress(arm.band, 'held');
-    this.view.extra.add(this.forearm, this.band);
-    this.view.extra.visible = false;
-    this.wrist = null;
+    this.carried = null; // { body, stone, k, spin, spinTo, thrown }
     this.lastYaw = null; this.lastPitch = 0;
+    this.trail = { yaw: 0, pitch: 0 }; // where the carried piece is looking, a little behind the view
     this.swing = null;
-  }
-
-  // the side of the handle the palm and wrist are on: towards the elbow
-  fist() {
-    const { p, q } = P_IDLE, s = PICKAXE.scale;
-    const grip = new THREE.Vector3(...p).add(PICKAXE.pivot.clone().multiplyScalar(s).applyQuaternion(q));
-    const side = ELBOW.clone().sub(grip).applyQuaternion(q.clone().invert());
-    side.y = 0;
-    return handModel('fist', side.normalize());
   }
 
   setHeld(id) {
     this.heldId = id;
     if (this.carried) return; // the stone in hand stays until it is dropped or thrown
     this.id = id;
-    this.wrist = null;
     if (id === 'scythe') this.view.set(id, dress(MODELS.scythe(), 'held'), SCYTHE);
-    else if (id === 'pickaxe') {
-      const g = dress(MODELS.pickaxe(), 'held'), hand = this.fist();
-      g.add(dress(hand, 'held'));
-      this.wrist = hand.wrist;
-      this.view.set(id, g, { ...PICKAXE, keys: PICKAXE.keys.map((k) => ({ ...k })) });
-    } else if (id === 'torch') this.view.set(id, dress(MODELS.torch(), 'held'), TORCH);
+    else if (id === 'pickaxe') this.view.set(id, dress(MODELS.pickaxe(), 'held'), { ...PICKAXE, keys: PICKAXE.keys.map((k) => ({ ...k })) });
+    else if (id === 'torch') this.view.set(id, dress(MODELS.torch(), 'held'), TORCH);
     else if (MINI[id]) this.view.set(id, dress(MODELS[id](), 'held'), MINI[id]);
     else this.view.set(null, null, null);
     this.light.off = id !== 'torch';
   }
 
   // ---------------------------------------------------------------- carrying
-  // a piece of stone lifted from the ground sits in the open palm
-  carry(body) {
-    const g = new THREE.Group(), cup = handModel('cup');
-    g.add(dress(cup, 'held'));
-    this.stoneMat ??= bandedMaterial(this.hooks.stoneTex(), { vertexColors: true });
-    const stone = new THREE.Mesh(body.shard.geo, this.stoneMat);
-    const k = Math.min(body.s, 0.09); // big pieces are shown a little smaller and further
+  // a piece lifted from the ground, held up in front of the eyes
+  carry(body, player) {
+    const g = new THREE.Group();
+    let stone, k;
+    if (body.shard.geo) { // a stone shard
+      this.stoneMat ??= bandedMaterial(this.hooks.stoneTex(), { vertexColors: true });
+      stone = new THREE.Mesh(body.shard.geo, this.stoneMat);
+      k = Math.min(body.s, 0.09); // big pieces are shown a little smaller
+    } else { // a modelled item (log, coconut)
+      stone = new THREE.Group();
+      const inner = dress(body.shard.model, 'held');
+      inner.position.copy(body.shard.centre).negate();
+      stone.add(inner);
+      k = Math.min(1, 0.2 / body.shard.r);
+    }
     stone.scale.setScalar(k);
     stone.quaternion.copy(body.mesh.quaternion);
     g.add(stone);
     this.carried = { body, stone, k, spin: 0, spinTo: 0, thrown: false };
     this.id = 'carry';
-    this.wrist = cup.wrist;
     this.swing = null;
-    const far = Math.max(0, body.s - 0.09) * 0.8; // a big piece is held a little further out
-    const idle = { p: [CARRY.idle.p[0] + far * 0.3, CARRY.idle.p[1] - far * 0.2, CARRY.idle.p[2] - far], q: CARRY.idle.q };
-    this.view.set('carry:' + body.id, g, { ...CARRY, idle, keys: [{ ...idle, t: 0 }, ...CARRY.keys.slice(1)] });
+    if (player) this.trail = { yaw: player.yaw, pitch: player.pitch };
+    this.view.set('carry:' + body.id, g, CARRY);
     this.light.off = true;
   }
   // turn the stone in the hand to look at it from another side
@@ -214,34 +196,26 @@ export class Hands {
     if (this.carried) {
       const c = this.carried;
       if (c.thrown && !this.view.swinging) this.hooks.carryDone?.();
-      else if (c.stone.visible) { // turn it, then rest its lowest point on the palm
+      else if (c.stone.visible) { // turn it to look at it from another side
         c.spin += (c.spinTo - c.spin) * (1 - Math.exp(-dt * 8));
         c.stone.quaternion.copy(c.body.mesh.quaternion).premultiply(_q.setFromAxisAngle(_v.set(0.3, 1, 0.2).normalize(), c.spin));
-        let low = 0;
-        for (const h of c.body.shard.hull) low = Math.min(low, _v.copy(h).applyQuaternion(c.stone.quaternion).y);
-        c.stone.position.set(0, -low * c.k + 0.012, -0.01);
       }
+      // it follows the view a little late, then catches up
+      const k = 1 - Math.exp(-dt * 9), tr = this.trail;
+      let dy = player.yaw - tr.yaw;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      tr.yaw += dy * k; tr.pitch += (player.pitch - tr.pitch) * k;
+      const ly = Math.max(-0.5, Math.min(0.5, Math.atan2(Math.sin(tr.yaw - player.yaw), Math.cos(tr.yaw - player.yaw))));
+      const lp = Math.max(-0.4, Math.min(0.4, tr.pitch - player.pitch));
+      _q.setFromEuler(new THREE.Euler(lp, ly, 0, 'YXZ'));
+      const h = this.view.holder;
+      h.position.applyQuaternion(_q); h.quaternion.premultiply(_q);
     }
-    this.poseArm();
     if (!this.light.off) {
       // the flame sits ahead and to the right of the eyes
       const r = new THREE.Vector3(0.45, 0.05, -0.6).applyQuaternion(camera.quaternion);
       this.light.x = camera.position.x + r.x; this.light.y = camera.position.y + r.y; this.light.z = camera.position.z + r.z;
     }
-  }
-
-  // forearm from the wrist of the hand in view back to the elbow
-  poseArm() {
-    const on = !!this.wrist && this.view.visible;
-    this.view.extra.visible = on;
-    if (!on) return;
-    const h = this.view.holder;
-    h.updateMatrixWorld(true);
-    const w = h.localToWorld(this.wrist.clone()), d = ELBOW.clone().sub(w), len = d.length();
-    _q.setFromUnitVectors(_v.set(0, 1, 0), d.divideScalar(len));
-    const s = h.scale.x;
-    this.forearm.position.copy(w); this.forearm.quaternion.copy(_q); this.forearm.scale.set(s, len, s);
-    this.band.position.copy(w).addScaledVector(d, 0.03 * s); this.band.quaternion.copy(_q); this.band.scale.setScalar(s);
   }
 
   // ---------------------------------------------------------------- the blow
@@ -280,7 +254,7 @@ export class Hands {
     if (v.t >= LOCK) sw.locked = true;
   }
 
-  // turn the strike key about the fist so the point lands on th (held space)
+  // turn the strike key about the grip so the point lands on th (held space)
   solveStrike(th) {
     const base = PICKAXE.keys, keys = this.view.anim.keys, s = PICKAXE.scale, pv = PICKAXE.pivot;
     const G0 = new THREE.Vector3(...base[3].p).add(pv.clone().multiplyScalar(s).applyQuaternion(base[3].q));

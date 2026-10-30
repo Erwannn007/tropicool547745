@@ -103,6 +103,23 @@ vec3 pointLights(vec3 wpos, vec3 n) {
 vec3 lightAt(vec3 n, float wrap, float shadow, vec3 wpos) {
   return lightDiffuse(n, wrap, shadow) + pointLights(wpos, n);
 }
+// Varnished wood: what the surface mirrors (sky by bands, the horizon bright,
+// a thatched roof overhead when roof > 0), rippled by the grain of the texture
+// (tex), stronger at grazing angles, plus a hard banded sun glint.
+vec3 varnish(vec3 col, vec3 tex, vec3 n, vec3 V, float shadow, float gloss, float roof) {
+  vec3 R = reflect(-V, n);
+  R.xz += (dot(tex, vec3(0.33)) - 0.4) * 1.1;
+  R.y += (dot(tex, vec3(0.33)) - 0.4) * 0.5;
+  float up = R.y;
+  vec3 sky = up > 0.4 ? uSkyAmb * 1.3 : up > 0.14 ? mix(uSkyAmb, uFogColor, 0.6) * 1.2 : up > -0.06 ? uFogColor * 1.2 : uGroundAmb * 0.75;
+  // under a roof: the bright opening all round, warm straw overhead
+  if (up > 0.16) sky = mix(sky, (up > 0.5 ? vec3(0.62, 0.48, 0.3) : vec3(0.9, 0.93, 1.0)) * (uSkyAmb * 0.6 + 0.45), roof);
+  float fres = 0.12 + roof * 0.16 + 0.7 * pow(1.0 - max(dot(n, V), 0.0), 2.5);
+  fres = floor(fres * 4.0 + 0.5) / 4.0;
+  col = mix(col, sky * (0.6 + 0.4 * shadow), fres * gloss);
+  float sp = pow(max(dot(reflect(-uSunDir, n), V), 0.0), 36.0);
+  return col + gloss * (step(0.55, sp) * 0.7 + step(0.2, sp) * 0.16) * uSunColor * shadow * (1.0 - roof * 0.85);
+}
 `;
 
 export function makeMaterial({ uniforms = {}, vertex, fragment, ...rest }) {
