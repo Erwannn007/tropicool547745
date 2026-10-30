@@ -228,6 +228,7 @@ export class Building {
     p.check = (def.check || def.boxes).map((b) => worldBox(b, x, y, z, yaw, 0.12));
     p.ray = [...p.boxes, ...(def.ray || []).map((b) => ({ ...worldBox(b, x, y, z, yaw), piece: p }))];
     if (p.open) p.boxes[0].off = true; // an open door lets you through
+    if (type === 'gate') this.leaf(p);
     this.batches[type].add(p, this.matrix(p));
     if (p.posts) { // legs of a raised floor
       p.legs = dress(floorPosts(p.posts), 'world');
@@ -255,6 +256,13 @@ export class Building {
     const m = _m.compose(_p.set(p.x, p.y + lift, p.z), _q.setFromAxisAngle(_Y, p.yaw), _s.set(s, s, s)).clone();
     if (p.type === 'gate') m.multiply(_g.makeTranslation(-GATE_W / 2, 0, 0)).multiply(_r.makeRotationY(p.ang)); // about its hinge
     return m;
+  }
+
+  // what the aim and the tools meet of a door: its leaf, wherever it has swung
+  leaf(p) {
+    const c = Math.cos(p.yaw), s = Math.sin(p.yaw), h = -GATE_W / 2;
+    const lx = h + Math.cos(p.ang) * GATE_W / 2, lz = -Math.sin(p.ang) * GATE_W / 2; // middle of the leaf, in the doorway's frame
+    p.ray = [{ ...worldBox([0, 0, GATE_W / 2, 0.07, 0.02, 1.96], p.x + lx * c + lz * s, p.y, p.z - lx * s + lz * c, p.yaw + p.ang), piece: p }];
   }
 
   // open or shut a door, swinging away from whoever pushes it
@@ -451,7 +459,11 @@ export class Building {
 
   showGhost(id, t, dt) {
     if (this.ghost && this.ghost !== this.ghosts[id]) this.ghost.visible = false;
-    if (!this.ghosts[id]) { const g = dress(MODELS[id](), 'ghost'); g.traverse((m) => { m.renderOrder = 8; }); this.scene.add(g); this.ghosts[id] = g; }
+    if (!this.ghosts[id]) {
+      const g = new THREE.Group(), inner = dress(MODELS[id](), 'ghost');
+      if (id === 'gate') inner.position.x = -GATE_W / 2; // hung on its hinge, as in matrix()
+      g.add(inner); g.traverse((m) => { m.renderOrder = 8; }); this.scene.add(g); this.ghosts[id] = g;
+    }
     const g = this.ghost = this.ghosts[id];
     if (!t) { g.visible = false; if (this.ghostPosts) this.ghostPosts.visible = false; return; }
     // the hologram glides onto its spot (and jumps when it is far)
@@ -541,6 +553,7 @@ export class Building {
       if (p.open && !p.hit && Math.abs(p.ang) > Math.abs(target)) { p.hit = true; this.hooks.sound?.('doorStop'); }
       if (Math.abs(p.ang - target) < 0.003 && Math.abs(p.v) < 0.02) { p.ang = target; p.v = 0; p.hit = false; this.swinging.delete(p); p.boxes[0].off = !!p.open; }
       this.batches.gate.set(p, this.matrix(p));
+      this.leaf(p);
     }
     // a piece set down lands with a little drop and squash
     this.popping = this.popping.filter((e) => {
