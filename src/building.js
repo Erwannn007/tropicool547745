@@ -48,6 +48,7 @@ export const isPiece = (id) => !!PIECES[id];
 // sockets: where a new piece of one of `types` goes relative to a piece
 const WALLS = ['wall', 'door', 'window'], BLOCKS = ['block:wood', 'block:stone'], FLOORS = ['floor', 'flatroof'];
 const S = (types, x, y, z, yaw = 0) => ({ types, x, y, z, yaw });
+const RIDGE = 1.17; // the top of a roof panel's high edge over its level
 const SOCKETS = {
   floor: [
     S(FLOORS, 2, 0, 0), S(FLOORS, -2, 0, 0), S(FLOORS, 0, 0, 2), S(FLOORS, 0, 0, -2),
@@ -64,14 +65,20 @@ const SOCKETS = {
     S(['gable'], 0, H, 0, 0), S(['gable'], 0, H, 0, 2 * Q), // which way it rises: to fit the roof above (gableFit)
   ],
   block: [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].map(([x, y, z]) => S(BLOCKS, x, y, z)),
-  roof: [S(['roof'], 2, 0, 0), S(['roof'], -2, 0, 0), S(['roof'], 0, 1, -2, 0), S(['roof'], 0, 0, -2, 2 * Q)], // along, up the slope, ridge
+  roof: [
+    S(['roof'], 2, 0, 0), S(['roof'], -2, 0, 0), S(['roof'], 0, 1, -2, 0), S(['roof'], 0, 0, -2, 2 * Q), // along, up the slope, ridge
+    S(['flatroof'], 0, RIDGE, -2), // a flat roof closing the top between slopes, flush with the thatch
+  ],
   roofcorner: [S(['roof'], -2, 0, 0, 0), S(['roof'], 0, 0, -2, Q)], // on along either eave
   gable: [],
   gablewall: [],
   stairs: [S(FLOORS, 0, H, -2), S(['stairs'], 0, H, -2), S(['floor'], 0, 0, 2), S(WALLS, 1, 0, 0, Q), S(WALLS, -1, 0, 0, Q)],
 };
 SOCKETS.door = SOCKETS.window = SOCKETS.wall;
-SOCKETS.flatroof = SOCKETS.floor;
+SOCKETS.flatroof = [
+  ...SOCKETS.floor,
+  S(['roof'], 0, -RIDGE, 2, 0), S(['roof'], 2, -RIDGE, 0, Q), S(['roof'], 0, -RIDGE, -2, 2 * Q), S(['roof'], -2, -RIDGE, 0, -Q), // slopes down from its edges
+];
 SOCKETS['block:wood'] = SOCKETS['block:stone'] = SOCKETS.block;
 
 const angDiff = (a, b) => { const d = ((a - b) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI; return Math.abs(d); };
@@ -341,8 +348,13 @@ export class Building {
       if (spot) d = m.distanceTo(spot);
       else { m.sub(cam); const along = m.dot(dir); if (along < 0.5 || along > REACH + 1.5) continue; d = m.addScaledVector(dir, -along).length(); }
       if (d > (spot ? 1.9 : 1.3)) continue;
-      cands.push({ x, y, z, yaw, score: d + (def.facing ? angDiff(yaw, want) / Math.PI * 0.9 : 0) + (id === 'gable' ? this.gableFit(x, y, z, yaw) : 0) });
+      cands.push({ x, y, z, yaw, turn: def.facing ? angDiff(yaw, want) / Math.PI * 0.9 : 0, score: d + (id === 'gable' ? this.gableFit(x, y, z, yaw) : 0) + (id === 'flatroof' && p.type === 'roof' ? -0.3 : 0) }); // between slopes, the top is what is missing
     }
+    // which way it faces only chooses between the candidates on one same spot
+    // (a roof next to a roof keeps its way, whichever side you look from)
+    const least = new Map(), spotKey = (c) => `${c.x.toFixed(1)},${c.y.toFixed(1)},${c.z.toFixed(1)}`;
+    for (const c of cands) least.set(spotKey(c), Math.min(least.get(spotKey(c)) ?? 9, c.turn));
+    for (const c of cands) c.score += c.turn - least.get(spotKey(c));
     cands.sort((a, b) => a.score - b.score);
     let t = null;
     for (const c of cands.slice(0, 8)) { // the best one that fits, else the best one (in red)
@@ -385,9 +397,10 @@ export class Building {
   roofOver(x, z) {
     let best = null;
     for (const p of this.piecesNear(x, z, 1)) {
-      if (p.type !== 'roof' && p.type !== 'roofcorner') continue;
+      if (p.type !== 'roof' && p.type !== 'roofcorner' && p.type !== 'flatroof') continue;
       const dx = x - p.x, dz = z - p.z, c = Math.cos(p.yaw), s = Math.sin(p.yaw);
       const lx = dx * c - dz * s, lz = dx * s + dz * c;
+      if (p.type === 'flatroof') { if (Math.abs(lx) <= 1.12 && Math.abs(lz) <= 1.12 && (best == null || p.y - 0.16 > best)) best = p.y - 0.16; continue; }
       if (Math.abs(lx) > 1.25 || lz < -1.1 || lz > 1.4 || (p.type === 'roofcorner' && lx < -1.1)) continue;
       const y = p.y + 0.512 - 0.5 * (p.type === 'roof' ? lz : Math.max(lx, lz));
       if (best == null || y > best) best = y;
