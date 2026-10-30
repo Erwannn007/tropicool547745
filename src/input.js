@@ -29,7 +29,8 @@ export class Input {
       if (e.code === 'KeyF') this.pressed.add('action');
       if (e.code === 'KeyR') this.pressed.add('rotate');
       if (e.code === 'KeyG') this.pressed.add('grab');   // pick up / let go of a loose piece
-      if (e.code === 'KeyV') this.pressed.add('stash');  // put the piece in hand into the bag
+      if (e.code === 'KeyV') this.pressed.add('stash');  // put the piece in hand (or aimed at) into the bag
+      if (e.code === 'KeyQ') this.pressed.add('drop');   // A on an AZERTY keyboard (Q on QWERTY): set one item down
       if (e.code === 'KeyE' || e.code === 'KeyI') this.pressed.add('inventory');
       if (/^Digit[1-9]$/.test(e.code)) this.pressed.add('slot' + e.code.slice(5));
       if (e.code === 'Escape' || e.code === 'Tab' || e.code === 'KeyM') { this.pressed.add('menu'); e.preventDefault(); }
@@ -140,7 +141,7 @@ export class Input {
     if (edge(5)) this.pressed.add('next');
     if (edge(9) || edge(8)) this.pressed.add('menu');
     if (edge(12)) this.pressed.add('up');
-    if (edge(13)) this.pressed.add('down');
+    if (edge(13)) this.pressed.add('down'), this.pressed.add('drop');
     if (edge(14)) this.pressed.add('left');
     if (edge(15)) this.pressed.add('right');
     if (edge(3)) this.pressed.add('inventory');
@@ -176,7 +177,7 @@ export class Input {
     let x = 0, y = 0;
     if (this.keys.has('KeyW') || this.keys.has('ArrowUp') || this.keys.has('KeyZ')) y -= 1;
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) y += 1;
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft') || this.keys.has('KeyQ')) x -= 1;
+    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) x -= 1; // (key codes are positions: KeyA is Q on AZERTY)
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) x += 1;
     x += this.stick.x + pad.x;
     y += this.stick.y + pad.y;

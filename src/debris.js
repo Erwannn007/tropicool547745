@@ -9,7 +9,8 @@
 // the bag: picking up and storing are separate actions.
 import * as THREE from 'three';
 import { mulberry32 } from './noise.js';
-import { MODELS } from './models.js';
+import { MODELS, fishModelFor } from './models.js';
+import { itemDef } from './items.js';
 import { dress } from './dress.js';
 import { cutBlock, platePlanes } from './vegetation.js';
 
@@ -64,9 +65,10 @@ function hullOf(P) {
 // shape of a modelled item lying in the world (log, coconut): its parts
 // merged for the hull, centred on its middle
 const itemShapes = new Map();
+export const hasModel = (kind) => !!MODELS[kind] || !!kind?.startsWith('fish:');
 function itemShape(kind) {
   if (!itemShapes.has(kind)) {
-    const model = MODELS[kind]();
+    const model = MODELS[kind] ? MODELS[kind]() : fishModelFor(kind, itemDef(kind).fish.c);
     const box = new THREE.Box3();
     for (const p of model.parts) { p.geo.computeBoundingBox(); box.union(p.geo.boundingBox); }
     const centre = box.getCenter(new THREE.Vector3());
@@ -113,7 +115,9 @@ export class Debris {
     mesh.add(inner);
     mesh.quaternion.copy(quat);
     const mats = { base: inner.children.map((m) => m.material), hi: hiG.children.map((m) => m.material) };
-    return this.add(mesh, sh, 1, pos, vel, spin, kind, value, mats);
+    const b = this.add(mesh, sh, 1, pos, vel, spin, kind, value, mats);
+    b.kept = true;
+    return b;
   }
 
   add(mesh, sh, s, pos, vel, spin, kind, value, mats) {
@@ -129,9 +133,10 @@ export class Debris {
     return b;
   }
 
-  // too many pieces around: the oldest (sleeping, far away first) crumble
+  // too many shards around: the oldest (sleeping, far away first) crumble.
+  // Things the player dropped and the logs of felled trees are kept.
   trim() {
-    const free = this.bodies.filter((b) => b !== this.carried && !b.fade);
+    const free = this.bodies.filter((b) => b !== this.carried && !b.fade && !b.kept);
     if (free.length <= MAX_BODIES) return;
     const cam = this.player?.pos;
     free.sort((a, b) => (a.sleeping === b.sleeping ? 0 : a.sleeping ? -1 : 1) || (cam ? b.mesh.position.distanceToSquared(cam) - a.mesh.position.distanceToSquared(cam) : 0) || a.id - b.id);
@@ -429,9 +434,35 @@ export class Debris {
   // the piece in hand goes into the bag (the caller adds it to the inventory)
   stash() {
     const b = this.carried; if (!b) return null;
-    b.mesh.removeFromParent();
-    this.bodies.splice(this.bodies.indexOf(b), 1);
     this.carried = null;
+    return this.take(b);
+  }
+  // a piece lying in the world goes straight into the bag (caller adds it)
+  take(b) {
+    b.mesh.removeFromParent();
+    this.unflatten(b);
+    const i = this.bodies.indexOf(b);
+    if (i >= 0) this.bodies.splice(i, 1);
+    if (this.aimed === b) this.aimed = null;
+    return b;
+  }
+
+  // one item from the bag set down in front of the player, a little to the
+  // right, tossed gently forward: a stone becomes a shard, anything else its
+  // own model. It then lies there like any other piece.
+  dropItem(kind, camera, playerVel) {
+    const o = camera.position, f = camera.getWorldDirection(new THREE.Vector3());
+    const right = new THREE.Vector3(-f.z, 0, f.x).normalize();
+    const at = o.clone().addScaledVector(f, 0.8).addScaledVector(right, 0.2);
+    at.y -= 0.3;
+    if (this.lineClear && !this.lineClear(o, at)) at.copy(o).addScaledVector(f, 0.25).setY(o.y - 0.3);
+    const vel = new THREE.Vector3(f.x * 1.6 + playerVel.x, 0.8, f.z * 1.6 + playerVel.z);
+    const spin = new THREE.Vector3((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4);
+    const b = kind === 'stone'
+      ? this.spawn(at, 0.09, vel, spin, { kind })
+      : this.spawnItem(kind, at, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.atan2(-f.x, -f.z) + 1.2, 0)), vel, spin);
+    b.mesh.position.y = Math.max(b.mesh.position.y, this.ground(at.x, at.z, o.y) + b.r);
+    b.kept = true;
     return b;
   }
 }

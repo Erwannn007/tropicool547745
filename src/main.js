@@ -21,7 +21,7 @@ import { Lights } from './lights.js';
 import { Hands } from './hands.js';
 import { Mower } from './scythe.js';
 import { Quarry } from './pickaxe.js';
-import { Debris } from './debris.js';
+import { Debris, hasModel } from './debris.js';
 import { WaterFX } from './splash.js';
 import { Placement, PLACEABLE } from './placement.js';
 import { initIcons } from './icons.js';
@@ -262,6 +262,20 @@ function letGo(how) {
   } else if (how === 'throw') { debris.throw(camera, player.vel); audio.sfx('toss'); } else { debris.drop(camera, player.vel); }
   endCarry();
 }
+// V on a piece lying in the world: straight into the bag
+function stashPiece(b) {
+  if (inventory.add(b.kind, b.value)) { toast('Inventaire plein'); audio.sfx('deny'); return; }
+  debris.take(b);
+  toast(`+${b.value} ${itemDef(b.kind).name}`); audio.sfx('pickup');
+}
+// A: one of the selected item set down in the world, as a real piece
+function dropHeld() {
+  const id = inventory.held?.id;
+  if (!id || !hasModel(id)) return;
+  inventory.take(id, 1);
+  debris.dropItem(id, camera, player.vel);
+  audio.sfx('toss');
+}
 function endCarry() {
   hands.endCarry();
   onHeldChange(inventory.held);
@@ -270,9 +284,9 @@ function endCarry() {
 // over the thing itself (or above the bar while carrying), with the keys of
 // the device in use
 const KEYS = {
-  keyboard: { use: 'Clic', grab: 'G', stash: 'V', turn: 'R' },
-  gamepad: { use: '□', grab: '○', stash: 'R3', turn: '◀ ▶' },
-  touch: { use: '●', grab: '✋', stash: '🎒', turn: '' },
+  keyboard: { use: 'Clic', grab: 'G', stash: 'V', turn: 'R', drop: 'A' },
+  gamepad: { use: '□', grab: '○', stash: 'R3', turn: '◀ ▶', drop: '▼' },
+  touch: { use: '●', grab: '✋', stash: '🎒', turn: '', drop: '⤓' },
 };
 const kb = (k) => (k ? `<kbd>${k}</kbd>` : '');
 let promptHtml = '', promptAcc = 0, promptTarget = null;
@@ -288,7 +302,7 @@ function promptHud(dt) {
       promptTarget = { html: `${kb(K.use)} Lancer ${kb(K.grab)} Lâcher ${kb(K.stash)} Ranger${K.turn ? ` ${kb(K.turn)} Tourner` : ''}`, bottom: true };
     } else if (debris.aimed) {
       const b = debris.aimed;
-      promptTarget = { html: `<div class="pname">${itemDef(b.kind).name}</div>${kb(K.grab)} Prendre`, at: () => _anchor.copy(b.mesh.position).setY(b.mesh.position.y + b.r + 0.12) };
+      promptTarget = { html: `<div class="pname">${itemDef(b.kind).name}</div>${kb(K.grab)} Prendre ${kb(K.stash)} Ranger`, at: () => _anchor.copy(b.mesh.position).setY(b.mesh.position.y + b.r + 0.12) };
     } else if (held === 'pickaxe') {
       const a = quarry.aim();
       if (a?.kind === 'stone') promptTarget = { html: `<div class="pname">Pierre</div>${kb(K.use)} Miner`, at: () => _anchor.set(a.prop.x, a.prop.y + 0.75 * a.prop.s, a.prop.z) };
@@ -301,6 +315,10 @@ function promptHud(dt) {
       const c = aimedChest();
       if (c) promptTarget = { html: `<div class="pname">Coffre</div>${kb(K.use)} Ouvrir`, at: () => _anchor.set(c.x, (c.y ?? camera.position.y - 1) + 0.9, c.z) };
     }
+    // an item in hand that is not a tool: how to set it down
+    if (!promptTarget && state === 'play' && !carrying && held && hasModel(held) && !TOOLS_IN_HAND.has(held) && !PLACEABLE[held]) {
+      promptTarget = { html: `${kb(K.drop)} Déposer`, bottom: true };
+    }
   }
   const t = promptTarget;
   if (!t) { if (promptHtml) { el.classList.add('hidden'); promptHtml = ''; } return; }
@@ -312,16 +330,19 @@ function promptHud(dt) {
   el.style.left = `${Math.round((v.x * 0.5 + 0.5) * innerWidth)}px`;
   el.style.top = `${Math.round((-v.y * 0.5 + 0.5) * innerHeight)}px`;
 }
+const TOOLS_IN_HAND = new Set(['rod', 'axe', 'scythe', 'pickaxe', 'book', 'torch']);
 let grabUi = '';
 function grabHud() {
   const carrying = !!hands.carried, piece = !carrying && state === 'play' ? debris.aimed : null;
-  const ui = carrying ? 'carry' : piece ? 'grab' : '';
+  const held = inventory.held?.id;
+  const canDrop = !carrying && !piece && held && hasModel(held) && !TOOLS_IN_HAND.has(held) && !PLACEABLE[held];
+  const ui = carrying ? 'carry' : piece ? 'grab' : canDrop ? 'drop' : '';
   if (ui === grabUi) return;
   grabUi = ui;
-  $('#crosshair').className = ui;
+  $('#crosshair').className = ui === 'drop' ? '' : ui;
   $('#btn-grab').classList.toggle('hidden', !ui);
-  $('#btn-grab').textContent = carrying ? '⤓' : '✋';
-  $('#btn-stash').classList.toggle('hidden', !carrying);
+  $('#btn-grab').textContent = ui === 'grab' ? '✋' : '⤓';
+  $('#btn-stash').classList.toggle('hidden', !carrying && !piece);
 }
 
 const inventory = new Inventory({ sound: (n) => audio.sfx(n), toast, onChange: onHeldChange });
@@ -597,7 +618,7 @@ $('#start-settings').onclick = () => startGame(true);
 const tbtn = (id, fn) => $(id).addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
 tbtn('#btn-fish', () => input.pressed.add('action'));
 tbtn('#btn-jump', () => input.pressed.add('jump'));
-tbtn('#btn-grab', () => input.pressed.add('grab'));
+tbtn('#btn-grab', () => input.pressed.add(grabUi === 'drop' ? 'drop' : 'grab'));
 tbtn('#btn-stash', () => input.pressed.add('stash'));
 tbtn('#btn-menu', () => openMenu('world'));
 tbtn('#btn-inv', () => openInventory());
@@ -607,10 +628,10 @@ function updateHint(show) {
   const dev = input.lastDevice;
   document.body.classList.toggle('touch', isTouch && dev === 'touch');
   const txt = dev === 'gamepad'
-    ? 'Stick G : marcher · Stick D : regarder · ✕ : sauter · □ / R2 : utiliser / poser / lancer · ○ : saisir / lâcher une pierre · R3 : la ranger · ◀ ▶ : tourner l’objet · L1/R1 : objet · △ : inventaire · Options : menu'
+    ? 'Stick G : marcher · Stick D : regarder · ✕ : sauter · □ / R2 : utiliser / poser / lancer · ○ : saisir / lâcher un objet · R3 : le ranger · ▼ : déposer l’objet tenu · ◀ ▶ : tourner l’objet · L1/R1 : objet · △ : inventaire · Options : menu'
     : dev === 'touch'
-      ? 'Glisse à gauche pour marcher · à droite pour regarder · bouton rond : utiliser / poser / lancer · ✋ saisir / lâcher une pierre · 🎒 inventaire et fabrication'
-      : 'ZQSD / WASD : marcher · Souris : regarder · Espace : sauter · Clic / F : utiliser / poser / lancer · G / clic droit : saisir / lâcher une pierre · V : la ranger · R : tourner l’objet · 1-9 / molette : objet · E : inventaire · Échap : menu';
+      ? 'Glisse à gauche pour marcher · à droite pour regarder · bouton rond : utiliser / poser / lancer · ✋ saisir / lâcher un objet · ⤓ déposer · 🎒 inventaire et fabrication'
+      : 'ZQSD / WASD : marcher · Souris : regarder · Espace : sauter · Clic / F : utiliser / poser / lancer · G / clic droit : saisir / lâcher un objet · V : le ranger · A : déposer l’objet tenu · R : tourner l’objet · 1-9 / molette : objet · E : inventaire · Échap : menu';
   $('#hint').textContent = txt;
   $('#inv-help').textContent = dev === 'gamepad'
     ? '✕ prendre / poser · □ prendre la moitié / poser 1 · R1 transfert rapide · △ / ○ fermer'
@@ -723,6 +744,8 @@ function frame() {
     else if (turn) placement.rotOffset += (p.has('left') ? -1 : 1) * Math.PI / 4;
     if (p.has('grab')) { if (debris.carried) letGo('drop'); else if (piece) grabPiece(piece); }
     if (p.has('stash') && debris.carried) letGo('stash');
+    else if (p.has('stash') && piece) stashPiece(piece);
+    if (p.has('drop')) { if (debris.carried) letGo('drop'); else dropHeld(); }
     const chest = p.has('action') && heldId !== 'axe' && !carrying ? aimedChest() : null;
     if (chest) openChest(chest);
     else if (p.has('action') && carrying) letGo('throw');
