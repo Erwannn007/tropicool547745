@@ -161,6 +161,8 @@ export class Quarry {
       const hit = this.ray.intersectObject(b.mesh, false)[0];
       if (hit) take('build', hit.distance, hit.point, hit.face.normal.clone().transformDirection(b.mesh.matrixWorld));
     }
+    const built = builds && this.building?.ray(o, dir, max); // what the player built (building.js)
+    if (built) take('build', built.dist, built.point, built.normal, { mat: built.mat, piece: built.piece });
     // the ground (terrain or pier/hut floors): march, then refine
     const step = 0.06, P = new THREE.Vector3();
     const under = (t) => { P.copy(o).addScaledVector(dir, t); return P.y < this.player.groundAt(P.x, P.z, P.y + 0.05); };
@@ -247,12 +249,13 @@ export class Quarry {
       this.impact(0.05, 0.35, 60, 0.5, 0.006);
       return 0.6;
     }
-    if (c.kind === 'build') { // hut or pier wood: it does not break, the tool knocks back off it
-      const up = at.clone().addScaledVector(n, 0.04);
-      for (let k = 0; k < 10; k++) this.chip(up, n, 1.1, pick(WOOD));
-      this.hooks.sound?.('clack');
-      this.impact(0.05, 0.35, 60, 0.6, 0.006);
-      return 0.6;
+    if (c.kind === 'build') { // hut, pier, what was built: it does not break, the tool knocks back off it
+      const up = at.clone().addScaledVector(n, 0.04), stone = c.mat === 'stone';
+      for (let k = 0; k < 10; k++) this.chip(up, n, 1.1, pick(stone ? GREYS : c.mat === 'thatch' ? SAND : WOOD));
+      if (stone) this.spray(at, n, dir, 8, 2);
+      this.hooks.sound?.(stone ? 'clank' : 'clack');
+      this.impact(0.05, stone ? 0.5 : 0.35, 60, stone ? 0.8 : 0.6, 0.006);
+      return stone ? 0.9 : 0.6;
     }
     // the point bites into the ground
     const w = this.world, gi = Math.floor((at.z + w.size / 2) / w.size * w.N) * w.N + Math.floor((at.x + w.size / 2) / w.size * w.N);

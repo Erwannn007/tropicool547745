@@ -26,6 +26,8 @@ import { WaterFX } from './splash.js';
 import { Placement, PLACEABLE } from './placement.js';
 import { initIcons } from './icons.js';
 import { Book } from './book.js';
+import { Cooking, cookStage, cookedId, COOK } from './cooking.js';
+import { Building, PIECES, isPiece } from './building.js';
 
 const $ = (s) => document.querySelector(s);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -188,12 +190,33 @@ const quarry = new Quarry(scene, camera, {
 const placement = new Placement(scene, camera, lights, {
   sound: (n) => audio.sfx(n), message: toast,
   flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
+  spawned: (o) => cooking.attach(o), disposed: (o) => cooking.detach(o),
 });
+// a fish grilling on a camp fire
+const cooking = new Cooking(scene, camera, {
+  sound: (n) => audio.sfx(n),
+  sizzle: (k, burning) => audio.setSizzle(k, burning),
+  save: () => placement.save(),
+  ready: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast('🔥 Ton poisson est grillé !'); },
+  burnt: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast('Ça sent le brûlé… 💨'); },
+});
+// blocks, floors, walls, roofs, stairs
+const building = new Building(scene, camera, {
+  sound: (n) => audio.sfx(n), message: toast, rumble: (s, ms) => input.rumble(s, ms),
+  flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
+  removed: (p) => { for (const b of debris.bodies) if (Math.hypot(b.mesh.position.x - p.x, b.mesh.position.z - p.z) < 3) debris.wake(b); }, // what lay on it falls
+});
+quarry.building = building;
 const hands = new Hands(lights, {
   sound: (n) => audio.sfx(n),
   aim: (reach) => quarry.aim(reach),
   cast: (o, dir, max) => quarry.cast(o, dir, max),
   hit: (c, dir) => quarry.hit(c, dir),
+  rumble: (s, ms) => input.rumble(s, ms),
+  ate: (id) => {
+    inventory.take(id, 1);
+    if (itemDef(id).eat === 'burnt') { audio.sfx('cough'); toast('Beurk… c’était carbonisé 😖'); } else { audio.sfx('yum'); toast('Miam ! 😋'); }
+  },
   mow: (x, z, fx, fz, y) => {
     const r = mower.mow(x, z, fx, fz, y);
     if (r.mowed || r.fibres) audio.sfx('mow');
@@ -209,16 +232,38 @@ function giveItems(list) {
   }
   if (got.length) { toast(got.join(' · ')); audio.sfx('pickup'); }
 }
-// take a placed object back (axe blow or empty hand)
+// take a placed object or a built piece back (axe blow or empty hand)
 function pickPlaced() {
   const o = placement.aimed();
-  if (!o) return false;
+  if (!o) {
+    const p = building.aimed();
+    if (!p) return false;
+    giveItems([[building.remove(p), 1]]);
+    return true;
+  }
   if (o.items?.some(Boolean)) { toast('Vide le coffre avant de le reprendre'); audio.sfx('deny'); return true; }
+  const fish = o.cook ? cooking.take(o) : null; // the fish on the spit comes with it
   const id = placement.pickUp(o);
   audio.sfx('place');
-  giveItems([[id, 1]]);
+  giveItems(fish ? [[id, 1], [fish, 1]] : [[id, 1]]);
   return true;
 }
+// camp fire under the crosshair, and what can be done there with what is in hand
+function aimedFire() { const o = placement.aimed(); return o?.id === 'campfire' ? o : null; }
+const isRawFish = (id) => !!id?.startsWith('fish:');
+function useFire(o, held) {
+  if (o.cook) {
+    const id = cooking.take(o);
+    giveItems([[id, 1]]);
+    if (id.startsWith('fish:')) toast('Pas encore cuit : il est revenu cru');
+    return true;
+  }
+  if (!isRawFish(held)) return false;
+  inventory.take(held, 1);
+  cooking.start(o, held);
+  return true;
+}
+const COOK_STATE = ['Cru', 'Ça grésille…', 'Grillé, prêt !', 'Carbonisé'];
 axe.hooks.hitPlaced = pickPlaced;
 
 // chest: open it next to the bag, lid swings up
@@ -245,7 +290,7 @@ function onHeldChange(held) {
   fishing.setEquipped(!busy && id === 'rod');
   axe.setEquipped(!busy && id === 'axe');
   hands.setHeld(id);
-  $('#btn-fish').textContent = busy ? '➶' : ACTION_ICON[id] || '✋';
+  $('#btn-fish').textContent = busy ? '➶' : ACTION_ICON[id] || (isPiece(id) ? '🔨' : itemDef(id ?? '').eat ? '🍽️' : '✋');
 }
 
 // ---- a piece of stone in the hand: pick up, drop, throw, put in the bag
@@ -313,7 +358,21 @@ function promptHud(dt) {
     } else if (held === 'axe') {
       const t = axe.target();
       if (t) promptTarget = { html: `<div class="pname">${t.type === 'palms' ? 'Palmier' : 'Arbre'}</div>${kb(K.use)} Abattre`, at: () => _anchor.set(t.x, Math.min(camera.position.y + 0.5, t.y + 2.2), t.z) };
+    } else if (isPiece(held)) {
+      promptTarget = { html: `<div class="pname">${itemDef(held).name}</div>${kb(K.use)} Poser${K.turn ? ` ${kb(K.turn)} Tourner` : ''}`, bottom: true };
     }
+    const fire = !promptTarget && state === 'play' && !carrying && held !== 'axe' ? aimedFire() : null;
+    if (fire?.cook) {
+      const st = cookStage(fire.cook.t), pct = Math.min(100, Math.round(fire.cook.t / COOK.done * 100));
+      promptTarget = { html: `<div class="pname">${itemDef(cookedId(fire.cook)).name}</div>${st < 2 ? `Cuisson ${pct} %` : COOK_STATE[st]}<br>${kb(K.use)} Retirer`, at: () => _anchor.set(fire.x, fire.y + 1.15, fire.z) };
+      promptAcc = 0.05;
+    } else if (fire && isRawFish(held)) promptTarget = { html: `<div class="pname">Feu de camp</div>${kb(K.use)} Faire griller`, at: () => _anchor.set(fire.x, fire.y + 1.1, fire.z) };
+    if (!promptTarget && state === 'play' && !carrying && (!held || held === 'axe' || !(TOOLS_IN_HAND.has(held) || PLACEABLE[held]))) {
+      const p = building.aimed();
+      if (p) promptTarget = { html: `<div class="pname">${itemDef(p.type).name}</div>${kb(K.use)} ${held === 'axe' ? 'Démonter' : 'Reprendre'}`, at: () => _anchor.set(p.x, p.y + PIECES[p.type].mid + 0.4, p.z) };
+    }
+    if (!promptTarget && state === 'play' && !carrying && itemDef(held ?? '').eat) promptTarget = { html: `${kb(K.use)} Manger ${kb(K.drop)} Déposer`, bottom: true };
+    else if (!promptTarget && state === 'play' && !carrying && isRawFish(held)) promptTarget = { html: `Grille-le sur un feu de camp ${kb(K.drop)} Déposer`, bottom: true };
     if (!promptTarget && state === 'play' && !carrying && held !== 'axe') {
       const c = aimedChest();
       if (c) promptTarget = { html: `<div class="pname">Coffre</div>${kb(K.use)} Ouvrir`, at: () => _anchor.set(c.x, (c.y ?? camera.position.y - 1) + 0.9, c.z) };
@@ -419,6 +478,7 @@ function buildWorld() {
   fishing.setWorld(world);
   axe.setWorld(world, veg, player);
   mower.setWorld(world, veg);
+  building.setWorld(world, player); // (flattens the grass under what was built)
   debris.setWorld(world, veg, player);
   waterFx.clear();
   if (hands.carried) hands.endCarry();
@@ -429,7 +489,7 @@ function buildWorld() {
   day.shadowDir.copy(globals.uSunDir.value);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights };
+  window.__game = { player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights, building, cooking };
   console.log(`[tropicool] world ${settings.world.seed} (${world.cfg.seed}) built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
     bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length, stones: world.props.stones.length,
@@ -706,7 +766,7 @@ function hudTick(dt) {
     if (lastPeriod && state === 'play') { const c = $('#clock'); c.classList.remove('change'); void c.offsetWidth; c.classList.add('change'); }
     lastPeriod = name;
   }
-  const t = placement.target;
+  const t = placement.target || building.target;
   $('#place-tip').textContent = state === 'play' && t && !t.ok ? t.why : '';
   audio.setRain(day.rain * 0.9);
   audio.setNight(globals.uNight.value);
@@ -718,7 +778,7 @@ function hudTick(dt) {
   hudAcc = 0;
 }
 
-const clock = new THREE.Clock();
+const clock = new THREE.Clock(), _px = new THREE.Vector2();
 let fpsAcc = 0, fpsFrames = 0, slowAcc = 0, fastAcc = 0;
 function frame() {
   requestAnimationFrame(frame);
@@ -744,13 +804,15 @@ function frame() {
     const carrying = !!hands.carried, piece = carrying ? null : debris.aimed;
     const turn = p.has('rotate') || (input.lastDevice === 'gamepad' && (p.has('left') || p.has('right')));
     if (turn && carrying) debris.turn();
-    else if (turn) placement.rotOffset += (p.has('left') ? -1 : 1) * Math.PI / 4;
+    else if (turn) { placement.rotOffset += (p.has('left') ? -1 : 1) * Math.PI / 4; building.rot += (p.has('left') ? -1 : 1) * Math.PI / 2; }
     if (p.has('grab')) { if (debris.carried) letGo('drop'); else if (piece) grabPiece(piece); }
     if (p.has('stash') && debris.carried) letGo('stash');
     else if (p.has('stash') && piece) stashPiece(piece);
     if (p.has('drop')) { if (debris.carried) letGo('drop'); else dropHeld(); }
     const chest = p.has('action') && heldId !== 'axe' && !carrying ? aimedChest() : null;
+    const fire = p.has('action') && heldId !== 'axe' && !carrying && !chest ? aimedFire() : null;
     if (chest) openChest(chest);
+    else if (fire && useFire(fire, heldId)) { /* fish on or off the spit */ }
     else if (p.has('action') && carrying) letGo('throw');
     else if (p.has('action')) {
       if (heldId === 'rod') fishing.action(input);
@@ -758,6 +820,9 @@ function frame() {
       else if (heldId === 'scythe' || heldId === 'pickaxe') hands.action();
       else if (heldId === 'book') openBook();
       else if (PLACEABLE[heldId]) { if (placement.place()) inventory.take(heldId, 1); }
+      else if (isPiece(heldId)) { if (building.place()) inventory.take(heldId, 1); }
+      else if (itemDef(heldId ?? '').eat) hands.eat();
+      else if (isRawFish(heldId) && !piece && !pickPlaced()) toast('Grille-le sur un feu de camp 🔥');
       else if (piece) grabPiece(piece);
       else if (!pickPlaced()) toast('Prends un outil dans ta barre');
     }
@@ -800,6 +865,11 @@ function frame() {
     promptHud(dt);
     placement.aim(state === 'play' && !hands.carried ? inventory.held?.id : null);
     placement.update(dt);
+    building.aim(state === 'play' && !hands.carried ? inventory.held?.id : null, dt);
+    building.update(dt);
+    cooking.update(dt);
+    const px = renderer.getDrawingBufferSize(_px).y * 0.5;
+    building.setScale(px); cooking.setScale(px);
     current.grass.update(camera);
     current.veg.update(camera);
   }

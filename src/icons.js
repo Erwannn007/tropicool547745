@@ -2,9 +2,8 @@
 // target with banded lighting, then given a 1 px dark outline: the same
 // objects as in the world, painted in pixels.
 import * as THREE from 'three';
-import { MODELS, fishModelFor } from './models.js';
+import { itemModel } from './models.js';
 import { dress } from './dress.js';
-import { itemDef } from './items.js';
 
 const S = 30, OUT = 32;
 const light = { value: new THREE.Color(1.06, 1.04, 1.0) };
@@ -14,6 +13,7 @@ const POSE = {
   axe: [0.15, 0.5, -0.72], pickaxe: [0.15, 0.5, -0.72], stone: [0.35, 0.6, 0.1], rod: [0.1, 0.4, -0.7], scythe: [1.45, 0, -0.35, 1.05],
   torch: [0.25, 0.6, -0.62, 1.55, 0.55], transat: [0.5, -2.4, 0], parasol: [0.18, 0.4, 0], campfire: [0.55, 0.4, 0],
   book: [0.25, 0.55, -0.12], chest: [0.42, -0.55, 0], 'wood:palm': [0.45, 0.7, 0.35], 'wood:tree': [0.45, 0.7, 0.35], coconut: [0.3, 0.6, 0], fibre: [0.2, 0.5, -0.6],
+  'block:wood': [0.5, 0.7, 0], 'block:stone': [0.5, 0.7, 0], floor: [0.6, 0.5, 0], wall: [0.35, 0.5, 0], door: [0.3, 0.45, 0], roof: [0.3, 0.7, 0], stairs: [0.25, -0.75, 0],
 };
 let renderer = null, rt, scene, camera;
 const urls = new Map();
@@ -25,18 +25,12 @@ export function initIcons(r) {
   camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 50);
 }
 
-function modelFor(id) {
-  if (MODELS[id]) return MODELS[id]();
-  if (id.startsWith('fish:')) return fishModelFor(id, itemDef(id).fish.c);
-  return null;
-}
-
 function render(id) {
-  const model = modelFor(id);
+  const model = itemModel(id);
   const c = document.createElement('canvas'); c.width = c.height = OUT;
   if (!model || !renderer) return c.toDataURL();
   const g = dress(model, 'icon', light);
-  const pose = POSE[id] || (id.startsWith('fish:') ? [0.2, 0.35, 0.18] : [0.3, 0.6, 0]);
+  const pose = POSE[id] || (/^(fish|grill|burnt):/.test(id) ? [0.2, 0.35, 0.18] : [0.3, 0.6, 0]);
   g.rotation.set(pose[0], pose[1], pose[2], 'ZYX');
   scene.add(g);
   g.updateMatrixWorld(true);

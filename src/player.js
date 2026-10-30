@@ -23,7 +23,10 @@ export class Player {
     if (this.swimming) return 'swim';
     if (this.wading > 0.06) return 'water';
     const w = this.world;
-    if (this.pos.y > w.heightAt(this.pos.x, this.pos.z) + 0.15) return 'wood';
+    if (this.pos.y > w.heightAt(this.pos.x, this.pos.z) + 0.15) { // a deck, a floor or a block
+      const b = this.solids?.near(this.pos.x, this.pos.z).find((q) => Math.abs(q.y1 - this.pos.y) < 0.05 && q.piece.type === 'block:stone');
+      return b ? 'rock' : 'wood';
+    }
     const i = Math.max(0, Math.min(w.N - 1, Math.floor((this.pos.x / w.size + 0.5) * w.N)));
     const j = Math.max(0, Math.min(w.N - 1, Math.floor((this.pos.z / w.size + 0.5) * w.N)));
     if (w.rock[j * w.N + i] > 0.5) return 'rock';
@@ -78,7 +81,30 @@ export class Player {
       const along = dx * s.ax + dz * s.az, across = -dx * s.az + dz * s.ax;
       if (Math.abs(along) <= s.hl && Math.abs(across) <= s.hw && s.y <= currentY + 0.6) g = Math.max(g, s.y);
     }
+    // the tops of built pieces (building.js) within a step
+    if (this.solids) for (const b of this.solids.near(x, z)) {
+      if (b.y1 > currentY + 0.6 || b.y1 <= g) continue;
+      const dx = x - b.x, dz = z - b.z;
+      if (Math.abs(dx * b.ux + dz * b.uz) <= b.hx && Math.abs(dx * b.vx + dz * b.vz) <= b.hz) g = b.y1;
+    }
     return g;
+  }
+
+  // pushed out of the built pieces the body runs into (feet over a step,
+  // head under the top): returns the corrected position
+  bump(nx, nz, r0) {
+    for (let pass = 0; pass < 2; pass++) for (const b of this.solids.near(nx, nz)) {
+      if (b.y1 <= this.pos.y + 0.6 || b.y0 >= this.pos.y + 1.75) continue; // a step up (as in groundAt) or overhead
+      const r = b.y1 - this.pos.y < 0.9 ? 0.15 : r0; // knee high (the next stairs): only the feet meet it
+      const dx = nx - b.x, dz = nz - b.z;
+      let a = dx * b.ux + dz * b.uz, c = dx * b.vx + dz * b.vz;
+      const qa = Math.max(-b.hx, Math.min(b.hx, a)), qc = Math.max(-b.hz, Math.min(b.hz, c));
+      const ea = a - qa, ec = c - qc, d = Math.hypot(ea, ec);
+      if (d >= r) continue;
+      if (d > 1e-5) { a = qa + ea / d * r; c = qc + ec / d * r; } else if (b.hx - Math.abs(a) < b.hz - Math.abs(c)) a = Math.sign(a || 1) * (b.hx + r); else c = Math.sign(c || 1) * (b.hz + r);
+      nx = b.x + a * b.ux + c * b.vx; nz = b.z + a * b.uz + c * b.vz;
+    }
+    return [nx, nz];
   }
 
   update(dt, input, lookDelta, frozen = false) {
@@ -122,6 +148,7 @@ export class Player {
         if (d < m && d > 1e-4) { nx = c.x + dx / d * m; nz = c.z + dz / d * m; }
       }
     }
+    if (this.solids) [nx, nz] = this.bump(nx, nz, r);
     const lim = this.world.size / 2 - 6;
     nx = Math.max(-lim, Math.min(lim, nx)); nz = Math.max(-lim, Math.min(lim, nz));
     // block steep climbs
@@ -132,6 +159,10 @@ export class Player {
     }
     this.pos.x = nx; this.pos.z = nz;
     this.pos.y += this.vel.y * dt;
+    if (this.solids && this.vel.y > 0) for (const b of this.solids.near(nx, nz)) { // head against a floor above
+      const dx = nx - b.x, dz = nz - b.z, top = this.pos.y + 1.75;
+      if (top > b.y0 && top - this.vel.y * dt <= b.y0 + 0.02 && Math.abs(dx * b.ux + dz * b.uz) < b.hx + 0.2 && Math.abs(dx * b.vx + dz * b.vz) < b.hz + 0.2) { this.pos.y = b.y0 - 1.75; this.vel.y = 0; }
+    }
 
     const ground = this.groundAt(this.pos.x, this.pos.z, this.pos.y);
     const wasGround = this.onGround, wasSwimming = this.swimming, fall = -this.vel.y;

@@ -2,7 +2,7 @@
 // follow the shore, breeze in the leaves, several kinds of birds placed around
 // the listener, faint insects, footsteps per ground type + SFX.
 export class Audio {
-  constructor() { this.ctx = null; this.volume = 0.7; this.shore = 0.5; this.timers = []; this.night = 0; this.fire = 0; }
+  constructor() { this.ctx = null; this.volume = 0.7; this.shore = 0.5; this.timers = []; this.night = 0; this.fire = 0; this.sizzle = 0; this.burning = 0; }
 
   start() {
     if (this.ctx) { this.ctx.resume(); return; }
@@ -54,6 +54,13 @@ export class Audio {
     this.fireBus = ctx.createGain(); this.fireBus.gain.value = 0; this.fireBus.connect(this.master);
     loop(this.brown, 0.12, 'lowpass', 500, 0.5, 0.4, 0.05, this.fireBus);
     this.every(0.04, 0.22, () => { if (this.fire > 0.03) this.noise({ type: 'highpass', f0: 1500 + Math.random() * 3500, q: 1.5, dur: 0.012 + Math.random() * 0.02, attack: 0.001, gain: 0.09 * this.fire, out: this.fireBus }); });
+    // a fish on the spit: fat frying on hot skin (a fizzing hiss that breathes),
+    // tiny crackles, and now and then a drop of fat spitting in the embers
+    this.sizzleBus = ctx.createGain(); this.sizzleBus.gain.value = 0; this.sizzleBus.connect(this.master);
+    loop(this.white, 0.035, 'highpass', 5200, 0.6, 1.7, 0.02, this.sizzleBus);
+    loop(this.white, 0.02, 'bandpass', 2600, 0.9, 0.9, 0.012, this.sizzleBus);
+    this.every(0.012, 0.07, () => { if (this.sizzle > 0.03) this.noise({ type: 'bandpass', f0: 3000 + Math.random() * 5000, q: 2.5, dur: 0.006 + Math.random() * 0.012, attack: 0.001, gain: (0.03 + Math.random() * 0.05) * this.sizzle, out: this.sizzleBus }); });
+    this.every(0.25, 1.1, () => { if (this.sizzle > 0.05) this.spit(); });
     this.every(0.3, 0.9, () => { if (this.night > 0.5) this.crickets(); });
 
     this.every(5.5, 9, () => this.swell());
@@ -73,6 +80,18 @@ export class Audio {
 
   setRain(k) { if (this.rainBus) this.rainBus.gain.setTargetAtTime(k, this.ctx.currentTime, 1.5); }
   setFire(k) { this.fire = k; if (this.fireBus) this.fireBus.gain.setTargetAtTime(k, this.ctx.currentTime, 0.4); }
+  // k: how loud the nearest cooking fish is (0..1); burning: it is charring
+  setSizzle(k, burning = 0) {
+    this.sizzle = k; this.burning = burning;
+    if (this.sizzleBus) this.sizzleBus.gain.setTargetAtTime(k * (1 + burning * 0.6), this.ctx.currentTime, 0.25);
+  }
+  // a drop of fat hits the embers: a sharp pop, a short hiss flaring up
+  spit() {
+    const out = this.spot((Math.random() - 0.5) * 0.6, 0, this.sizzleBus), f = 1800 + Math.random() * 2500;
+    this.noise({ type: 'bandpass', f0: f, q: 4, dur: 0.02, attack: 0.001, gain: 0.25, out });
+    this.noise({ type: 'highpass', f0: 3500, f1: 6000, q: 0.7, dur: 0.25 + Math.random() * 0.2, attack: 0.01, gain: 0.12 + this.burning * 0.1, out });
+    if (Math.random() < 0.5) this.noise({ type: 'bandpass', f0: f * 1.6, q: 5, dur: 0.012, attack: 0.001, gain: 0.15, delay: 0.05 + Math.random() * 0.08, out });
+  }
   setNight(k) { this.night = k; if (this.natureBus) this.natureBus.gain.setTargetAtTime(0.9 - k * 0.3, this.ctx.currentTime, 2); }
 
   thunder() {
@@ -414,6 +433,58 @@ export class Audio {
       this.tone(f, f * 0.8, 0.08, 'triangle', 0.12);
     }
  this.noise({ f0: 500, f1: 1400, q: 1, dur: 0.16, attack: 0.05, gain: 0.07 }); // a stone flung through the air
+    if (name === 'skewer') { // the fish pushed onto the green stick, laid over the fire
+      this.noise({ type: 'bandpass', f0: 900, f1: 500, q: 2.5, dur: 0.14, attack: 0.01, gain: 0.12 });
+      this.noise({ type: 'lowpass', f0: 500, q: 0.6, dur: 0.1, gain: 0.12, delay: 0.04, buf: this.brown });
+      this.tone(260, 200, 0.06, 'triangle', 0.06, 0.16);
+      this.noise({ type: 'highpass', f0: 4000, f1: 6500, q: 0.6, dur: 0.6, attack: 0.03, gain: 0.08, delay: 0.18 }); // first contact with the heat
+    }
+    if (name === 'cooked') { // ready: a soft wooden pling and a flare of sizzle
+      [784, 1047].forEach((f, i) => this.tone(f, f, 0.22, 'triangle', 0.06, i * 0.12));
+      this.noise({ type: 'highpass', f0: 4500, q: 0.6, dur: 0.4, attack: 0.02, gain: 0.06 });
+    }
+    if (name === 'charred') { // a whoosh of smoke and harsh crackling
+      this.noise({ type: 'lowpass', f0: 900, f1: 300, q: 0.5, dur: 0.6, attack: 0.05, gain: 0.18, buf: this.brown });
+      for (let i = 0; i < 8; i++) this.noise({ type: 'bandpass', f0: 1500 + Math.random() * 3000, q: 4, dur: 0.02, attack: 0.001, gain: 0.1, delay: Math.random() * 0.5 });
+    }
+    if (name === 'unskewer') { this.noise({ type: 'bandpass', f0: 700, f1: 1200, q: 2, dur: 0.1, attack: 0.01, gain: 0.1 }); this.tone(500, 700, 0.06, 'triangle', 0.04, 0.06); }
+    if (kind === 'munch') { // a bite: teeth through crisp skin, a few crunches, a soft chew
+      const crisp = a === 'burnt' ? 1.6 : 1, n = 3 + Math.floor(Math.random() * 3);
+      this.noise({ type: 'bandpass', f0: 2600 * crisp, q: 2, dur: 0.035, attack: 0.002, gain: 0.16 });
+      for (let i = 0; i < n; i++) this.noise({ type: 'bandpass', f0: (1200 + Math.random() * 2400) * crisp, q: 3, dur: 0.02 + Math.random() * 0.03, attack: 0.002, gain: 0.07 + Math.random() * 0.05, delay: 0.05 + i * (0.05 + Math.random() * 0.04) });
+      this.noise({ type: 'lowpass', f0: 380, q: 0.8, dur: 0.09, gain: 0.16, delay: 0.02, buf: this.brown });
+      for (let i = 0; i < 2; i++) this.noise({ type: 'lowpass', f0: 520, f1: 300, q: 1.5, dur: 0.12, attack: 0.03, gain: 0.08, delay: 0.32 + i * 0.2, buf: this.brown }); // chewing
+    }
+    if (name === 'gulp') { this.tone(320, 140, 0.14, 'sine', 0.12); this.noise({ type: 'lowpass', f0: 400, q: 1, dur: 0.1, gain: 0.08, delay: 0.02, buf: this.brown }); }
+    if (name === 'yum') [523, 659, 880].forEach((f, i) => this.tone(f, f * 1.01, 0.16, 'triangle', 0.045, 0.1 + i * 0.08));
+    if (name === 'cough') for (let i = 0; i < 2; i++) { this.noise({ type: 'bandpass', f0: 600, f1: 400, q: 1.2, dur: 0.13, attack: 0.01, gain: 0.14, delay: i * 0.2, buf: this.brown }); this.noise({ f0: 1400, q: 1, dur: 0.1, gain: 0.04, delay: i * 0.2 }); }
+    if (kind === 'build') { // a piece set in place: wood is knocked home with two mallet blows, stone grinds down heavily
+      if (a === 'stone') {
+        this.tone(120, 55, 0.3, 'sine', 0.32);
+        this.noise({ type: 'bandpass', f0: 460, f1: 300, q: 2.5, dur: 0.16, attack: 0.002, gain: 0.32 });
+        this.noise({ type: 'lowpass', f0: 650, q: 0.5, dur: 0.25, gain: 0.22, buf: this.brown });
+        this.noise({ type: 'bandpass', f0: 2600, f1: 1400, q: 1.2, dur: 0.18, attack: 0.01, gain: 0.05, delay: 0.03 }); // grit
+        for (let i = 0; i < 4; i++) this.noise({ type: 'bandpass', f0: 1500 + Math.random() * 2000, q: 6, dur: 0.02, attack: 0.001, gain: 0.05, delay: 0.06 + Math.random() * 0.2 });
+      } else {
+        const f = a === 'big' ? 230 : 300;
+        this.tone(f * 0.5, f * 0.32, 0.18, 'sine', 0.26);
+        this.noise({ type: 'lowpass', f0: 600, q: 0.6, dur: 0.16, gain: 0.25, buf: this.brown });
+        for (let i = 0; i < 2; i++) { // mallet knocks
+          const d = 0.17 + i * 0.15, g = 0.2 - i * 0.06;
+          this.noise({ type: 'bandpass', f0: f * 2.4, q: 6, dur: 0.05, attack: 0.001, gain: g, delay: d });
+          this.tone(f, f * 0.85, 0.07, 'triangle', g * 0.5, d);
+        }
+        this.tone(170, 230, 0.22, 'sawtooth', 0.01, 0.05, this.master, 0.06); // a creak as it settles
+      }
+    }
+    if (kind === 'unbuild') { // knocked apart: a crack, the piece clattering down
+      const stone = a === 'stone';
+      this.noise({ type: 'highpass', f0: stone ? 2600 : 1800, q: 0.8, dur: 0.04, attack: 0.001, gain: 0.25 });
+      this.noise({ type: 'bandpass', f0: stone ? 380 : 520, f1: stone ? 200 : 300, q: 1.5, dur: 0.3, attack: 0.003, gain: 0.3 });
+      this.noise({ type: 'lowpass', f0: 600, f1: 150, q: 0.5, dur: 0.4, gain: 0.25, buf: this.brown });
+      for (let i = 0; i < 7; i++) this.noise({ type: 'bandpass', f0: (stone ? 900 : 500) + Math.random() * 1600, q: 6, dur: 0.03, attack: 0.001, gain: 0.07, delay: 0.06 + Math.random() * 0.4 });
+    }
+    if (name === 'snap') this.tone(1500, 1900, 0.03, 'sine', 0.025); // the hologram clicks onto a socket
     if (name === 'pickup') { this.tone(880, 1320, 0.08, 'sine', 0.06); this.tone(1320, 1760, 0.08, 'sine', 0.05, 0.07); }
     if (name === 'tick') this.tone(1800, 1400, 0.035, 'sine', 0.04);
     if (name === 'open') { this.tone(500, 900, 0.12, 'sine', 0.05); }

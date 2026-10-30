@@ -3,7 +3,7 @@
 // under that id. Generating from a seed always starts a fresh instance (the
 // untouched archipelago); saving one keeps it, with a name, to come back to.
 const SKEY = 'tropicool.saves.v1';
-const STORES = ['tropicool.felled.v1', 'tropicool.mowed.v1', 'tropicool.placed.v1'];
+const STORES = ['tropicool.felled.v1', 'tropicool.mowed.v1', 'tropicool.placed.v1', 'tropicool.build.v1'];
 
 const read = (k) => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch (_) { return null; } };
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) { /* private mode */ } };

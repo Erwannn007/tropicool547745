@@ -43,6 +43,9 @@ Les images de référence du projet sont des captures de jeux indé pixel-art 3D
 - Pierre (rochers en plaques) : `#6f6e78 #83828c #9897a0 #abaab2 #bdbcc3 #cfced4`, joints `#dbdbe3`, faces à l'ombre bleu ardoise · cassures fraîches plus claires
 - Bois verni (paillote, meubles) : `#2e1d12 #4a3020 #64442c #7a5638 #8e6846 #a87e56`, veines ondulées sombres + reflets en paliers (`varnish()`)
 - Flamme : `#fff5b2 #ffc740 #ff801f #e64214` (bandes nettes, jamais de dégradé)
+- Planches (blocs de bois, planchers, marches) : `#5e3a1c #764a26 #8e5e32 #a6743e #bc8a4e #d2a264`, joints sombres d'un pixel décalés d'une rangée à l'autre, têtes de clous claires
+- Moellons (blocs de pierre) : rampe Pierre, assises décalées, joints `#dbdbe3`, arête haut-gauche éclairée
+- Poisson grillé : `#5a2a10 #7e4016 #a85e24 #c8823a #e0a654 #f2c878`, marques de grill en diagonale, yeux blancs · carbonisé : `#120c0a #1e1410 #2e2018 #3e2c20 #523a28` + braises `#c8380e` · chair : `#d8b890 #ead0a8 #f6e4c4 #fff4e0`
 
 ## Mouvement
 Anticipation, temps mort, geste rapide, impact marqué (arrêt d'environ 70 ms, secousse, particules carrées), retour en douceur. Référence : le coup de hache (0 → 0,16 → 0,20 → impact 0,255 → 0,29 → 0,36 → 0,62 s) ; la pioche suit le même rythme (armé 0,17, temps mort 0,21, impact 0,255, recul 0,30, retour 0,66 s).

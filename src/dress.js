@@ -45,8 +45,13 @@ function worldMat(part, hi = 0) {
         attribute vec3 color;
       #endif
       void main() {
-        vec4 w = modelMatrix * vec4(position, 1.0);
-        vUv = uv; vN = normalize(mat3(modelMatrix) * normal); vWorld = w.xyz;
+        #ifdef USE_INSTANCING
+          mat4 mm = modelMatrix * instanceMatrix; // building pieces (building.js)
+        #else
+          mat4 mm = modelMatrix;
+        #endif
+        vec4 w = mm * vec4(position, 1.0);
+        vUv = uv; vN = normalize(mat3(mm) * normal); vWorld = w.xyz;
         #ifdef VCOL
           vCol = color;
         #else
@@ -110,6 +115,7 @@ const ghostMat = new THREE.ShaderMaterial({
     }`,
 });
 
+export { worldMat };
 // kind: 'world' | 'held' | 'icon' | 'ghost'
 export function dress(model, kind, light) {
   const g = new THREE.Group();

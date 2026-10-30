@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { pixTex, handleTex, steelTex, handleGeometry, headGeometry } from './axeModel.js';
 import { mulberry32, makeSimplex } from './noise.js';
+import { SPECIES } from './fishing.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const cache = new Map();
@@ -552,24 +553,91 @@ function rodModel() {
   const bobTex = pixTex(4, 8, (g) => { g.fillStyle = '#f4f8ff'; g.fillRect(0, 0, 4, 4); g.fillStyle = '#e8402f'; g.fillRect(0, 4, 4, 4); g.fillStyle = '#ff7a5e'; g.fillRect(1, 5, 1, 2); });
   return { parts: [{ geo: blank, tex: T.teak() }, { geo: cork, tex: T.cork() }, { geo: reel, tex: T.steel(), metal: 1 }, { geo: lineGeo, tex: T.steel() }, { geo: bob, tex: bobTex }] };
 }
-function fishModel(colors) {
+// cook: 0 raw, 1 half done, 2 grilled (golden skin, grill marks, white
+// eyes), 3 burnt (charcoal with a few glowing cracks)
+const GRILL = ['#5a2a10', '#7e4016', '#a85e24', '#c8823a', '#e0a654', '#f2c878'];
+const CHAR = ['#120c0a', '#1e1410', '#2e2018', '#3e2c20', '#523a28'];
+const FLESH = ['#d8b890', '#ead0a8', '#f6e4c4', '#fff4e0'];
+function fishModel(colors, cook = 0) {
   const tex = pixTex(16, 16, (g) => {
+    const r = mulberry32(7);
     for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
       const around = Math.abs(x / 16 - 0.5) * 2; // 0 belly .. 1 back
       let c = around > 0.45 ? colors[0] : colors[1];
       if (y % 5 === 0 && around > 0.3) c = colors[2];
+      const grilled = GRILL[Math.max(0, Math.min(5, Math.round(1.5 + around * 2.6 - (around > 0.45 ? 0 : 0.6) + (r() - 0.5) * 1.1)))];
+      if (cook === 1 && r() < 0.55) c = grilled;
+      if (cook === 2) c = (x + y * 2) % 7 < 1 && around > 0.2 ? GRILL[0] : grilled; // diagonal grill marks
+      if (cook === 3) c = r() < 0.05 ? '#c8380e' : CHAR[Math.max(0, Math.min(4, Math.round(1 + around * 2 + (r() - 0.5) * 1.6)))];
       g.fillStyle = c; g.fillRect(x, y, 1, 1);
     }
-    g.fillStyle = '#141420'; g.fillRect(4, 13, 1, 2); g.fillRect(12, 13, 1, 2); // eyes near the head
+    g.fillStyle = cook >= 2 ? (cook === 3 ? '#4a3a30' : '#f4f0e4') : '#141420'; // a grilled fish's eyes go white
+    g.fillRect(4, 13, 1, 2); g.fillRect(12, 13, 1, 2); // eyes near the head
   });
   const body = lathe([[0, 0], [0.05, 0.03], [0.085, 0.12], [0.08, 0.24], [0.05, 0.33], [0.02, 0.38], [0, 0.39]], 10);
   body.scale(1, 1, 0.5); body.rotateZ(Math.PI / 2); body.translate(0.2, 0, 0);
-  const finTex = pixTex(4, 4, (g) => { g.fillStyle = colors[2]; g.fillRect(0, 0, 4, 4); g.fillStyle = colors[0]; g.fillRect(0, 0, 4, 1); });
+  const fin = cook === 3 ? [CHAR[1], CHAR[0]] : cook === 2 ? [GRILL[1], GRILL[0]] : [colors[2], colors[0]];
+  const finTex = pixTex(4, 4, (g) => { g.fillStyle = fin[0]; g.fillRect(0, 0, 4, 4); g.fillStyle = fin[1]; g.fillRect(0, 0, 4, 1); });
   const tail = new THREE.Shape(); tail.moveTo(0, 0); tail.lineTo(-0.12, 0.09); tail.lineTo(-0.09, 0); tail.lineTo(-0.12, -0.09); tail.lineTo(0, 0);
   const tg = new THREE.ExtrudeGeometry(tail, { depth: 0.01, bevelEnabled: false }); tg.translate(-0.17, 0, -0.005);
   const dor = new THREE.Shape(); dor.moveTo(-0.1, 0); dor.quadraticCurveTo(0, 0.12, 0.08, 0); dor.lineTo(-0.1, 0);
   const dg = new THREE.ExtrudeGeometry(dor, { depth: 0.01, bevelEnabled: false }); dg.translate(0, 0.07, -0.005);
-  return { parts: [{ geo: body, tex }, { geo: merge([[tg], [dg]]), tex: finTex }] };
+  return { parts: [{ geo: body, tex }, { geo: merge([[tg], [dg]]), tex: finTex }], cook };
+}
+// the inside of a fish, where it has been bitten
+const fleshTex = () => once('flesh', () => pixTex(8, 8, (g, w, h) => {
+  const r = mulberry32(19);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, FLESH, x, y, 1.6 + (r() - 0.5) * 1.4 + (y % 3 === 0 ? 1 : 0)); // flakes
+}));
+// A fish bitten down to x = cut (the head end is +x): everything past the cut
+// is pressed onto a scalloped bite face, the faces that end up entirely on
+// it show the white flesh.
+export function bittenFish(model, cut) {
+  const skin = [], flesh = [];
+  for (const part of model.parts) {
+    const g = part.geo.index ? part.geo.toNonIndexed() : part.geo.clone();
+    const P = g.attributes.position, gone = [];
+    for (let i = 0; i < P.count; i++) {
+      const y = P.getY(i), z = P.getZ(i), edge = cut - 0.022 * Math.abs(Math.sin(Math.atan2(z * 2, y) * 2.5)); // tooth marks
+      gone.push(P.getX(i) > edge);
+      if (P.getX(i) > edge) P.setX(i, edge);
+    }
+    const keep = [], cap = [];
+    for (let t = 0; t < P.count; t += 3) (gone[t] && gone[t + 1] && gone[t + 2] ? cap : keep).push(t);
+    const pick = (list) => {
+      const out = new THREE.BufferGeometry();
+      for (const k of ['position', 'normal', 'uv']) {
+        const A = g.attributes[k], a = new Float32Array(list.length * 3 * A.itemSize);
+        list.forEach((t, j) => { for (let v = 0; v < 3; v++) for (let c = 0; c < A.itemSize; c++) a[(j * 3 + v) * A.itemSize + c] = A.array[(t + v) * A.itemSize + c]; });
+        out.setAttribute(k, new THREE.BufferAttribute(a, A.itemSize));
+      }
+      return out;
+    };
+    if (keep.length) skin.push({ ...part, geo: pick(keep) });
+    if (cap.length) {
+      const c = pick(cap), N = c.attributes.normal, U = c.attributes.uv, Q = c.attributes.position;
+      for (let i = 0; i < N.count; i++) { N.setXYZ(i, 1, 0, 0); U.setXY(i, Q.getZ(i) * 6, Q.getY(i) * 6); }
+      flesh.push([c]);
+    }
+  }
+  if (flesh.length) skin.push({ geo: merge(flesh), tex: fleshTex(), double: true });
+  return { parts: skin };
+}
+
+// Spit over a camp fire: two forked sticks driven in outside the stones, a
+// peeled green rod across, lashed with fibre where it rests.
+export const SPIT_Y = 0.74;
+function spitModel() {
+  const sticks = [], rnd = mulberry32(31);
+  for (const sx of [-1, 1]) {
+    const foot = V(sx * 0.64, -0.05, 0.02), top = V(sx * 0.6, SPIT_Y + 0.02, 0);
+    sticks.push([tube(line(foot, top), (t) => 0.028 - t * 0.008, { rings: 4, radial: 6, up: V(1, 0, 0), vRep: 2 })]);
+    const fork = V(sx * (0.6 + 0.07), SPIT_Y + 0.12, (rnd() - 0.5) * 0.04);
+    sticks.push([tube(line(V(sx * 0.6, SPIT_Y - 0.06, 0), fork), (t) => 0.02 - t * 0.008, { rings: 2, radial: 5, up: V(0, 0, 1) })]);
+  }
+  const rod = tube(line(V(-0.74, SPIT_Y, 0), V(0.74, SPIT_Y, 0)), () => 0.016, { rings: 6, radial: 6, up: V(0, 1, 0), vRep: 3 });
+  const ties = merge([-1, 1].map((sx) => [lathe([[0.024, 0], [0.032, 0.01], [0.032, 0.03], [0.024, 0.04]], 8, 2), M(sx * 0.6, SPIT_Y - 0.02, 0, 0, 0, Math.PI / 2)]));
+  return { parts: [{ geo: merge(sticks), tex: T.log(BARK) }, { geo: rod, tex: T.log(FRESH) }, { geo: ties, tex: T.rope() }] };
 }
 
 // Travel notebook: teal leather boards with a gold palm, rounded spine,
@@ -721,7 +789,175 @@ function chestModel() {
   };
 }
 
+// ---------------------------------------------------------------- building
+// Box with chamfered edges and corners (w x h x d, chamfer b), centred on the
+// origin; uv projected along the dominant axis of each face, 1 unit = 1 m
+// (+ uvOff), so pixel textures keep their density whatever the size.
+export function bevelBox(w, h, d, b, uvOff = [0, 0, 0]) {
+  const hs = [w / 2, h / 2, d / 2], pos = [], nor = [], uv = [];
+  const P = (axis, sg) => hs.map((hh, k) => (k === axis ? sg[k] * hh : sg[k] * Math.max(0.001, hh - b)));
+  const tri = (a, c, e) => {
+    const A = V(...a), B = V(...c), C = V(...e), n = B.clone().sub(A).cross(C.clone().sub(A)).normalize();
+    if (n.dot(A.clone().add(B).add(C)) < 0) { const t = c; c = e; e = t; n.negate(); } // outward, counter-clockwise
+    const ax = Math.abs(n.x) > Math.abs(n.y) ? (Math.abs(n.x) > Math.abs(n.z) ? 0 : 2) : (Math.abs(n.y) > Math.abs(n.z) ? 1 : 2);
+    const [i, j] = ax === 0 ? [2, 1] : ax === 1 ? [0, 2] : [0, 1];
+    for (const q of [a, c, e]) { pos.push(...q); nor.push(n.x, n.y, n.z); uv.push(q[i] + uvOff[i], q[j] + uvOff[j]); }
+  };
+  const quad = (a, c, e, f) => { tri(a, c, e); tri(a, e, f); };
+  for (let ax = 0; ax < 3; ax++) for (const s0 of [-1, 1]) { // faces
+    const o = [0, 1, 2].filter((k) => k !== ax), c = [];
+    for (const [s1, s2] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const sg = [0, 0, 0]; sg[ax] = s0; sg[o[0]] = s1; sg[o[1]] = s2; c.push(P(ax, sg)); }
+    quad(...c);
+  }
+  for (let a = 0; a < 3; a++) for (let bx = a + 1; bx < 3; bx++) { // edge strips
+    const c3 = 3 - a - bx;
+    for (const sa of [-1, 1]) for (const sb of [-1, 1]) {
+      const sg = (sc) => { const g = [0, 0, 0]; g[a] = sa; g[bx] = sb; g[c3] = sc; return g; };
+      quad(P(a, sg(-1)), P(bx, sg(-1)), P(bx, sg(1)), P(a, sg(1)));
+    }
+  }
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) tri(P(0, [sx, sy, sz]), P(1, [sx, sy, sz]), P(2, [sx, sy, sz])); // corners
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return g;
+}
+
+const PLANK = ['#5e3a1c', '#764a26', '#8e5e32', '#a6743e', '#bc8a4e', '#d2a264'];
+const MASON = ['#6f6e78', '#83828c', '#9897a0', '#abaab2', '#bdbcc3', '#cfced4'];
+const BT = {
+  // sawn planks, 4 to the metre, joints staggered from row to row, nail heads
+  planks: () => once('planks', () => pixTex(32, 32, (g, w, h) => {
+    const r = mulberry32(51);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const row = Math.floor(y / 8), fy = y % 8, joint = (row * 13 + 5) % 32;
+      let k = 2.6 + (r() - 0.5) * 0.9 + Math.sin((x + row * 7) * 0.45 + fy) * 0.35;
+      if ((x * 3 + row * 5 + Math.floor(fy / 2)) % 13 === 0) k -= 1.1; // grain
+      if (fy === 0) k = 0.3; else if (fy === 1) k += 1.2; else if (fy === 7) k -= 0.9;
+      if (x === joint) k = 0.4; else if (x === (joint + 1) % 32) k += 0.8;
+      if ((x === (joint + 2) % 32 || x === (joint + 30) % 32) && (fy === 3 || fy === 5)) k = 5.4; // nails
+      ramp(g, PLANK, x, y, k);
+    }
+  })),
+  // a crate face: a frame of boards around three planks, nailed at the corners
+  crate: () => once('crate', () => pixTex(32, 32, (g, w, h) => {
+    const r = mulberry32(53);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const e = Math.min(x, y, w - 1 - x, h - 1 - y), frame = e < 4;
+      let k = 2.5 + (r() - 0.5) * 0.9;
+      if (frame) { k = 3.2 + (r() - 0.5) * 0.6; if (e === 0) k = 1.2; if (e === 3) k = 0.5; if (e === 1) k += 0.9; }
+      else { const fy = (y - 4) % 8; k += Math.sin(x * 0.5 + y) * 0.3; if (fy === 0) k = 0.4; if (fy === 1) k += 1; if ((x + y * 3) % 11 === 0) k -= 1; }
+      if (frame && (x === 1 || x === 30) && (y === 1 || y === 30)) k = 5.6;
+      ramp(g, PLANK, x, y, k);
+    }
+  })),
+  // dressed basalt: courses of cut stones with pale mortar joints, each stone
+  // lit on its upper left edge
+  masonry: () => once('masonry', () => pixTex(32, 32, (g, w, h) => {
+    const r = mulberry32(57);
+    const widths = [[11, 10, 11], [6, 13, 13], [12, 9, 11], [8, 12, 12]];
+    for (let row = 0; row < 4; row++) {
+      let x0 = 0;
+      for (const sw of widths[row]) {
+        const tone = 2 + (r() - 0.5) * 1.6;
+        for (let y = row * 8; y < row * 8 + 8; y++) for (let x = x0; x < x0 + sw; x++) {
+          const fx = x - x0, fy = y - row * 8;
+          let k = tone + (r() - 0.5) * 0.8;
+          if (fx === 0 || fy === 0) { g.fillStyle = '#dbdbe3'; g.fillRect(x, y, 1, 1); continue; }
+          if (fx === 1 || fy === 1) k += 1.3; else if (fx === sw - 1 || fy === 7) k -= 1.2;
+          ramp(g, MASON, x, y, k);
+        }
+        x0 += sw;
+      }
+    }
+  })),
+};
+
+export const STOREY = 2.5;
+function blockWood() { return { parts: [{ geo: bevelBox(1, 1, 1, 0.045, [0.5, 0.5, 0.5]).translate(0, 0.5, 0), tex: BT.crate() }] }; }
+function blockStone() { return { parts: [{ geo: bevelBox(1, 1, 1, 0.07, [0.5, 0.5, 0.5]).translate(0, 0.5, 0), tex: BT.masonry() }] }; }
+// deck of eight planks on two joists, top at y = 0
+function floorModel() {
+  const planks = [], rnd = mulberry32(61);
+  for (let k = 0; k < 8; k++) {
+    const g = bevelBox(2 + (rnd() - 0.5) * 0.04, 0.06, 0.235, 0.012);
+    planks.push([g, M((rnd() - 0.5) * 0.03, -0.03 + (rnd() - 0.5) * 0.008, -0.875 + k * 0.25)]);
+  }
+  const joists = merge([-0.75, 0.75].map((x) => [bevelBox(0.14, 0.16, 1.96, 0.02), M(x, -0.14, 0)]));
+  return { parts: [{ geo: merge(planks), tex: BT.planks() }, { geo: joists, tex: T.log(BARK) }] };
+}
+// five palm logs lying along x, ends overlapping a little past the corners
+function wallLogs(spans) {
+  const list = [], rnd = mulberry32(67);
+  for (const [x0, x1, k] of spans) {
+    const r = 0.25 + (rnd() - 0.5) * 0.02, g = logGeo(x1 - x0, r);
+    g.rotateZ(-Math.PI / 2);
+    list.push([g, M(x0 + (rnd() - 0.5) * 0.04, 0.25 + k * 0.5, (rnd() - 0.5) * 0.03)]);
+  }
+  return merge(list);
+}
+function wallModel() {
+  return { parts: [{ geo: wallLogs([0, 1, 2, 3, 4].map((k) => [-1.1, 1.1, k])), tex: T.log(TRUNK) }] };
+}
+// a wall with a doorway: short logs either side, a lintel log over, a teak frame
+function doorModel() {
+  const spans = [];
+  for (let k = 0; k < 4; k++) spans.push([-1.1, -0.44, k], [0.44, 1.1, k]);
+  spans.push([-1.1, 1.1, 4]);
+  const frame = merge([[bevelBox(0.1, 2.0, 0.34, 0.02), M(-0.49, 1.0, 0)], [bevelBox(0.1, 2.0, 0.34, 0.02), M(0.49, 1.0, 0)], [bevelBox(1.08, 0.1, 0.36, 0.02), M(0, 2.0, 0)]]);
+  return { parts: [{ geo: wallLogs(spans), tex: T.log(TRUNK) }, { geo: frame, tex: T.teak(), gloss: 0.4 }] };
+}
+// thatch panel rising 1 m over 2 m (low edge at z = +1), on two rafters,
+// a ridge log on top and a fringe of straw hanging off the low edge
+function roofModel() {
+  const ang = Math.atan2(1, 2), L = Math.hypot(1, 2) + 0.42;
+  const slab = bevelBox(2.3, 0.14, L, 0.04);
+  const q = new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), ang);
+  const mid = V(0, 0.5, 0.18); // overhang past the low edge
+  const place = (g, y = 0) => g.applyMatrix4(new THREE.Matrix4().compose(mid.clone().add(V(0, y, 0)), q, V(1, 1, 1)));
+  place(slab);
+  const rafters = merge([-0.92, 0.92].map((x) => { const g = logGeo(L, 0.05); g.rotateX(Math.PI / 2); g.translate(x, -0.09, -L / 2); place(g); return [g]; }));
+  const ridge = logGeo(2.36, 0.07); ridge.rotateZ(-Math.PI / 2); ridge.translate(-1.18, 1.14, -1.0);
+  const fringe = [], rnd = mulberry32(71);
+  const lowEdge = mid.clone().add(V(0, 0, L / 2).applyQuaternion(q));
+  for (let i = 0; i < 14; i++) {
+    const t = lathe([[0, -0.2 - rnd() * 0.06], [0.018, -0.17], [0.05, -0.08], [0.07, 0]], 5, 1);
+    fringe.push([t, M(-1.08 + i * 0.166, lowEdge.y - 0.02, lowEdge.z - 0.03, 0.2, rnd() * 3, 0)]);
+  }
+  return { parts: [{ geo: merge([[slab], [merge(fringe)]]), tex: T.straw() }, { geo: merge([[rafters], [ridge]]), tex: T.log(BARK) }] };
+}
+// ten steps up one storey over 2 m, low end at z = +1, between stringers
+function stairsModel() {
+  const treads = [], rnd = mulberry32(73), n = 10, run = 2 / n, rise = STOREY / n;
+  for (let k = 0; k < n; k++) {
+    const z = 1 - run * (k + 0.5), y = rise * (k + 1);
+    treads.push([bevelBox(1.8, 0.07, run + 0.05, 0.014), M((rnd() - 0.5) * 0.03, y - 0.035, z)]);
+    treads.push([bevelBox(1.76, rise - 0.07, 0.04, 0.01), M(0, y - 0.07 - (rise - 0.07) / 2, z + run / 2 - 0.02)]);
+  }
+  const len = Math.hypot(2, STOREY) + 0.12, ang = Math.atan2(STOREY, 2);
+  const stringers = merge([-0.95, 0.95].map((x) => [bevelBox(0.12, 0.34, len, 0.025), new THREE.Matrix4().compose(V(x, STOREY / 2 - 0.08, 0), new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), ang), V(1, 1, 1))]));
+  return { parts: [{ geo: merge(treads), tex: BT.planks() }, { geo: stringers, tex: T.teak(), gloss: 0.3 }] };
+}
+// legs under a raised deck: a log from each corner down to the ground
+export function floorPosts(lengths) {
+  const list = [];
+  [[-0.85, -0.85], [0.85, -0.85], [-0.85, 0.85], [0.85, 0.85]].forEach(([x, z], i) => {
+    const l = lengths[i];
+    if (l > 0.05) list.push([logGeo(l + 0.3, 0.09), M(x, -0.2 - l - 0.3 + 0.05, z, 0, i, 0)]);
+  });
+  return list.length ? { parts: [{ geo: merge(list), tex: T.log(BARK) }] } : null;
+}
+
 export const MODELS = {
+  'block:wood': () => once('m:bw', blockWood),
+  'block:stone': () => once('m:bs', blockStone),
+  floor: () => once('m:floor', floorModel),
+  wall: () => once('m:wall', wallModel),
+  door: () => once('m:door', doorModel),
+  roof: () => once('m:roof', roofModel),
+  stairs: () => once('m:stairs', stairsModel),
+  spit: () => once('m:spit', spitModel),
   chest: () => once('m:chest', chestModel),
   book: () => once('m:book', bookModel),
   torch: () => once('m:torch', torchModel),
@@ -738,4 +974,13 @@ export const MODELS = {
   coconut: () => once('m:coco', coconutModel),
   fibre: () => once('m:fibre', fibreModel),
 };
-export function fishModelFor(id, colors) { return once('m:' + id, () => fishModel(colors)); }
+export function fishModelFor(id, colors, cook = 0) { return once(`m:${id}:${cook}`, () => fishModel(colors, cook)); }
+// the model of any item id: MODELS, a fish ('fish:N'), a grilled one
+// ('grill:N') or a burnt one ('burnt:N')
+const COOKED = { fish: 0, grill: 2, burnt: 3 };
+export function itemModel(id) {
+  if (MODELS[id]) return MODELS[id]();
+  const [kind, n] = id?.split(':') ?? [];
+  if (COOKED[kind] != null && SPECIES[+n]) return fishModelFor('fish:' + n, SPECIES[+n].c, COOKED[kind]);
+  return null;
+}

@@ -1,6 +1,6 @@
 // Network-first service worker: always fresh when online, playable offline.
 // Requests bypass the HTTP cache so a deploy is never mixed with stale files.
-const CACHE = 'tropicool-20261030125442';
+const CACHE = 'tropicool-20261030133925';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil((async () => {
   for (const k of await caches.keys()) if (k !== CACHE) await caches.delete(k);

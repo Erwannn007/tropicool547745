@@ -18,6 +18,14 @@ export const ITEMS = {
   coconut: { name: 'Noix de coco', max: 64, cat: 'Nourriture', desc: 'Son huile fait brûler les torches.' },
   stone: { name: 'Pierre', max: 64, cat: 'Matériau', desc: 'Éclat de basalte veiné de quartz, taillé à la pioche.' },
   fibre: { name: 'Fibres végétales', max: 64, cat: 'Matériau', desc: 'Herbe fauchée, tressée en botte.' },
+  // building pieces (building.js): they snap onto each other
+  'block:wood': { name: 'Bloc de bois', max: 64, cat: 'Construction', desc: 'Caisse en planches d’un mètre. S’empile et se colle aux autres blocs.', build: true },
+  'block:stone': { name: 'Bloc de pierre', max: 64, cat: 'Construction', desc: 'Moellon de basalte taillé d’un mètre. S’empile et se colle aux autres blocs.', build: true },
+  floor: { name: 'Plancher', max: 32, cat: 'Construction', desc: 'Plancher de 2 × 2 m. Monté sur pilotis si le sol est en pente ou dans l’eau.', build: true },
+  wall: { name: 'Mur en rondins', max: 32, cat: 'Construction', desc: 'Mur de 2 m. Se pose au bord d’un plancher, sur un autre mur ou à côté.', build: true },
+  door: { name: 'Mur avec porte', max: 32, cat: 'Construction', desc: 'Un mur en rondins avec une ouverture pour passer.', build: true },
+  roof: { name: 'Toit de chaume', max: 32, cat: 'Construction', desc: 'Pan de toit qui se pose sur le haut d’un mur. Deux pans face à face font un faîte.', build: true },
+  stairs: { name: 'Escalier', max: 16, cat: 'Construction', desc: 'Monte d’un étage (2 × 2 m). Se pose sur un plancher ou au bord pour y monter.', build: true },
 };
 
 export const RECIPES = [
@@ -27,15 +35,30 @@ export const RECIPES = [
   { out: 'parasol', n: 1, need: [['wood:palm', 2], ['fibre', 10]] },
   { out: 'chest', n: 1, need: [['wood:tree', 4], ['wood:palm', 2], ['fibre', 2]] },
   { out: 'book', n: 1, need: [['fibre', 6], ['wood:palm', 1]] },
+  { out: 'block:wood', n: 4, need: [['wood:tree', 2]] },
+  { out: 'block:stone', n: 2, need: [['stone', 3]] },
+  { out: 'floor', n: 1, need: [['wood:tree', 2], ['fibre', 2]] },
+  { out: 'wall', n: 1, need: [['wood:palm', 3]] },
+  { out: 'door', n: 1, need: [['wood:palm', 2], ['wood:tree', 1]] },
+  { out: 'roof', n: 1, need: [['fibre', 8], ['wood:palm', 1]] },
+  { out: 'stairs', n: 1, need: [['wood:tree', 3]] },
 ];
 
 export function itemDef(id) {
   if (ITEMS[id]) return { id, ...ITEMS[id] };
   if (id.startsWith('fish:')) {
     const s = SPECIES[+id.slice(5)];
-    return { id, name: s.name, max: 64, cat: 'Poisson', desc: `${rarityOf(s.w)} · ${s.d[0]}–${s.d[1]} m de fond`, fish: s };
+    return { id, name: s.name, max: 64, cat: 'Poisson', desc: `${rarityOf(s.w)} · ${s.d[0]}–${s.d[1]} m de fond. Fais-le griller sur un feu de camp.`, fish: s };
+  }
+  if (id.startsWith('grill:')) {
+    const s = SPECIES[+id.slice(6)];
+    return { id, name: `${s.name} grillé`, max: 16, cat: 'Nourriture', desc: 'Peau dorée et croustillante, chair fondante. Utilise-le pour le manger.', fish: s, eat: 'good' };
+  }
+  if (id.startsWith('burnt:')) {
+    const s = SPECIES[+id.slice(6)];
+    return { id, name: `${s.name} carbonisé`, max: 16, cat: 'Nourriture', desc: 'Resté trop longtemps sur le feu… Ça se mange, mais bon.', fish: s, eat: 'burnt' };
   }
   return { id, name: id, max: 64, cat: '', desc: '' };
 }
 
-export const CAT_COLOR = { Outil: '#8fd8ff', 'Objet à poser': '#ffd34d', Matériau: '#e8c890', Nourriture: '#ffb08e', Poisson: '#7ee0dc' };
+export const CAT_COLOR = { Construction: '#c8f07a', Outil: '#8fd8ff', 'Objet à poser': '#ffd34d', Matériau: '#e8c890', Nourriture: '#ffb08e', Poisson: '#7ee0dc' };

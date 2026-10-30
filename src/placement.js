@@ -58,17 +58,17 @@ export class Placement {
     this.world = world; this.player = player;
     let list = [];
     try { list = (JSON.parse(localStorage.getItem(PKEY)) || {})[worldKey(world.cfg)] || []; } catch (_) { /* none */ }
-    for (const e of list) if (PLACEABLE[e.id]) this.spawn(e.id, e.x, e.y, e.z, e.yaw, e.items);
+    for (const e of list) if (PLACEABLE[e.id]) this.spawn(e.id, e.x, e.y, e.z, e.yaw, e.items, e.cook);
   }
   save() {
     try {
       const all = JSON.parse(localStorage.getItem(PKEY)) || {};
-      all[worldKey(this.world.cfg)] = this.objects.map((o) => ({ id: o.id, x: +o.x.toFixed(2), y: +o.y.toFixed(2), z: +o.z.toFixed(2), yaw: +o.yaw.toFixed(3), ...(o.items ? { items: o.items } : {}) }));
+      all[worldKey(this.world.cfg)] = this.objects.map((o) => ({ id: o.id, x: +o.x.toFixed(2), y: +o.y.toFixed(2), z: +o.z.toFixed(2), yaw: +o.yaw.toFixed(3), ...(o.items ? { items: o.items } : {}), ...(o.cook ? { cook: { id: o.cook.id, t: +o.cook.t.toFixed(1) } } : {}) }));
       localStorage.setItem(PKEY, JSON.stringify(all));
     } catch (_) { /* private mode */ }
   }
 
-  spawn(id, x, y, z, yaw, items) {
+  spawn(id, x, y, z, yaw, items, cook) {
     const def = PLACEABLE[id];
     const mesh = dress(MODELS[id](), 'world');
     mesh.position.set(x, y, z); mesh.rotation.y = yaw;
@@ -87,6 +87,7 @@ export class Placement {
       this.player.addCollider(c); o.colliders.push(c);
     }
     this.hooks.flatten?.(o, x, z, def.ring + 0.15);
+    if (cook) { o.cook = { ...cook }; this.hooks.spawned?.(o); } // a fish on the spit (cooking.js)
     if (def.light) o.light = this.lights.add({ x, y: y + def.light.y, z, radius: def.light.radius, r: def.light.col[0] * 0.8, g: def.light.col[1] * 0.8, b: def.light.col[2] * 0.8 });
     this.objects.push(o);
     return o;
@@ -95,6 +96,7 @@ export class Placement {
     o.mesh.removeFromParent();
     for (const c of o.colliders) this.player?.removeColliderObj(c);
     if (o.light) this.lights.remove(o.light);
+    this.hooks.disposed?.(o);
     this.hooks.release?.(o);
     this.objects.splice(this.objects.indexOf(o), 1);
     if (save) this.save();

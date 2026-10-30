@@ -419,6 +419,7 @@ export class Inventory {
       const ok = this.canCraft(RECIPES[k]);
       el.classList.toggle('ok', ok);
       el.classList.toggle('pad-focus', this.open && this.padFocus && this.padIndex === SIZE + k);
+      if (this.open && this.padFocus && this.padIndex === SIZE + k) el.scrollIntoView({ block: 'nearest' });
       el.querySelectorAll('.need').forEach((n) => n.classList.toggle('miss', this.count(n.dataset.id) < +n.dataset.n));
       if (this.flash === RECIPES[k].out) { el.classList.remove('done'); void el.offsetWidth; el.classList.add('done'); }
     });

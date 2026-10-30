@@ -291,8 +291,8 @@ body.touch .slot .key { display: none; }
 @media (orientation: portrait) { #chest-panel { --s: clamp(26px, 9vw, 44px); --g: 3px; } }
 
 /* crafting */
-.craft-panel { padding: clamp(10px, 1.6vw, 16px); display: flex; flex-direction: column; gap: 8px; width: 270px; }
-#craft-list { display: flex; flex-direction: column; gap: 6px; }
+.craft-panel { padding: clamp(10px, 1.6vw, 16px); display: flex; flex-direction: column; gap: 8px; width: 270px; max-height: calc(100dvh - 20px); }
+#craft-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; padding: 3px; margin: -3px; touch-action: pan-y; }
 .recipe {
   display: grid; grid-template-columns: 40px 1fr auto; gap: 8px; align-items: center; padding: 5px 6px;
   background: rgba(13, 44, 76, .75); box-shadow: inset 2px 2px 0 rgba(0, 12, 30, .5), 0 0 0 2px #1d5486;

@@ -7,7 +7,7 @@
 // is put away.
 import * as THREE from 'three';
 import { HeldView } from './held.js';
-import { MODELS, PICK, fishModelFor } from './models.js';
+import { MODELS, PICK, itemModel, bittenFish } from './models.js';
 import { itemDef } from './items.js';
 import { basis } from './axeModel.js';
 import { dress } from './dress.js';
@@ -93,18 +93,52 @@ const MINI = {
 
 // Plain items: shown at about the same size whatever the model, turned to
 // read well (pitch, yaw, roll); fish lie across the hand, head to the left.
-const ITEM_SIZE = { 'wood:palm': 0.3, 'wood:tree': 0.3, fibre: 0.26, coconut: 0.15, stone: 0.17 };
-const ITEM_TURN = { 'wood:palm': [0.35, 0.5, 0.25], 'wood:tree': [0.35, 0.5, 0.25], coconut: [0.3, -0.4, 0], stone: [0.4, 0.3, 0], fibre: [0.2, 0.4, -0.5] };
-function itemModel(id) {
-  if (MODELS[id]) return MODELS[id]();
-  if (id?.startsWith('fish:')) return fishModelFor(id, itemDef(id).fish.c);
-  return null;
-}
+const ITEM_SIZE = { 'wood:palm': 0.3, 'wood:tree': 0.3, fibre: 0.26, coconut: 0.15, stone: 0.17, 'block:wood': 0.15, 'block:stone': 0.15, floor: 0.17, wall: 0.17, door: 0.17, roof: 0.17, stairs: 0.17 };
+const ITEM_TURN = { 'wood:palm': [0.35, 0.5, 0.25], 'wood:tree': [0.35, 0.5, 0.25], coconut: [0.3, -0.4, 0], stone: [0.4, 0.3, 0], fibre: [0.2, 0.4, -0.5], wall: [0.3, 0.7, 0], door: [0.3, 0.7, 0], stairs: [0.3, -0.8, 0] };
 
 // the pickaxe blow lands where the point of the pick really meets something
 // (blow.js): aim fixed at the end of the hang, a whiff once the strike pose
 // is passed with nothing met
 const PICK_BLOW = { keys: PICKAXE.keys, scale: PICKAXE.scale, pivot: PICKAXE.pivot, tip: PICK.TIP, lock: 0.21, end: 0.262, reach: 2.3 };
+
+// eating: when each bite lands (s) and how far it bites (model x, the head
+// is +x; null: the last mouthful), the food held up under the nose
+const BITE_T = [0.45, 0.92, 1.4];
+const BITES = [0.09, -0.04, null];
+const MOUTH = { p: [0.04, -0.08, -0.36], q: Q(0.3, -0.5, -0.12) };
+const ease = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+const _jq = new THREE.Quaternion(), _je = new THREE.Euler();
+
+// crumbs falling from a bite, in the held view's own scene
+class Crumbs {
+  constructor(scene) {
+    this.N = 40;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.N * 3).fill(-99), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.N * 3), 3));
+    this.pts = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.012, vertexColors: true }));
+    this.pts.frustumCulled = false;
+    this.vel = new Float32Array(this.N * 3); this.life = new Float32Array(this.N); this.next = 0;
+    scene.add(this.pts);
+  }
+  emit(p, v, c) {
+    const i = this.next = (this.next + 1) % this.N, G = this.pts.geometry.attributes;
+    G.position.setXYZ(i, p.x, p.y, p.z); G.color.setXYZ(i, c[0], c[1], c[2]); G.color.needsUpdate = true;
+    this.vel.set([v.x, v.y, v.z], i * 3); this.life[i] = 0.6 + Math.random() * 0.3;
+  }
+  update(dt) {
+    const P = this.pts.geometry.attributes.position;
+    let any = false;
+    for (let i = 0; i < this.N; i++) {
+      if (this.life[i] <= 0) continue;
+      any = true; this.life[i] -= dt;
+      this.vel[i * 3 + 1] -= 3 * dt;
+      P.setXYZ(i, P.getX(i) + this.vel[i * 3] * dt, P.getY(i) + this.vel[i * 3 + 1] * dt, P.getZ(i) + this.vel[i * 3 + 2] * dt);
+      if (this.life[i] <= 0) P.setY(i, -99);
+    }
+    if (any) P.needsUpdate = true;
+  }
+}
 
 export class Hands {
   constructor(lights, hooks) {
@@ -116,10 +150,13 @@ export class Hands {
     this.carried = null; // { body } while a loose piece is in hand
     this.lastYaw = null; this.lastPitch = 0;
     this.blow = new Blow(this.view, PICK_BLOW, hooks);
+    this.crumbs = new Crumbs(this.view.scene);
+    this.eating = null;
   }
 
   setHeld(id) {
     this.heldId = id;
+    if (this.eating && this.eating.id !== id) this.stopEating();
     if (this.carried) return; // the stone in hand stays until it is dropped or thrown
     this.id = id;
     if (id === 'scythe') this.view.set(id, dress(MODELS.scythe(), 'held'), SCYTHE);
@@ -134,14 +171,14 @@ export class Hands {
   // ---------------------------------------------------------------- carrying
   // any item with a model, centred and scaled to a hand-held size
   itemView(id) {
-    const fish = id.startsWith('fish:');
+    const fish = !!itemDef(id).fish;
     const inner = dress(itemModel(id), 'held'), g = new THREE.Group();
     const box = new THREE.Box3().setFromObject(inner), size = box.getSize(new THREE.Vector3());
     inner.position.copy(box.getCenter(new THREE.Vector3())).negate();
     g.add(inner);
     const k = (fish ? 0.34 : ITEM_SIZE[id] ?? 0.22) / Math.max(size.x, size.y, size.z, 1e-3);
     const [pitch, yaw, roll] = fish ? [0.25, 0.15, -0.12] : ITEM_TURN[id] || [0.3, 0.4, 0];
-    return [g, { idle: { p: [0.2, -0.09, -0.56], q: Q(pitch, yaw, roll) }, scale: k, flop: fish }];
+    return [g, { idle: { p: [0.2, -0.09, -0.56], q: Q(pitch, yaw, roll) }, scale: k, flop: id.startsWith('fish:'), centre: inner.position.clone() }];
   }
 
   // a loose piece picked up: the tool goes down while it is carried
@@ -165,6 +202,65 @@ export class Hands {
     if (this.id === 'pickaxe' && this.view.swing()) this.hooks.sound?.('pickSwing');
   }
 
+  // ---------------------------------------------------------------- eating
+  // the food is brought up to the mouth, three bites (the model is bitten
+  // down each time: tooth marks, white flesh), crumbs, a gulp, and down again
+  eat() {
+    if (this.eating || !itemDef(this.id ?? '').eat) return false;
+    this.eating = { id: this.id, t: 0, bites: 0 };
+    return true;
+  }
+  // something else taken in hand mid-meal: the bitten fish goes back whole
+  stopEating() {
+    this.eating = null;
+    this.view.item = null;
+  }
+  bite(n) {
+    const g = this.view.holder.children[0], food = this.view.anim;
+    if (!g || !food) return;
+    const cut = BITES[n];
+    g.clear();
+    if (cut == null) return; // swallowed whole
+    const inner = dress(bittenFish(itemModel(this.eating.id), cut), 'held');
+    inner.position.copy(food.centre);
+    g.add(inner);
+    // crumbs falling from the bite
+    this.view.holder.updateMatrixWorld();
+    const at = new THREE.Vector3(cut, 0, 0).add(food.centre).multiplyScalar(1).applyMatrix4(this.view.holder.matrixWorld);
+    const skin = itemDef(this.eating.id).eat === 'burnt' ? [0.16, 0.12, 0.1] : [0.78, 0.5, 0.22];
+    for (let k = 0; k < 9; k++) this.crumbs.emit(at, new THREE.Vector3((Math.random() - 0.5) * 0.5, Math.random() * 0.3, (Math.random() - 0.5) * 0.3 + 0.1), k % 3 ? [0.97, 0.9, 0.76] : skin);
+  }
+  eatPose(dt) {
+    const e = this.eating, v = this.view, H = v.holder;
+    e.t += dt;
+    const t = e.t;
+    if (e.bites < BITE_T.length && t >= BITE_T[e.bites]) {
+      this.bite(e.bites);
+      this.hooks.sound?.(`munch:${itemDef(e.id).eat}`);
+      this.hooks.rumble?.(0.15, 40);
+      e.bites++;
+    }
+    if (t >= 1.62 && !e.gulped) { e.gulped = true; this.hooks.sound?.('gulp'); }
+    if (t >= 1.95) {
+      const id = e.id;
+      this.eating = null;
+      this.view.item = null; // the next one comes up from below, whole
+      this.hooks.ate?.(id);
+      this.setHeld(this.heldId);
+      return;
+    }
+    const up = t < 0.32 ? ease(t / 0.32) : t < 1.6 ? 1 : 1 - ease((t - 1.6) / 0.3);
+    let jerk = 0; // each bite: pulled to the teeth, then torn away
+    for (const b of BITE_T) { const d = t - b + 0.08; if (d > 0 && d < 0.3) jerk = Math.max(jerk, d < 0.08 ? d / 0.08 : 1 - (d - 0.08) / 0.22); }
+    const idle = v.anim.idle, chew = Math.sin(t * 22) * 0.004 * up;
+    H.position.set(
+      idle.p[0] + (MOUTH.p[0] - idle.p[0]) * up,
+      idle.p[1] + (MOUTH.p[1] - idle.p[1]) * up + jerk * 0.035 + chew,
+      idle.p[2] + (MOUTH.p[2] - idle.p[2]) * up + jerk * 0.06,
+    );
+    H.quaternion.copy(idle.q).slerp(MOUTH.q, up).multiply(_jq.setFromEuler(_je.set(-jerk * 0.25, 0, jerk * 0.1)));
+  }
+
   update(dt, player, camera) {
     const moving = player.onGround && Math.hypot(player.vel.x, player.vel.z) > 0.5;
     const look = { x: this.lastYaw == null ? 0 : this.lastYaw - player.yaw, y: this.lastYaw == null ? 0 : this.lastPitch - player.pitch };
@@ -177,6 +273,8 @@ export class Hands {
       }
     }
     if (this.id === 'pickaxe') this.blow.sweep(camera);
+    if (this.eating && this.view.anim) this.eatPose(dt);
+    this.crumbs.update(dt);
     if (this.view.anim?.flop) { // a fish held up flips its tail now and then
       const t = performance.now() / 1000, f = Math.max(0, Math.sin(t * 1.3)) ** 6;
       this.view.holder.children[0].rotation.set(0, Math.sin(t * 22) * 0.35 * f, Math.sin(t * 22 + 1) * 0.08 * f);

@@ -9,8 +9,8 @@
 // the bag: picking up and storing are separate actions.
 import * as THREE from 'three';
 import { mulberry32 } from './noise.js';
-import { MODELS, fishModelFor } from './models.js';
-import { itemDef } from './items.js';
+import { itemModel } from './models.js';
+import { ITEMS } from './items.js';
 import { dress } from './dress.js';
 import { cutBlock, platePlanes } from './vegetation.js';
 
@@ -65,10 +65,10 @@ function hullOf(P) {
 // shape of a modelled item lying in the world (log, coconut): its parts
 // merged for the hull, centred on its middle
 const itemShapes = new Map();
-export const hasModel = (kind) => !!MODELS[kind] || !!kind?.startsWith('fish:');
+export const hasModel = (kind) => !!kind && !ITEMS[kind]?.build && !!itemModel(kind); // (building pieces are placed, not dropped)
 function itemShape(kind) {
   if (!itemShapes.has(kind)) {
-    const model = MODELS[kind] ? MODELS[kind]() : fishModelFor(kind, itemDef(kind).fish.c);
+    const model = itemModel(kind);
     const box = new THREE.Box3();
     for (const p of model.parts) { p.geo.computeBoundingBox(); box.union(p.geo.boundingBox); }
     const centre = box.getCenter(new THREE.Vector3());
