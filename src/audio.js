@@ -544,6 +544,11 @@ export class Audio {
       this.tone(900, 1500, 0.12, 'sawtooth', 0.03, 0, this.master, 0.05); this.tone(1400, 750, 0.2, 'sawtooth', 0.03, 0.12, this.master, 0.05);
       for (let i = 0; i < 4; i++) this.noise({ type: 'lowpass', f0: 500, q: 0.6, dur: 0.08, attack: 0.02, gain: 0.08, delay: 0.25 + i * 0.12, buf: this.brown });
     }
+    if (name === 'crabHit') { // a crack of shell and a thump into the sand
+      this.noise({ type: 'highpass', f0: 2600, q: 0.8, dur: 0.035, attack: 0.001, gain: 0.25 });
+      for (let i = 0; i < 4; i++) this.noise({ type: 'bandpass', f0: 1800 + Math.random() * 2400, q: 5, dur: 0.02, attack: 0.001, gain: 0.1, delay: 0.02 + i * 0.03 });
+      this.noise({ type: 'lowpass', f0: 400, q: 0.5, dur: 0.12, gain: 0.25, delay: 0.02, buf: this.brown });
+    }
     if (name === 'discover') { // a little rising arpeggio and a shimmer
       [392, 523, 659, 784, 1047].forEach((f, i) => this.tone(f, f, 0.22, 'triangle', 0.07, i * 0.08));
       for (let i = 0; i < 6; i++) this.tone(2400 + i * 300, 2600 + i * 300, 0.08, 'sine', 0.015, 0.45 + i * 0.05);

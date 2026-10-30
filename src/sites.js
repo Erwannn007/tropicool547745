@@ -376,7 +376,7 @@ const BUILD = {
     const gy = k.ground(0, -1.1);
     const roof = bevelBox(3.4, 0.1, 2.3, 0.04, [1.7, 0, 1.15]);
     k.add(TEX.straw(), roof, M(0, (k.ground(0, -0.2) + 1.62 + gy) / 2, -1.1, -0.78, 0, 0), 'wood');
-    k.solid(0, -1.1, 1.7, 0.9, gy, gy + 0.9);
+    for (const x of [-1.2, 0, 1.2]) k.circle(x, -1.75, 0.45); // the low back of the roof
     for (let i = 0; i < 9; i++) { // fire ring
       const a = (i / 9) * Math.PI * 2, x = 0.3 + Math.cos(a) * 0.6, z = 2 + Math.sin(a) * 0.6;
       const st = cutBlock(platePlanes(mulberry32(k.s.seed + i), 14, 0.7, 0.95), { scale: [0.17, 0.13, 0.15] }).geo;

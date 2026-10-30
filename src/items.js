@@ -79,6 +79,9 @@ export const RECIPES = [
 export function itemDef(id) {
   if (ITEMS[id]) return { id, ...ITEMS[id] };
   if (id === 'wood') return { id, name: 'Bois (n’importe lequel)', max: 64, cat: 'Matériau', desc: '' };
+  if (id === 'crab') return { id, name: 'Crabe cru', max: 16, cat: 'Poisson', desc: 'Attrapé sur la plage. Fais-le griller sur un feu de camp.' };
+  if (id === 'grill:crab') return { id, name: 'Crabe grillé', max: 16, cat: 'Nourriture', desc: 'Carapace rouge vif, chair tendre et sucrée. Utilise-le pour le manger.', eat: 'good' };
+  if (id === 'burnt:crab') return { id, name: 'Crabe carbonisé', max: 16, cat: 'Nourriture', desc: 'Oublié sur le feu… Ça croque un peu trop.', eat: 'burnt' };
   if (id.startsWith('fish:')) {
     const s = SPECIES[+id.slice(5)];
     return { id, name: s.name, max: 64, cat: 'Poisson', desc: `${rarityOf(s.w)} · ${s.d[0]}–${s.d[1]} m de fond. Fais-le griller sur un feu de camp.`, fish: s };

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { pixTex, handleTex, steelTex, handleGeometry, headGeometry } from './axeModel.js';
 import { mulberry32, makeSimplex } from './noise.js';
 import { SPECIES } from './fishing.js';
+import { crabModel } from './fauna.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const cache = new Map();
@@ -1464,8 +1465,11 @@ export function fishModelFor(id, colors, cook = 0) { return once(`m:${id}:${cook
 // the model of any item id: MODELS, a fish ('fish:N'), a grilled one
 // ('grill:N') or a burnt one ('burnt:N')
 const COOKED = { fish: 0, grill: 2, burnt: 3 };
+const CRAB_COOK = [null, ['#7a1e10', '#a02c14', '#c8441e', '#e05c2a', '#f2844a', '#fab07a'], ['#8a1a0c', '#b8260e', '#e03a18', '#f86a30', '#ffa060', '#ffd8b0'], ['#120c0a', '#1e1410', '#2e2018', '#3e2c20', '#523a28', '#6a2a14']];
+export function crabModelFor(stage = 0) { return once(`m:crab:${stage}`, () => crabModel(CRAB_COOK[stage] || undefined)); }
 export function itemModel(id) {
   if (MODELS[id]) return MODELS[id]();
+  if (id === 'crab' || id === 'grill:crab' || id === 'burnt:crab') return crabModelFor(id === 'crab' ? 0 : id === 'grill:crab' ? 2 : 3);
   const [kind, n] = id?.split(':') ?? [];
   if (COOKED[kind] != null && SPECIES[+n]) return fishModelFor('fish:' + n, SPECIES[+n].c, COOKED[kind]);
   return null;

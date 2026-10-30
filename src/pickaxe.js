@@ -160,6 +160,8 @@ export class Quarry {
       const hit = this.ray.intersectObject(b.mesh, false)[0];
       if (hit) take('build', hit.distance, hit.point, hit.face.normal.clone().transformDirection(b.mesh.matrixWorld), { mat: b.mesh.userData.mat });
     }
+    const an = frags && this.fauna?.ray(o, dir, max); // a crab (fauna.js), for the tools and the aim only
+    if (an) take('animal', an.dist, an.point, an.normal, { animal: an.a });
     const built = builds && this.building?.ray(o, dir, max); // what the player built (building.js)
     if (built) take('build', built.dist, built.point, built.normal, { mat: built.mat, piece: built.piece });
     // the ground (terrain or pier/hut floors): march, then refine
@@ -227,6 +229,12 @@ export class Quarry {
     const at = c.point, n = c.normal;
     const square = Math.max(0, -dir.dot(n)); // 1 = straight into the surface
     const good = square > 0.35;
+    if (c.kind === 'animal') { // struck down: a puff of sand, a crunch
+      for (let k = 0; k < 14; k++) this.chip(at, n, 1.4, pick(k % 3 ? SAND : [[0.9, 0.35, 0.15], [0.95, 0.55, 0.25]]));
+      this.hooks.killed?.(c.animal, dir);
+      this.impact(0.06, 0.4, 70, 0.6, 0.006);
+      return 0.15;
+    }
     if (c.kind === 'stone' && TOOLS[tool]) return this.hitStone(c.prop, at, n, dir, good, tool);
     if (c.kind === 'rock' || c.kind === 'stone') { // too big for a pick: a shower of sparks and a jarring clank
       this.spray(at, n, dir, 14, 2.4);

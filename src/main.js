@@ -192,6 +192,11 @@ const quarry = new Quarry(scene, camera, {
   rumble: (s, ms) => input.rumble(s, ms),
   freeze: (s, tool) => (tool === 'axe' ? axe.sprite : hands.view).freeze(s),
   flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
+  killed: (a, dir) => { // a crab struck down: it lies there to be picked up
+    fauna.kill(a);
+    audio.sfx('crabHit');
+    debris.spawnItem('crab', new THREE.Vector3(a.x, a.wy + 0.15, a.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, a.yaw, 0)), new THREE.Vector3(dir.x * 1.2, 2.2, dir.z * 1.2), new THREE.Vector3((Math.random() - 0.5) * 8, 0, (Math.random() - 0.5) * 8));
+  },
   shattered: (p) => {
     if (p.mineral) discovered('ores', p.mineral);
     if (shatterTip) return;
@@ -210,7 +215,7 @@ const cooking = new Cooking(scene, camera, {
   sound: (n) => audio.sfx(n),
   sizzle: (k, burning) => audio.setSizzle(k, burning),
   save: () => placement.save(),
-  ready: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast('🔥 Ton poisson est grillé !'); },
+  ready: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast(o.cook?.id === 'crab' ? '🔥 Ton crabe est grillé !' : '🔥 Ton poisson est grillé !'); },
   burnt: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast('Ça sent le brûlé… 💨'); },
 });
 // rowboats on the lagoon
@@ -231,6 +236,7 @@ const building = new Building(scene, camera, {
   removed: (p) => { for (const b of debris.bodies) if (Math.hypot(b.mesh.position.x - p.x, b.mesh.position.z - p.z) < 3) debris.wake(b); }, // what lay on it falls
 });
 quarry.building = building;
+quarry.fauna = fauna;
 const hands = new Hands(lights, {
   sound: (n) => audio.sfx(n),
   aim: (reach) => quarry.aim(reach),
@@ -276,13 +282,13 @@ function pickPlaced() {
 }
 // camp fire under the crosshair, and what can be done there with what is in hand
 function aimedFire() { const o = placement.aimed(); return o?.id === 'campfire' ? o : null; }
-const isRawFish = (id) => !!id?.startsWith('fish:');
+const isRawFish = (id) => !!id?.startsWith('fish:') || id === 'crab';
 let foundTimer;
 function useFire(o, held) {
   if (o.cook) {
     const id = cooking.take(o);
     giveItems([[id, 1]]);
-    if (id.startsWith('fish:')) toast('Pas encore cuit : il est revenu cru');
+    if (isRawFish(id)) toast('Pas encore cuit : il est revenu cru');
     return true;
   }
   if (!isRawFish(held)) return false;
@@ -435,6 +441,9 @@ function promptHud(dt) {
     } else if (debris.aimed) {
       const b = debris.aimed;
       promptTarget = { html: `<div class="pname">${itemDef(b.kind).name}</div>${kb(K.grab)} Prendre ${kb(K.stash)} Ranger`, at: () => _anchor.copy(b.mesh.position).setY(b.mesh.position.y + b.r + 0.12) };
+    } else if ((held === 'pickaxe' || held === 'axe') && quarry.aim(2.6)?.kind === 'animal') {
+      const c = quarry.aim(2.6).animal;
+      promptTarget = { html: `<div class="pname">${FAUNA.crab.name}</div>${kb(K.use)} Frapper`, at: () => _anchor.set(c.x, c.wy + 0.35, c.z) };
     } else if (held === 'pickaxe') {
       const a = quarry.aim();
       if (a?.kind === 'stone') promptTarget = { html: `<div class="pname">${MINERALS[a.prop.mineral || 'basalt'].label}</div>${kb(K.use)} Miner`, at: () => _anchor.set(a.prop.x, a.prop.y + 0.75 * a.prop.s, a.prop.z) };
@@ -611,11 +620,22 @@ function buildWorld() {
 function siteState(world = current.world) { return getW('sites', worldKey(world.cfg)) || { found: [] }; }
 function fillSiteChests(world) {
   const st = siteState(world);
-  if (st.seeded || !world.sites.length) return;
+  if (!world.sites.length) return;
+  const floor = (c) => player.groundAt(c.x, c.z, world.heightAt(c.x, c.z) + 0.9); // the ground, or a step up (the temple's top)
+  if (st.seeded) { // put back down a chest left floating by an older version
+    let moved = false;
+    for (const site of world.sites) {
+      const c = chestSpot(site), o = placement.objects.find((q) => q.id === 'chest' && Math.hypot(q.x - c.x, q.z - c.z) < 0.3), y = floor(c);
+      if (!o || Math.abs(o.y - y) < 0.05) continue;
+      o.y = y; o.mesh.position.y = y; o.mesh.updateMatrix(); o.mesh.updateMatrixWorld(true); moved = true;
+    }
+    if (moved) placement.save();
+    return;
+  }
   for (const site of world.sites) {
     const c = chestSpot(site), slots = Array(18).fill(null);
     site.loot.forEach((l, k) => { slots[k] = { id: l.id, n: Math.min(l.n, itemDef(l.id).max) }; });
-    placement.spawn('chest', c.x, player.groundAt(c.x, c.z, 99), c.z, c.yaw, slots);
+    placement.spawn('chest', c.x, floor(c), c.z, c.yaw, slots);
   }
   placement.save();
   setW('sites', worldKey(world.cfg), { ...st, seeded: true });

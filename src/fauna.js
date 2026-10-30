@@ -58,8 +58,9 @@ const MACAW = { red: ['#6e1010', '#981818', '#c42420', '#e8402c', '#ff6a48'], ye
 const DOLPHIN = ['#2a3a52', '#3a4e6c', '#506886', '#6c86a2', '#9cb0c4', '#d8e0e8'];
 const MORPHO = ['#0a1e5a', '#123a9a', '#1a62d8', '#3a94f4', '#7ec8ff', '#1a1210'];
 
-function crabModel() {
-  const t = tex(16, 16, (g, w, h) => { const r = mulberry32(1); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, CRAB, x, y, 1.5 + (h - y) / h * 3 + (r() - 0.5) * 1.2 - ((x * 3 + y) % 7 === 0 ? 1 : 0)); });
+// pal: the shell (live, or cooked on the fire: models.js crabModelFor)
+export function crabModel(pal = CRAB) {
+  const t = tex(16, 16, (g, w, h) => { const r = mulberry32(1); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, pal, x, y, 1.5 + (h - y) / h * 3 + (r() - 0.5) * 1.2 - ((x * 3 + y) % 7 === 0 ? 1 : 0)); });
   const eye = tex(2, 2, (g) => { g.fillStyle = '#120c0a'; g.fillRect(0, 0, 2, 2); g.fillStyle = '#fff4e0'; g.fillRect(0, 0, 1, 1); });
   const body = part(ell(0.12, 0.05, 0.09, 10, 6).translate(0, 0.07, 0), 0);
   const list = [[body]];
@@ -238,6 +239,14 @@ export class Fauna {
       }
       return null;
     };
+    this.beach = () => { // somewhere on a beach out of sight, for a crab coming back
+      for (let t = 0; t < 200; t++) {
+        const isl = world.islands[Math.floor(Math.random() * world.islands.length)], a = Math.random() * 6.28, d = Math.random() * isl.r * 1.35;
+        const x = isl.x + Math.cos(a) * d, z = isl.z + Math.sin(a) * d, h = H(x, z);
+        if (h > 0.08 && h < 0.85 && Math.hypot(x - player.pos.x, z - player.pos.z) > 30) return { x, z };
+      }
+      return null;
+    };
     const add = (kind, a) => { a.kind = kind; a.i = this.animals.filter((b) => b.kind === kind).length; a.ph = r() * 6.28; this.animals.push(a); };
     for (const [kind, n] of Object.entries(this.census)) {
       for (let k = 0; k < n; k++) {
@@ -275,6 +284,11 @@ export class Fauna {
     const fwd = camera.getWorldDirection(_p.clone());
     for (const a of this.animals) {
       const herd = this.herds[a.kind];
+      if (a.dead != null) { // struck down: gone a while, then another one turns up
+        herd.set(a.i, HIDE, 0, 0);
+        if ((a.dead -= dt) <= 0) { const s = this.beach(); if (s) { a.x = s.x; a.z = s.z; a.mode = 'idle'; a.t = 2; } a.dead = s ? null : 10; }
+        continue;
+      }
       const far = Math.hypot((a.x ?? a.cx) - cam.x, (a.z ?? a.cz) - cam.z);
       if (a.kind !== 'dolphin' && a.kind !== 'tern' && far > 110) { herd.set(a.i, HIDE, 0, 0); continue; }
       const dp = a.x != null ? Math.hypot(a.x - P.x, a.z - P.z) : 99;
@@ -289,14 +303,32 @@ export class Fauna {
     for (const h of Object.values(this.herds)) h.flush();
   }
 
-  // sideways in short dashes; away from the player, fast
+  // the first crab along a ray from o (unit dir) within max metres
+  ray(o, dir, max) {
+    let best = null;
+    for (const a of this.animals) {
+      if (a.kind !== 'crab' || a.dead != null || a.wx == null) continue;
+      const r = 0.24 * a.s, cx = a.x - o.x, cy = a.wy - 0.04 - o.y, cz = a.z - o.z;
+      const t = cx * dir.x + cy * dir.y + cz * dir.z, d2 = cx * cx + cy * cy + cz * cz - t * t;
+      if (t < 0 || d2 > r * r) continue;
+      const tt = t - Math.sqrt(r * r - d2);
+      if (tt > max || (best && tt > best.dist)) continue;
+      const point = new THREE.Vector3(o.x + dir.x * tt, o.y + dir.y * tt, o.z + dir.z * tt);
+      best = { dist: tt, point, normal: new THREE.Vector3(point.x - a.x, point.y - a.wy, point.z - a.z).normalize(), a };
+    }
+    return best;
+  }
+  kill(a) { a.dead = 60 + Math.random() * 60; a.wx = null; }
+
+  // sideways in short dashes; away from the player, not too far
   step_crab(a, dt, H, dp, P) {
     a.t -= dt;
-    if (dp < 4 && a.mode !== 'flee') { a.mode = 'flee'; a.t = 1.2 + Math.random(); a.dir = Math.sign((a.x - P.x) * Math.cos(a.yaw) - (a.z - P.z) * Math.sin(a.yaw)) || 1; this.hooks.sound?.('crab', a); }
+    if (dp < 2.6 && a.mode !== 'flee' && a.mode !== 'rest') { a.mode = 'flee'; a.t = 0.8 + Math.random() * 0.6; a.dir = Math.sign((a.x - P.x) * Math.cos(a.yaw) - (a.z - P.z) * Math.sin(a.yaw)) || 1; this.hooks.sound?.('crab', a); }
     if (a.t <= 0) {
-      if (a.mode === 'idle') { a.mode = 'walk'; a.t = 0.6 + Math.random() * 1.4; a.dir = Math.random() < 0.5 ? -1 : 1; } else { a.mode = 'idle'; a.t = 1 + Math.random() * 3; if (Math.random() < 0.3) a.yaw += (Math.random() - 0.5) * 1.5; }
+      if (a.mode === 'flee') { a.mode = 'rest'; a.t = 1.5 + Math.random() * 1.5; } // out of breath: a chance to catch it
+      else if (a.mode === 'idle' || a.mode === 'rest') { a.mode = 'walk'; a.t = 0.6 + Math.random() * 1.4; a.dir = Math.random() < 0.5 ? -1 : 1; } else { a.mode = 'idle'; a.t = 1 + Math.random() * 3; if (Math.random() < 0.3) a.yaw += (Math.random() - 0.5) * 1.5; }
     }
-    const sp = a.mode === 'flee' ? 2.6 : a.mode === 'walk' ? 0.7 : 0;
+    const sp = a.mode === 'flee' ? 2.2 : a.mode === 'walk' ? 0.7 : 0;
     if (sp) {
       const nx = a.x + Math.cos(a.yaw) * a.dir * sp * dt, nz = a.z - Math.sin(a.yaw) * a.dir * sp * dt, h = H(nx, nz);
       if (h > 0.02 && h < 1.1) { a.x = nx; a.z = nz; } else { a.dir *= -1; if (a.mode === 'flee') a.yaw += 0.8; }

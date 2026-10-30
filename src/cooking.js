@@ -5,7 +5,7 @@
 // The state lives on the placed camp fire (o.cook = { id, t }) and is saved
 // with it (placement.js).
 import * as THREE from 'three';
-import { MODELS, SPIT_Y, fishModelFor } from './models.js';
+import { MODELS, SPIT_Y, fishModelFor, crabModelFor } from './models.js';
 import { SPECIES } from './fishing.js';
 import { dress } from './dress.js';
 
@@ -13,7 +13,7 @@ export const COOK = { half: 6, done: 14, burnt: 36 }; // seconds on the fire
 export const cookStage = (t) => (t < COOK.half ? 0 : t < COOK.done ? 1 : t < COOK.burnt ? 2 : 3);
 const STAGE_ID = ['fish', 'fish', 'grill', 'burnt'];
 // what comes off the spit: raw until it is done
-export const cookedId = (c) => `${STAGE_ID[cookStage(c.t)]}:${c.id.split(':')[1]}`;
+export const cookedId = (c) => (cookStage(c.t) < 2 ? c.id : `${STAGE_ID[cookStage(c.t)]}:${c.id === 'crab' ? 'crab' : c.id.split(':')[1]}`);
 
 // soft square particles, each with its own colour, size growth and fade
 export class Puffs {
@@ -97,7 +97,7 @@ export class Cooking {
     s.stage = st;
     s.fish.clear();
     const n = +o.cook.id.split(':')[1];
-    s.fish.add(dress(fishModelFor('fish:' + n, SPECIES[n].c, st), 'world'));
+    s.fish.add(dress(o.cook.id === 'crab' ? crabModelFor(st) : fishModelFor('fish:' + n, SPECIES[n].c, st), 'world'));
     return true;
   }
 
