@@ -28,7 +28,7 @@ Tropicool est un jeu cozy en 3D à la première personne (archipel tropical proc
 - `src/inventory.js` : inventaire 9 + 27 cases + fabrication, panneaux pixel assortis aux menus.
 - `src/models.js` : modèles 3D des objets (torche tiki, transat, parasol, feu de camp, faux, bûches, noix de coco, fibres, canne, poissons) ; `src/dress.js` : leurs matériaux (monde, main, icône, hologramme, flamme).
 - `src/icons.js` : icônes d'inventaire rendues depuis les modèles 3D (30 px + contour).
-- `src/held.js` : objet tenu générique (même recette que la hache ; pivot autour de la main, inertie au regard, vibration d'impact) ; `src/hands.js` : faux, pioche (tenue comme la hache, coup visé sur ce que montre le viseur), torche, objets à poser, pas de main visible ; l'outil est rangé pendant qu'on porte un morceau.
+- `src/held.js` : objet tenu générique (même recette que la hache ; pivot autour de la main, inertie au regard, vibration d'impact) ; `src/hands.js` : faux, pioche (tenue comme la hache, coup visé sur ce que montre le viseur), torche, objets à poser, tout autre objet qui a un modèle (noix de coco, bois, pierre, fibres, chaque poisson qui frétille) affiché en main devant à droite (`itemView()`) ; pas de main visible ; l'outil est rangé pendant qu'on porte un morceau.
 - `src/placement.js` : aperçu bleu/rouge, règles de pose, collisions, lumières, braises, sauvegarde par archipel.
 - `src/saves.js` : mondes enregistrés ; chaque monde joué a un id d'instance (`settings.world.instance`) sous lequel sont rangés arbres abattus, herbe fauchée et objets posés (`worldKey()` dans `src/axe.js`).
 - `src/book.js` : carnet de voyage (pages à écrire, sauvegarde locale).

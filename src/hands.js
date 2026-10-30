@@ -1,11 +1,14 @@
 // What the hands show for the new items: the scythe (mowing sweep), the
 // pickaxe (overhead stroke, held like the axe), the tiki
-// torch (lights the way, flickers) and a small version of any placeable.
+// torch (lights the way, flickers), a small version of any placeable, and
+// any other item with a model (coconut, wood, stone, fibres, fish) held up
+// in front, a little to the right.
 // While a loose piece is carried (debris.js holds it in the world) the tool
 // is put away.
 import * as THREE from 'three';
 import { HeldView } from './held.js';
-import { MODELS, PICK } from './models.js';
+import { MODELS, PICK, fishModelFor } from './models.js';
+import { itemDef } from './items.js';
 import { basis } from './axeModel.js';
 import { dress } from './dress.js';
 import { PLACEABLE } from './placement.js';
@@ -87,6 +90,16 @@ const MINI = {
   book: { idle: { p: [0.27, -0.2, -0.56], q: Q(-0.25, -0.45, 0.1) }, scale: 1.1 },
 };
 
+// Plain items: shown at about the same size whatever the model, turned to
+// read well (pitch, yaw, roll); fish lie across the hand, head to the left.
+const ITEM_SIZE = { 'wood:palm': 0.3, 'wood:tree': 0.3, fibre: 0.26, coconut: 0.15, stone: 0.17 };
+const ITEM_TURN = { 'wood:palm': [0.35, 0.5, 0.25], 'wood:tree': [0.35, 0.5, 0.25], coconut: [0.3, -0.4, 0], stone: [0.4, 0.3, 0], fibre: [0.2, 0.4, -0.5] };
+function itemModel(id) {
+  if (MODELS[id]) return MODELS[id]();
+  if (id?.startsWith('fish:')) return fishModelFor(id, itemDef(id).fish.c);
+  return null;
+}
+
 // the pickaxe blow: the head is aimed at what the crosshair shows, then the
 // swept point of the pick is cast into the world frame by frame and the blow
 // lands where it really meets something (no timed hit)
@@ -115,11 +128,24 @@ export class Hands {
     else if (id === 'pickaxe') this.view.set(id, dress(MODELS.pickaxe(), 'held'), { ...PICKAXE, keys: PICKAXE.keys.map((k) => ({ ...k })) });
     else if (id === 'torch') this.view.set(id, dress(MODELS.torch(), 'held'), TORCH);
     else if (MINI[id]) this.view.set(id, dress(MODELS[id](), 'held'), MINI[id]);
+    else if (id && !['rod', 'axe', 'book'].includes(id) && itemModel(id)) this.view.set(id, ...this.itemView(id));
     else this.view.set(null, null, null);
     this.light.off = id !== 'torch';
   }
 
   // ---------------------------------------------------------------- carrying
+  // any item with a model, centred and scaled to a hand-held size
+  itemView(id) {
+    const fish = id.startsWith('fish:');
+    const inner = dress(itemModel(id), 'held'), g = new THREE.Group();
+    const box = new THREE.Box3().setFromObject(inner), size = box.getSize(new THREE.Vector3());
+    inner.position.copy(box.getCenter(new THREE.Vector3())).negate();
+    g.add(inner);
+    const k = (fish ? 0.34 : ITEM_SIZE[id] ?? 0.22) / Math.max(size.x, size.y, size.z, 1e-3);
+    const [pitch, yaw, roll] = fish ? [0.25, 0.15, -0.12] : ITEM_TURN[id] || [0.3, 0.4, 0];
+    return [g, { idle: { p: [0.2, -0.09, -0.56], q: Q(pitch, yaw, roll) }, scale: k, flop: fish }];
+  }
+
   // a loose piece picked up: the tool goes down while it is carried
   carry(body) {
     this.carried = { body };
@@ -153,6 +179,10 @@ export class Hands {
       }
     }
     if (this.id === 'pickaxe') this.sweep(camera);
+    if (this.view.anim?.flop) { // a fish held up flips its tail now and then
+      const t = performance.now() / 1000, f = Math.max(0, Math.sin(t * 1.3)) ** 6;
+      this.view.holder.children[0].rotation.set(0, Math.sin(t * 22) * 0.35 * f, Math.sin(t * 22 + 1) * 0.08 * f);
+    }
     if (!this.light.off) {
       // the flame sits ahead and to the right of the eyes
       const r = new THREE.Vector3(0.45, 0.05, -0.6).applyQuaternion(camera.quaternion);
