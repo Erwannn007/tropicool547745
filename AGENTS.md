@@ -20,6 +20,7 @@ Tropicool est un jeu cozy en 3D à la première personne (archipel tropical proc
 - `src/lights.js` : lumières ponctuelles (torches, feux), les 8 plus proches envoyées aux shaders.
 - `src/textures.js` : toutes les textures pixel art procédurales.
 - `src/terrain.js`, `src/water.js`, `src/sky.js`, `src/grass.js` : sol, lagon, ciel et nuages, herbe instanciée.
+- `src/splash.js` : vie de la surface du lagon : ondes en anneaux (liste `uRip` lue par le shader de `water.js`), gouttes carrées, sillage quand on marche ou nage dans l'eau, éclaboussure quand un objet ou le joueur tombe dedans. Le bois et les noix de coco flottent, les pierres coulent (`debris.js`).
 - `src/vegetation.js` : palmiers, arbres, buissons, fougères, rochers, pierres à miner (géométrie + instancing par cellules de 64 m ; `detailStone()` donne le matériau à fissures d'une pierre qu'on mine). Rochers, pierres et éclats sont des blocs taillés en plaques (`cutBlock()` + `platePlanes()`), joints clairs d'un pixel dessinés par le define `PLATES`.
 - `src/structures.js` : ponton, paillote (sol et bois vernis avec reflets `varnish()` de `shaders.js`, canapés à coussins arrondis).
 - `src/player.js`, `src/input.js` : déplacement, collisions ; clavier/souris, tactile, manette.

@@ -1,13 +1,17 @@
-// Transparent turquoise lagoon water with pixel caustics, glints and shore foam.
+// Transparent turquoise lagoon water with pixel caustics, glints and shore foam,
+// and the rings of ripples (splashes, wading: splash.js writes uRip).
 import * as THREE from 'three';
 import { makeMaterial } from './shaders.js';
 
 export function buildWater() {
   const geo = new THREE.PlaneGeometry(4000, 4000, 1, 1);
   geo.rotateX(-Math.PI / 2);
+  const RIPPLES = 16;
   const material = makeMaterial({
     transparent: true,
     depthWrite: false,
+    defines: { RIPPLES },
+    uniforms: { uRip: { value: Array.from({ length: RIPPLES }, () => new THREE.Vector4(0, 0, -100, 0)) } },
     vertex: /* glsl */`
       varying vec3 vWorld;
       void main() {
@@ -17,6 +21,7 @@ export function buildWater() {
       }`,
     fragment: /* glsl */`
       varying vec3 vWorld;
+      uniform vec4 uRip[RIPPLES];
       const float TEXELS = 12.0;
       float waveH(vec2 p) {
         return sin(p.x * 0.9 + uTime * 1.1) * 0.5 + sin(p.y * 1.3 - uTime * 0.9) * 0.4
@@ -81,6 +86,23 @@ export function buildWater() {
             col += vec3(0.85, 0.95, 1.0) * ring * 0.45;
           }
           col = mix(col, col * vec3(0.8, 0.86, 0.9), uRain * 0.3);
+        }
+
+        // ripples: pixel rings spreading and fading, white churn where it went in
+        if (dist < 70.0) for (int i = 0; i < RIPPLES; i++) {
+          vec4 r = uRip[i];
+          float age = uTime - r.z;
+          if (age < 0.0 || age > 2.4 || r.w <= 0.0) continue;
+          float d = length(p - r.xy);
+          float R1 = age * (0.75 + r.w * 0.45);
+          float fade = (1.0 - age / 2.4) * min(1.0, r.w * 1.3);
+          float ring = step(abs(d - R1), 0.08 + r.w * 0.04) + 0.7 * step(abs(d - R1 * 0.62), 0.07) * step(0.3, age);
+          float trough = step(abs(d - R1 + 0.2 + r.w * 0.04), 0.08) * fade; // darker water just inside the crest
+          float churn = step(d, 0.14 + 0.24 * r.w) * (1.0 - smoothstep(0.0, 0.5, age)) * step(0.35, hash12(px + floor(uTime * 10.0)));
+          float k = clamp(ring * min(1.0, fade * 1.4) + churn, 0.0, 1.0);
+          col = mix(col, col * vec3(0.45, 0.68, 0.78), trough * (1.0 - k));
+          col = mix(col, vec3(0.95, 1.0, 1.0), k);
+          alpha = max(alpha, max(k, trough * 0.6) * 0.92);
         }
 
         // shore foam

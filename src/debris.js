@@ -174,9 +174,11 @@ export class Debris {
   step(b, h) {
     const m = b.mesh, p = m.position;
     const water = p.y < 0;
-    if (water && !b.wet && b.v.y < -1.5) this.hooks.sound?.('plop');
+    if (water && !b.wet) this.hooks.splash?.(p, Math.min(1.5, -b.v.y * 0.16 + b.r * 2.2)); // into the lagoon
     b.wet = water;
-    b.v.y -= G * (water ? 0.45 : 1) * h; // stone sinks slowly through the lagoon
+    const floats = b.kind !== 'stone'; // wood and coconuts float, stones sink slowly
+    b.v.y -= G * (water ? 0.45 : 1) * h;
+    if (water && floats) b.v.y += G * 1.6 * Math.min(1, -p.y / (b.r * 0.8)) * h;
     if (water) { const k = Math.exp(-2.4 * h); b.v.multiplyScalar(k); b.w.multiplyScalar(k); }
     p.addScaledVector(b.v, h);
     const wl = b.w.length();
@@ -224,7 +226,8 @@ export class Debris {
     }
     this.solids(b);
     // rest: still, on the ground, for a moment
-    if (touching && b.v.lengthSq() < 0.02 && b.w.lengthSq() < 0.25) {
+    const floating = water && floats && !touching;
+    if ((touching || floating) && b.v.lengthSq() < 0.02 && b.w.lengthSq() < 0.25) {
       b.still += h;
       if (b.still > 0.35) { b.sleeping = true; b.v.set(0, 0, 0); b.w.set(0, 0, 0); this.flatten(b); }
     } else b.still = 0;
@@ -369,7 +372,7 @@ export class Debris {
   hold(b, camera, dt) {
     const o = camera.position, f = camera.getWorldDirection(new THREE.Vector3());
     const right = new THREE.Vector3(-f.z, 0, f.x).normalize(), up = right.clone().cross(f);
-    const D = 0.9 + b.r * 1.4;
+    const D = 1.35 + b.r * 1.4;
     const target = o.clone().addScaledVector(f, D).addScaledVector(right, 0.18 + b.r * 0.4).addScaledVector(up, -0.04 - b.r * 0.25);
     const p = b.mesh.position, before = p.clone();
     p.lerp(target, 1 - Math.exp(-dt * 11));
@@ -381,6 +384,8 @@ export class Debris {
       const c = this.castWorld(o, d, len + b.r * 0.8);
       if (c) { hit = c; p.copy(o).addScaledVector(d, Math.max(0.3, c.dist - b.r * 0.8)); }
     }
+    // dipped into the lagoon
+    if ((p.y < 0) !== !!b.dipped) { if (p.y < 0 && b.v.length() > 0.8) this.hooks.splash?.(p, 0.5); b.dipped = p.y < 0; }
     // the ground under it
     const g = this.ground(p.x, p.z, o.y);
     let low = 0;

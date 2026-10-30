@@ -22,6 +22,7 @@ import { Hands } from './hands.js';
 import { Mower } from './scythe.js';
 import { Quarry } from './pickaxe.js';
 import { Debris } from './debris.js';
+import { WaterFX } from './splash.js';
 import { Placement, PLACEABLE } from './placement.js';
 import { initIcons } from './icons.js';
 import { Book } from './book.js';
@@ -166,7 +167,8 @@ function scatterTree(p, away) {
 }
 const mower = new Mower(scene);
 // loose pieces of broken stone lying in the world (picked up by hand)
-const debris = new Debris(scene, { sound: (n) => audio.sfx(n), flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o) });
+const waterFx = new WaterFX(scene, water, { sound: (n) => audio.sfx(n) });
+const debris = new Debris(scene, { sound: (n) => audio.sfx(n), flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o), splash: (p, k) => waterFx.splash(p, k) });
 let shatterTip = false;
 const quarry = new Quarry(scene, camera, {
   sound: (n) => audio.sfx(n),
@@ -394,6 +396,7 @@ function buildWorld() {
   axe.setWorld(world, veg, player);
   mower.setWorld(world, veg);
   debris.setWorld(world, veg, player);
+  waterFx.clear();
   if (hands.carried) hands.endCarry();
   quarry.setWorld(world, veg, player, debris);
   quarry.prewarm(renderer, camera);
@@ -402,7 +405,7 @@ function buildWorld() {
   day.shadowDir.copy(globals.uSunDir.value);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, placement, lights };
+  window.__game = { player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights };
   console.log(`[tropicool] world ${settings.world.seed} (${world.cfg.seed}) built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
     bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length, stones: world.props.stones.length,
@@ -766,6 +769,7 @@ function frame() {
     mower.update(dt);
     quarry.update(dt);
     debris.update(dt, state === 'play' ? camera : null);
+    waterFx.update(dt, player);
     grabHud();
     promptHud(dt);
     placement.aim(state === 'play' && !hands.carried ? inventory.held?.id : null);
