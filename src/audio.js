@@ -402,7 +402,18 @@ export class Audio {
       this.noise({ type: 'bandpass', f0: 1400, f1: 700, q: 1.5, dur: 0.09, attack: 0.005, gain: 0.08 });
       this.noise({ type: 'lowpass', f0: 260, q: 0.5, dur: 0.07, gain: 0.18, delay: 0.07, buf: this.brown });
     }
-    if (name === 'toss') this.noise({ f0: 500, f1: 1400, q: 1, dur: 0.16, attack: 0.05, gain: 0.07 }); // a stone flung through the air
+    if (name === 'stoneDrop') { // a stone of a heap settling onto the others
+      this.tone(120, 60, 0.25, 'sine', 0.25);
+      this.noise({ type: 'bandpass', f0: 420, f1: 250, q: 2, dur: 0.18, attack: 0.002, gain: 0.35 });
+      this.noise({ type: 'lowpass', f0: 600, q: 0.5, dur: 0.3, gain: 0.2, buf: this.brown });
+      for (let i = 0; i < 5; i++) this.noise({ type: 'bandpass', f0: 1200 + Math.random() * 2000, q: 6, dur: 0.03, attack: 0.001, gain: 0.06, delay: 0.05 + Math.random() * 0.3 });
+    }
+    if (name === 'knock') { // something held bumped into wood
+      const f = 300 + Math.random() * 80;
+      this.noise({ type: 'bandpass', f0: f * 2.2, q: 5, dur: 0.06, attack: 0.001, gain: 0.25 });
+      this.tone(f, f * 0.8, 0.08, 'triangle', 0.12);
+    }
+ this.noise({ f0: 500, f1: 1400, q: 1, dur: 0.16, attack: 0.05, gain: 0.07 }); // a stone flung through the air
     if (name === 'pickup') { this.tone(880, 1320, 0.08, 'sine', 0.06); this.tone(1320, 1760, 0.08, 'sine', 0.05, 0.07); }
     if (name === 'tick') this.tone(1800, 1400, 0.035, 'sine', 0.04);
     if (name === 'open') { this.tone(500, 900, 0.12, 'sine', 0.05); }

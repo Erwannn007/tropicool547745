@@ -168,6 +168,7 @@ export class Debris {
       return false;
     });
     if (camera) this.aim(camera);
+    if (this.carried && camera) this.hold(this.carried, camera, dt);
   }
 
   step(b, h) {
@@ -253,25 +254,28 @@ export class Debris {
         const vn = b.v.x * nx + b.v.z * nz;
         if (vn < 0) {
           b.v.x -= 1.3 * vn * nx; b.v.z -= 1.3 * vn * nz;
-          if (vn < -2 && this.clackT <= 0) { this.hooks.sound?.('clack'); this.clackT = 0.06; }
+          if (vn < -1.2 && this.clackT <= 0) { this.hooks.sound?.(st ? 'clack' : 'knock'); this.clackT = 0.1; } // stone on stone, or on a trunk / post
         }
       }
     }
   }
 
   // pieces knock into each other
+  // (the piece in hand shoves the others but is not moved by them)
   collidePairs() {
-    const L = this.bodies;
+    const L = this.bodies, held = this.carried;
     for (let i = 0; i < L.length; i++) {
-      const a = L[i]; if (a === this.carried || a.fade) continue;
+      const a = L[i]; if (a.fade) continue;
       for (let j = i + 1; j < L.length; j++) {
-        const b = L[j]; if (b === this.carried || b.fade || (a.sleeping && b.sleeping)) continue;
+        const b = L[j]; if (b.fade || (a.sleeping && b.sleeping && a !== held && b !== held)) continue;
         _v.subVectors(b.mesh.position, a.mesh.position);
         const d = _v.length(), m = (a.r + b.r) * 0.75;
         if (d >= m || d < 1e-5) continue;
         _v.divideScalar(d);
-        const push = (m - d) * 0.5;
-        a.mesh.position.addScaledVector(_v, -push); b.mesh.position.addScaledVector(_v, push);
+        const push = (m - d) * (a === held || b === held ? 1 : 0.5);
+        if (a !== held) a.mesh.position.addScaledVector(_v, -push);
+        if (b !== held) b.mesh.position.addScaledVector(_v, push);
+        if (a === held || b === held) { this.wake(a === held ? b : a); if (this.clackT <= 0 && held.v.length() > 1) { this.hooks.sound?.('clack'); this.clackT = 0.12; } }
         const rel = _w.subVectors(b.v, a.v).dot(_v);
         if (rel < 0) {
           const j2 = -1.2 * rel * 0.5;
@@ -343,31 +347,68 @@ export class Debris {
     else b.mesh.children[0].children.forEach((m, i) => { m.material = list[i]; });
   }
 
-  grab(b) {
+  grab(b, camera) {
     if (!b || this.carried) return null;
-    b.mesh.visible = false;
     this.light(b, false);
     b.sleeping = true; b.v.set(0, 0, 0); b.w.set(0, 0, 0);
     this.unflatten(b);
+    // it keeps the way it lay, turned with the view from now on
+    const f = camera.getWorldDirection(new THREE.Vector3());
+    b.holdQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.atan2(-f.x, -f.z)).multiply(b.mesh.quaternion);
+    b.spin = 0; b.spinTo = 0; b.touching = false;
     this.carried = b; this.aimed = null;
     this.hooks.sound?.('grab');
     return b;
   }
+  turn() { if (this.carried) this.carried.spinTo += Math.PI / 3; }
 
-  // let go of the piece in hand: from where it is held, with a velocity
-  // (0 = just dropped); it never starts inside a trunk or the ground
+  // The piece in hand is a real object of the world: it floats a little to
+  // the right of the crosshair, an arm's length away, follows the view a
+  // little late, and bumps into whatever is in the way (it never goes through
+  // the ground, a trunk, a stone or the hut), with a knock if it hits hard.
+  hold(b, camera, dt) {
+    const o = camera.position, f = camera.getWorldDirection(new THREE.Vector3());
+    const right = new THREE.Vector3(-f.z, 0, f.x).normalize(), up = right.clone().cross(f);
+    const D = 0.9 + b.r * 1.4;
+    const target = o.clone().addScaledVector(f, D).addScaledVector(right, 0.18 + b.r * 0.4).addScaledVector(up, -0.04 - b.r * 0.25);
+    const p = b.mesh.position, before = p.clone();
+    p.lerp(target, 1 - Math.exp(-dt * 11));
+    // what is between the eyes and the piece stops it
+    let hit = null;
+    const d = p.clone().sub(o), len = d.length();
+    if (this.castWorld && len > 1e-3) {
+      d.divideScalar(len);
+      const c = this.castWorld(o, d, len + b.r * 0.8);
+      if (c) { hit = c; p.copy(o).addScaledVector(d, Math.max(0.3, c.dist - b.r * 0.8)); }
+    }
+    // the ground under it
+    const g = this.ground(p.x, p.z, o.y);
+    let low = 0;
+    for (const hp of b.shard.hull) low = Math.min(low, _r.copy(hp).multiplyScalar(b.s).applyQuaternion(b.mesh.quaternion).y);
+    if (p.y + low < g) { p.y = g - low; hit ||= { kind: 'ground' }; }
+    // trunks, posts and stones around it
+    b.v.copy(p).sub(before).divideScalar(Math.max(dt, 1e-3));
+    const px = p.x, pz = p.z;
+    this.solids(b);
+    if (Math.abs(p.x - px) + Math.abs(p.z - pz) > 1e-4) hit ||= { kind: 'wood' };
+    // a knock when it comes up against something
+    if (hit && !b.touching && b.v.length() > 1.2 && this.clackT <= 0) {
+      this.hooks.sound?.(hit.kind === 'wood' ? 'knock' : hit.kind === 'ground' ? 'dig:grass' : 'clack');
+      this.hooks.rumble?.(0.25, 40);
+      this.clackT = 0.12;
+    }
+    b.touching = !!hit;
+    // turned with the view (a little late too), and by the player's R / ◀ ▶
+    b.spin += (b.spinTo - b.spin) * (1 - Math.exp(-dt * 8));
+    _q.setFromAxisAngle(_n.set(0, 1, 0), Math.atan2(-f.x, -f.z)).multiply(b.holdQ).multiply(new THREE.Quaternion().setFromAxisAngle(_t.set(0.3, 1, 0.2).normalize(), b.spin));
+    b.mesh.quaternion.slerp(_q, 1 - Math.exp(-dt * 10));
+  }
+
+  // let go of the piece in hand, from where it is held, with a velocity
+  // (on top of half the hand's own movement)
   release(camera, vel, spin) {
     const b = this.carried; if (!b) return null;
-    const o = camera.position;
-    const f = camera.getWorldDirection(new THREE.Vector3());
-    const right = new THREE.Vector3(-f.z, 0, f.x).normalize();
-    const at = o.clone().addScaledVector(f, 0.5).addScaledVector(right, 0.16);
-    at.y -= 0.22;
-    if (this.lineClear && !this.lineClear(o, at, b)) at.copy(o).addScaledVector(f, 0.12).setY(o.y - 0.15);
-    at.y = Math.max(at.y, this.ground(at.x, at.z, o.y) + b.r);
-    b.mesh.position.copy(at);
-    b.mesh.visible = true;
-    b.v.copy(vel); b.w.copy(spin);
+    b.v.multiplyScalar(0.5).add(vel); b.w.copy(spin);
     b.sleeping = false; b.still = 0; b.bounces = 0;
     this.carried = null;
     return b;

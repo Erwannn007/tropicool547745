@@ -189,9 +189,6 @@ const hands = new Hands(lights, {
   aim: (reach) => quarry.aim(reach),
   cast: (o, dir, max) => quarry.cast(o, dir, max),
   hit: (c, dir) => quarry.hit(c, dir),
-  stoneTex: () => tex.stone,
-  throwNow: () => debris.throw(camera, player.vel),
-  carryDone: () => endCarry(),
   mow: (x, z, fx, fz, y) => {
     const r = mower.mow(x, z, fx, fz, y);
     if (r.mowed || r.fibres) audio.sfx('mow');
@@ -248,9 +245,9 @@ function onHeldChange(held) {
 
 // ---- a piece of stone in the hand: pick up, drop, throw, put in the bag
 function grabPiece(b) {
-  if (hands.carried || !debris.grab(b)) return;
+  if (hands.carried || !debris.grab(b, camera)) return;
   fishing.setEquipped(false); axe.setEquipped(false);
-  hands.carry(b, player);
+  hands.carry(b);
   $('#btn-fish').textContent = '➶';
 }
 function letGo(how) {
@@ -260,7 +257,7 @@ function letGo(how) {
     if (inventory.add(b.kind, b.value)) { toast('Inventaire plein'); audio.sfx('deny'); return; }
     debris.stash();
     toast(`+${b.value} ${itemDef(b.kind).name}`); audio.sfx('pickup');
-  } else { debris.drop(camera, player.vel); audio.sfx('toss'); }
+  } else if (how === 'throw') { debris.throw(camera, player.vel); audio.sfx('toss'); } else { debris.drop(camera, player.vel); }
   endCarry();
 }
 function endCarry() {
@@ -719,13 +716,13 @@ function frame() {
     const heldId = inventory.held?.id;
     const carrying = !!hands.carried, piece = carrying ? null : debris.aimed;
     const turn = p.has('rotate') || (input.lastDevice === 'gamepad' && (p.has('left') || p.has('right')));
-    if (turn && carrying) hands.turnCarried();
+    if (turn && carrying) debris.turn();
     else if (turn) placement.rotOffset += (p.has('left') ? -1 : 1) * Math.PI / 4;
     if (p.has('grab')) { if (debris.carried) letGo('drop'); else if (piece) grabPiece(piece); }
     if (p.has('stash') && debris.carried) letGo('stash');
     const chest = p.has('action') && heldId !== 'axe' && !carrying ? aimedChest() : null;
     if (chest) openChest(chest);
-    else if (p.has('action') && carrying) hands.throwCarried();
+    else if (p.has('action') && carrying) letGo('throw');
     else if (p.has('action')) {
       if (heldId === 'rod') fishing.action(input);
       else if (heldId === 'axe') axe.action();

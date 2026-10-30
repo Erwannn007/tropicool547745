@@ -72,6 +72,7 @@ export class Quarry {
     this.scene = scene; this.camera = camera; this.hooks = hooks;
     this.mining = new Map(); // stone -> { mesh, base, hp, hits, t }
     this.collapsing = [];
+    this.dropping = []; // stones of a heap settling after the one under them broke
     this.camShake = 0; this.kick = 0;
     this.chips = new Bits(scene, 90, 0.06, 9);
     this.sparks = new Bits(scene, 40, 0.035, 6, 3);
@@ -84,10 +85,11 @@ export class Quarry {
   setWorld(world, veg, player, debris) {
     for (const m of this.mining.values()) this.drop(m);
     for (const m of this.collapsing) this.drop(m);
-    this.mining.clear(); this.collapsing = [];
+    this.mining.clear(); this.collapsing = []; this.dropping = [];
     this.chips.clear(); this.sparks.clear(); this.grit.clear();
     this.world = world; this.veg = veg; this.player = player; this.debris = debris;
     debris.lineClear = (a, b, body) => this.lineClear(a, b, body);
+    debris.castWorld = (o, dir, max) => this.cast(o, dir, max, { frags: false });
     // the grass stays short around each stone so it shows (grows back once mined)
     for (const p of world.props.stones) if (!p.gone) this.hooks.flatten?.(p, p.x, p.z, 0.75 * p.s + 0.25);
   }
@@ -286,6 +288,7 @@ export class Quarry {
     this.player.removeCollider(p);
     this.hooks.release?.(p);
     saveFelled(this.world.cfg, p.key);
+    if (p.cluster != null) this.settleCluster(p.cluster);
     const c = new THREE.Vector3(p.x, p.y + 0.26 * p.s, p.z);
     const push = new THREE.Vector3(dir.x, 0, dir.z); if (push.lengthSq() < 1e-4) push.set(p.x - this.camera.position.x, 0, p.z - this.camera.position.z); push.normalize();
     const sizes = [0.34, 0.3, 0.25, 0.23, 0.2, 0.15, 0.13, 0.12].slice(0, 6 + Math.round(p.s * 2));
@@ -305,6 +308,24 @@ export class Quarry {
     this.spray(c, new THREE.Vector3(0, 1, 0), push, 8, 2.2);
     this.hooks.sound?.('crumble');
     this.hooks.shattered?.(p);
+  }
+
+  // boulders are heaps of stones (world.js): the ones that lay on a broken
+  // stone drop onto what is left under them
+  settleCluster(k) {
+    for (const q of this.world.clusters[k]) {
+      if (q.gone || this.dropping.some((d) => d.p === q)) continue;
+      const y = this.world.restingY(q);
+      if (y < q.y - 0.03) this.dropping.push({ p: q, to: y, v: 0 });
+    }
+  }
+  // put a stone's instance (or its cracked mesh) where the stone now is
+  place(q) {
+    const m4 = new THREE.Matrix4().compose(new THREE.Vector3(q.x, q.y, q.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), q.rot), new THREE.Vector3(q.s * 1.1, q.s * 0.9, q.s));
+    const m = this.mining.get(q);
+    if (m) { m.base.copy(m4); m.inv.copy(m4).invert(); m.mesh.matrix.copy(m4); m.mesh.matrixWorldNeedsUpdate = true; return; }
+    const { mesh, i } = q.inst[0];
+    mesh.setMatrixAt(i, m4); mesh.instanceMatrix.needsUpdate = true;
   }
 
   // a chip of colour col thrown off a surface of normal n
@@ -346,6 +367,21 @@ export class Quarry {
       m.mesh.matrix.copy(tr).multiply(m.base).multiply(sc);
       m.mesh.matrixWorldNeedsUpdate = true;
     }
+    // stones of a heap falling onto what is left
+    this.dropping = this.dropping.filter((d) => {
+      const q = d.p;
+      if (q.gone) return false;
+      d.v += 11 * dt;
+      q.y = Math.max(d.to, q.y - d.v * dt);
+      this.place(q);
+      if (q.y > d.to) return true;
+      const at = new THREE.Vector3(q.x, q.y + 0.1 * q.s, q.z);
+      for (let k = 0; k < 10; k++) this.chip(at, new THREE.Vector3(0, 1, 0), 1.4, pick(GREYS));
+      for (let k = 0; k < 8; k++) { const a = Math.random() * 6.28; this.grit.emit(at, new THREE.Vector3(Math.cos(a), 0.3, Math.sin(a)), pick(GREYS.slice(2)), 0.8); }
+      if (at.distanceTo(this.camera.position) < 25) { this.hooks.sound?.('stoneDrop'); this.hooks.rumble?.(0.4, 90); this.camShake = Math.max(this.camShake, 0.4); }
+      this.settleCluster(q.cluster); // and whatever lay on this one
+      return false;
+    });
     // a broken stone gives way to its pieces in a tenth of a second
     this.collapsing = this.collapsing.filter((m) => {
       m.t += dt;

@@ -236,9 +236,38 @@ export function generateWorld(cfg, felled = new Set()) {
       const patch = smoothstep(0.0, 0.6, sx2.fbm(px * 0.025 + 40, pz * 0.025 - 60, 2)); // stony patches
       if (r >= stoneK * (0.02 + 0.2 * patch + 0.1 * rock[j * N + i])) continue;
       occ.set(occKey(px, pz), 1);
-      props.stones.push({ x: px, y: h - 0.06, z: pz, s: 0.45 + s * s * 0.65, rot: rot * 6.28, v: Math.floor(v * 3) });
+      props.stones.push({ x: px, y: h - 0.06, z: pz, s: 0.3 + s * s * 0.95, rot: rot * 6.28, v: Math.floor(v * 3) }); // pebbles to big stones
     }
   }
+
+  // ---- boulders are heaps of stones -----------------------------------
+  // each big rock becomes a cluster of mineable stones of every size: a core,
+  // a ring leaning on it, one or two sitting on top. Mining a stone lets the
+  // ones resting on it settle (settleCluster). Own random stream too.
+  const crnd = mulberry32(cfg.seed + 7331);
+  const clusters = [];
+  for (const r of props.rocks) {
+    const list = [], g = (x, z) => heightAt(x, z) - 0.06;
+    const coreS = Math.min(1.7, 0.6 + r.s * 0.4);
+    const core = { x: r.x, y: g(r.x, r.z), z: r.z, s: coreS, rot: crnd() * 6.28, v: Math.floor(crnd() * 3) };
+    list.push(core);
+    const ring = 2 + Math.round(r.s * 1.6 + crnd());
+    for (let k = 0; k < ring; k++) {
+      const a = (k / ring) * Math.PI * 2 + crnd() * 0.8, ss = coreS * (0.35 + crnd() * 0.45);
+      const d = (coreS + ss) * 0.42 * (0.85 + crnd() * 0.3);
+      const x = r.x + Math.cos(a) * d, z = r.z + Math.sin(a) * d;
+      list.push({ x, y: g(x, z), z, s: ss, rot: crnd() * 6.28, v: Math.floor(crnd() * 3) });
+    }
+    const tops = r.s > 1.2 ? 2 : 1;
+    for (let k = 0; k < tops; k++) {
+      const a = crnd() * 6.28, d = coreS * 0.2 * crnd(), ss = coreS * (0.35 + crnd() * 0.25);
+      const x = r.x + Math.cos(a) * d, z = r.z + Math.sin(a) * d;
+      list.push({ x, y: core.y + coreS * 0.42, z, s: ss, rot: crnd() * 6.28, v: Math.floor(crnd() * 3), up: true });
+    }
+    for (const p of list) { p.cluster = clusters.length; props.stones.push(p); }
+    clusters.push(list);
+  }
+  props.rocks.length = 0;
 
   // ---- baked canopy shadows -------------------------------------------
   // shadows are painted along the light direction; the day cycle re-paints
@@ -262,6 +291,21 @@ export function generateWorld(cfg, felled = new Set()) {
   };
   // every prop gets a stable key so felled trees can be remembered per world
   for (const type of Object.keys(props)) props[type].forEach((p, i) => { p.type = type; p.key = `${type}:${i}`; p.gone = felled.has(p.key); });
+  // stones whose support was mined in an earlier session lie lower
+  for (let k = 0; k < clusters.length; k++) for (let pass = 0; pass < 3; pass++) for (const p of clusters[k]) { const y = restingY(p); if (y < p.y) p.y = y; }
+
+  // where a stone of a heap would rest now: on the ground, or on the
+  // remaining stones under it
+  function restingY(p) {
+    let y = heightAt(p.x, p.z) - 0.06;
+    if (p.cluster == null) return y;
+    for (const q of clusters[p.cluster]) {
+      if (q === p || q.gone || q.y >= p.y - 0.05) continue;
+      const reach = 0.55 * (q.s + p.s), d = Math.hypot(q.x - p.x, q.z - p.z);
+      if (d < reach) y = Math.max(y, q.y + 0.42 * q.s * (1 - (d / reach) ** 2));
+    }
+    return y;
+  }
   const SHADOW = { palms: [7.5, 3.6, 0.75], trees: [4.5, 3.4, 0.85], bushes: [0.6, 1.3, 0.7], rocks: [0.7, 1.2, 0.7], stones: [0.3, 0.55, 0.6] };
   const shadowOf = (p) => { const [h, r, k] = SHADOW[p.type]; return [p.x, p.z, h * p.s, r * p.s, k]; };
   const hutShadow = [hut.x, hut.z, hut.floor - heightAt(hut.x, hut.z) + 3.2, 4.4, 0.85];
@@ -316,5 +360,5 @@ export function generateWorld(cfg, felled = new Set()) {
     tex.needsUpdate = true;
   }
 
-  return { cfg, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex, removeProp, setShadowDir };
+  return { cfg, islands, heights, grass, rock, N, size: S, heightAt, normalAt, props, pier, hut, spawn, texture: tex, removeProp, setShadowDir, clusters, restingY };
 }

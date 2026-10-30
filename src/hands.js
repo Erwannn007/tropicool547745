@@ -1,12 +1,12 @@
 // What the hands show for the new items: the scythe (mowing sweep), the
 // pickaxe (overhead stroke, held like the axe), the tiki
-// torch (lights the way, flickers), a small version of any placeable, and a
-// loose piece picked up from the ground (stone, log, coconut), carried in
-// front a little to the right, trailing the view slightly when turning.
+// torch (lights the way, flickers) and a small version of any placeable.
+// While a loose piece is carried (debris.js holds it in the world) the tool
+// is put away.
 import * as THREE from 'three';
 import { HeldView } from './held.js';
 import { MODELS, PICK } from './models.js';
-import { basis, bandedMaterial } from './axeModel.js';
+import { basis } from './axeModel.js';
 import { dress } from './dress.js';
 import { PLACEABLE } from './placement.js';
 
@@ -59,10 +59,10 @@ const SCYTHE = {
 // raised over the right shoulder, a held beat, a fast stroke down in front
 // (aimed at what the crosshair shows, see aimSwing), a recoil off the stone
 // and a soft return. The model's handle is +Y, its point -X.
-const P_IDLE = { t: 0, p: [0.25, -0.76, -0.32], q: basis([-0.1, 0.9, -0.42], [-0.33, 0.05, -0.94]) };
+const P_IDLE = { t: 0, p: [0.27, -0.66, -0.36], q: basis([-0.1, 0.9, -0.42], [-0.33, 0.05, -0.94]) }; // head up near the crosshair
 const PICKAXE = {
   idle: P_IDLE,
-  scale: 0.86,
+  scale: 1,
   pivot: new THREE.Vector3(0, 0.12, 0), // where the (unseen) hands hold it
   contact: true,
   keys: [
@@ -93,18 +93,6 @@ const MINI = {
 const LOCK = 0.21;      // end of the hang: the aim is fixed, the stroke starts
 const SWEEP_END = 0.262; // strike pose passed and nothing met: the stroke went through air
 const REACH = 2.3;
-// a loose piece in hand: in front, a little to the right and low
-const CARRY = {
-  idle: { p: [0.2, -0.07, -0.5], q: Q(0, 0, 0) },
-  scale: 1,
-  keys: [
-    { t: 0, p: [0.2, -0.07, -0.5], q: Q(0, 0, 0) },
-    { t: 0.13, p: [0.24, -0.06, -0.38], q: Q(0.5, -0.2, 0.1), e: 'out' },   // drawn back by the shoulder
-    { t: 0.24, p: [0.04, 0.0, -0.75], q: Q(-0.3, 0, 0), e: 'in' },          // flung forward: it leaves the hand here
-    { t: 0.5, p: [0.2, -0.07, -0.5], q: Q(0, 0, 0), e: 'out' },
-  ],
-  impact: 0.22,
-};
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion();
 
 export class Hands {
@@ -114,9 +102,8 @@ export class Hands {
     this.hooks = hooks;
     this.light = lights.add({ x: 0, y: -999, z: 0, radius: 7, r: 0.75, g: 0.45, b: 0.2, off: true, flicker: 1.4 });
     this.id = null; this.heldId = null;
-    this.carried = null; // { body, stone, k, spin, spinTo, thrown }
+    this.carried = null; // { body } while a loose piece is in hand
     this.lastYaw = null; this.lastPitch = 0;
-    this.trail = { yaw: 0, pitch: 0 }; // where the carried piece is looking, a little behind the view
     this.swing = null;
   }
 
@@ -133,37 +120,13 @@ export class Hands {
   }
 
   // ---------------------------------------------------------------- carrying
-  // a piece lifted from the ground, held up in front of the eyes
-  carry(body, player) {
-    const g = new THREE.Group();
-    let stone, k;
-    if (body.shard.geo) { // a stone shard
-      this.stoneMat ??= bandedMaterial(this.hooks.stoneTex(), { vertexColors: true });
-      stone = new THREE.Mesh(body.shard.geo, this.stoneMat);
-      k = Math.min(body.s, 0.09); // big pieces are shown a little smaller
-    } else { // a modelled item (log, coconut)
-      stone = new THREE.Group();
-      const inner = dress(body.shard.model, 'held');
-      inner.position.copy(body.shard.centre).negate();
-      stone.add(inner);
-      k = Math.min(1, 0.2 / body.shard.r);
-    }
-    stone.scale.setScalar(k);
-    stone.quaternion.copy(body.mesh.quaternion);
-    g.add(stone);
-    this.carried = { body, stone, k, spin: 0, spinTo: 0, thrown: false };
+  // a loose piece picked up: the tool goes down while it is carried
+  carry(body) {
+    this.carried = { body };
     this.id = 'carry';
     this.swing = null;
-    if (player) this.trail = { yaw: player.yaw, pitch: player.pitch };
-    this.view.set('carry:' + body.id, g, CARRY);
+    this.view.set(null, null, null);
     this.light.off = true;
-  }
-  // turn the stone in the hand to look at it from another side
-  turnCarried() { if (this.carried) this.carried.spinTo += Math.PI / 3; }
-  throwCarried() {
-    if (!this.carried || this.carried.thrown) return false;
-    if (this.view.swing()) { this.carried.thrown = true; this.hooks.sound?.('toss'); }
-    return true;
   }
   // stone gone from the hand (dropped, thrown, put in the bag): tool back up
   endCarry() {
@@ -187,30 +150,9 @@ export class Hands {
       if (this.id === 'scythe') {
         const f = new THREE.Vector3(); camera.getWorldDirection(f);
         this.hooks.mow?.(player.pos.x, player.pos.z, f.x, f.z, player.pos.y);
-      } else if (this.id === 'carry' && this.carried?.thrown) {
-        this.carried.stone.visible = false;
-        this.hooks.throwNow?.();
       }
     }
     if (this.id === 'pickaxe') this.sweep(camera);
-    if (this.carried) {
-      const c = this.carried;
-      if (c.thrown && !this.view.swinging) this.hooks.carryDone?.();
-      else if (c.stone.visible) { // turn it to look at it from another side
-        c.spin += (c.spinTo - c.spin) * (1 - Math.exp(-dt * 8));
-        c.stone.quaternion.copy(c.body.mesh.quaternion).premultiply(_q.setFromAxisAngle(_v.set(0.3, 1, 0.2).normalize(), c.spin));
-      }
-      // it follows the view a little late, then catches up
-      const k = 1 - Math.exp(-dt * 9), tr = this.trail;
-      let dy = player.yaw - tr.yaw;
-      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-      tr.yaw += dy * k; tr.pitch += (player.pitch - tr.pitch) * k;
-      const ly = Math.max(-0.5, Math.min(0.5, Math.atan2(Math.sin(tr.yaw - player.yaw), Math.cos(tr.yaw - player.yaw))));
-      const lp = Math.max(-0.4, Math.min(0.4, tr.pitch - player.pitch));
-      _q.setFromEuler(new THREE.Euler(lp, ly, 0, 'YXZ'));
-      const h = this.view.holder;
-      h.position.applyQuaternion(_q); h.quaternion.premultiply(_q);
-    }
     if (!this.light.off) {
       // the flame sits ahead and to the right of the eyes
       const r = new THREE.Vector3(0.45, 0.05, -0.6).applyQuaternion(camera.quaternion);
