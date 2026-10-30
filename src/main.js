@@ -141,6 +141,9 @@ const fishing = new Fishing(scene, camera, tex, {
 
 const axe = new Axe(scene, camera, tex, {
   sound: (n) => audio.sfx(n),
+  aim: (reach) => quarry.aim(reach),
+  cast: (o, dir, max) => quarry.cast(o, dir, max),
+  hit: (c, dir) => quarry.hit(c, dir, 'axe'),
   rumble: (s, ms) => input.rumble(s, ms),
   fallen: (p, away) => scatterTree(p, away),
 });
@@ -173,7 +176,7 @@ let shatterTip = false;
 const quarry = new Quarry(scene, camera, {
   sound: (n) => audio.sfx(n),
   rumble: (s, ms) => input.rumble(s, ms),
-  freeze: (s) => hands.view.freeze(s),
+  freeze: (s, tool) => (tool === 'axe' ? axe.sprite : hands.view).freeze(s),
   flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
   shattered: () => {
     if (shatterTip) return;
@@ -419,7 +422,7 @@ function buildWorld() {
   debris.setWorld(world, veg, player);
   waterFx.clear();
   if (hands.carried) hands.endCarry();
-  quarry.setWorld(world, veg, player, debris);
+  quarry.setWorld(world, veg, player, debris, structures);
   quarry.prewarm(renderer, camera);
   placement.setWorld(world, player);
   world.setShadowDir(globals.uSunDir.value);

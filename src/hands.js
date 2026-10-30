@@ -12,6 +12,7 @@ import { itemDef } from './items.js';
 import { basis } from './axeModel.js';
 import { dress } from './dress.js';
 import { PLACEABLE } from './placement.js';
+import { Blow } from './blow.js';
 
 const Q = (x, y, z) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'YXZ'));
 
@@ -100,13 +101,10 @@ function itemModel(id) {
   return null;
 }
 
-// the pickaxe blow: the head is aimed at what the crosshair shows, then the
-// swept point of the pick is cast into the world frame by frame and the blow
-// lands where it really meets something (no timed hit)
-const LOCK = 0.21;      // end of the hang: the aim is fixed, the stroke starts
-const SWEEP_END = 0.262; // strike pose passed and nothing met: the stroke went through air
-const REACH = 2.3;
-const _v = new THREE.Vector3(), _q = new THREE.Quaternion();
+// the pickaxe blow lands where the point of the pick really meets something
+// (blow.js): aim fixed at the end of the hang, a whiff once the strike pose
+// is passed with nothing met
+const PICK_BLOW = { keys: PICKAXE.keys, scale: PICKAXE.scale, pivot: PICKAXE.pivot, tip: PICK.TIP, lock: 0.21, end: 0.262, reach: 2.3 };
 
 export class Hands {
   constructor(lights, hooks) {
@@ -117,7 +115,7 @@ export class Hands {
     this.id = null; this.heldId = null;
     this.carried = null; // { body } while a loose piece is in hand
     this.lastYaw = null; this.lastPitch = 0;
-    this.swing = null;
+    this.blow = new Blow(this.view, PICK_BLOW, hooks);
   }
 
   setHeld(id) {
@@ -150,7 +148,7 @@ export class Hands {
   carry(body) {
     this.carried = { body };
     this.id = 'carry';
-    this.swing = null;
+    this.blow.swing = null;
     this.view.set(null, null, null);
     this.light.off = true;
   }
@@ -171,14 +169,14 @@ export class Hands {
     const moving = player.onGround && Math.hypot(player.vel.x, player.vel.z) > 0.5;
     const look = { x: this.lastYaw == null ? 0 : this.lastYaw - player.yaw, y: this.lastYaw == null ? 0 : this.lastPitch - player.pitch };
     this.lastYaw = player.yaw; this.lastPitch = player.pitch;
-    if (this.id === 'pickaxe') this.aimSwing(camera);
+    if (this.id === 'pickaxe') this.blow.aim(camera);
     if (this.view.update(dt, player.bob, moving, look)) {
       if (this.id === 'scythe') {
         const f = new THREE.Vector3(); camera.getWorldDirection(f);
         this.hooks.mow?.(player.pos.x, player.pos.z, f.x, f.z, player.pos.y);
       }
     }
-    if (this.id === 'pickaxe') this.sweep(camera);
+    if (this.id === 'pickaxe') this.blow.sweep(camera);
     if (this.view.anim?.flop) { // a fish held up flips its tail now and then
       const t = performance.now() / 1000, f = Math.max(0, Math.sin(t * 1.3)) ** 6;
       this.view.holder.children[0].rotation.set(0, Math.sin(t * 22) * 0.35 * f, Math.sin(t * 22 + 1) * 0.08 * f);
@@ -188,106 +186,6 @@ export class Hands {
       const r = new THREE.Vector3(0.45, 0.05, -0.6).applyQuaternion(camera.quaternion);
       this.light.x = camera.position.x + r.x; this.light.y = camera.position.y + r.y; this.light.z = camera.position.z + r.z;
     }
-  }
-
-  // ---------------------------------------------------------------- the blow
-  // held space <-> world: a held point maps onto the world ray through the
-  // same pixel, at its held distance times k (k fixed for each stroke)
-  toWorld(ph, camera, k) {
-    const ndc = _v.copy(ph).project(this.view.camera);
-    const dir = new THREE.Vector3(ndc.x, ndc.y, 0.5).unproject(camera).sub(camera.position).normalize();
-    return dir.multiplyScalar(ph.length() * k).add(camera.position);
-  }
-  // the point of the pick at time t of the stroke (held space)
-  tipAt(t) {
-    const { p, q } = this.view.pose(t);
-    return PICK.TIP.clone().multiplyScalar(PICKAXE.scale).applyQuaternion(q).add(_v.set(...p)).clone();
-  }
-
-  // before the stroke: aim the strike pose at the spot under the crosshair
-  aimSwing(camera) {
-    const v = this.view;
-    if (v.t < 0) { this.swing = null; return; }
-    if (!this.swing || v.t < this.swing.t) this.swing = { t: 0, locked: false, struck: false, lastT: LOCK, k: 2 }; // new stroke (or chained)
-    const sw = this.swing;
-    sw.t = v.t;
-    if (sw.locked || !v.anim?.contact) return;
-    camera.updateMatrixWorld();
-    v.camera.aspect = camera.aspect; v.camera.updateProjectionMatrix();
-    const target = this.hooks.aim?.(REACH);
-    const dir = camera.getWorldDirection(new THREE.Vector3());
-    const point = target ? target.point : camera.position.clone().addScaledVector(dir, 1.9);
-    const D = point.distanceTo(camera.position);
-    const Hd = Math.max(0.56, Math.min(0.8, 0.44 + 0.15 * D));
-    const ndc = point.clone().project(camera);
-    const th = new THREE.Vector3(ndc.x, ndc.y, 0.5).unproject(v.camera).normalize().multiplyScalar(Hd + 0.05); // a little past the surface
-    sw.k = D / Hd; sw.target = target;
-    this.solveStrike(th);
-    if (v.t >= LOCK) sw.locked = true;
-  }
-
-  // turn the strike key about the grip so the point lands on th (held space)
-  solveStrike(th) {
-    const base = PICKAXE.keys, keys = this.view.anim.keys, s = PICKAXE.scale, pv = PICKAXE.pivot;
-    const G0 = new THREE.Vector3(...base[3].p).add(pv.clone().multiplyScalar(s).applyQuaternion(base[3].q));
-    const T0 = new THREE.Vector3(...base[3].p).add(PICK.TIP.clone().multiplyScalar(s).applyQuaternion(base[3].q));
-    const v0 = T0.clone().sub(G0), R = v0.length();
-    const Gp = G0.clone().addScaledVector(th.clone().sub(T0), 0.35); // the arm reaches a bit towards it
-    const u = th.clone().sub(Gp).normalize();
-    const G = th.clone().addScaledVector(u, -R);
-    const r = new THREE.Quaternion().setFromUnitVectors(v0.divideScalar(R), u);
-    const shift = G.clone().sub(G0);
-    const place = (i, kr, ks) => {
-      const rq = new THREE.Quaternion().slerp(r, kr);
-      const q = rq.multiply(base[i].q);
-      const g = new THREE.Vector3(...base[i].p).add(pv.clone().multiplyScalar(s).applyQuaternion(base[i].q)).addScaledVector(shift, ks);
-      keys[i] = { ...base[i], q, p: g.sub(pv.clone().multiplyScalar(s).applyQuaternion(q)).toArray() };
-    };
-    place(1, 0.4, 0.3); place(2, 0.45, 0.35); place(3, 1, 1); place(4, 1, 1); place(5, 1, 0.9);
-  }
-
-  // during the stroke: sweep the point of the pick through the world, in
-  // small time steps whatever the frame rate, up to the end of the stroke
-  sweep(camera) {
-    const sw = this.swing, v = this.view;
-    if (!sw?.locked || sw.struck) return;
-    camera.updateMatrixWorld();
-    const end = Math.min(v.t, SWEEP_END);
-    let prev = this.toWorld(this.tipAt(sw.lastT), camera, sw.k), dir = new THREE.Vector3(0, -1, 0);
-    for (let t = sw.lastT; t < end - 1e-6;) {
-      const t1 = Math.min(end, t + 0.008);
-      const tip = this.toWorld(this.tipAt(t1), camera, sw.k), seg = tip.clone().sub(prev), len = seg.length();
-      if (len > 1e-5) {
-        dir = seg.divideScalar(len);
-        const c = this.hooks.cast?.(prev, dir, len);
-        if (c) return this.strike(c, dir, t1);
-      }
-      prev = tip; t = t1;
-    }
-    sw.lastT = end;
-    if (v.t < SWEEP_END) return;
-    // nothing met: a whiff, the pick follows through further down
-    sw.struck = true;
-    this.hooks.hit?.(null, dir);
-    const keys = v.anim.keys, k2 = keys[2], k3 = keys[3];
-    const d = k3.q.clone().multiply(k2.q.clone().invert());
-    const q = new THREE.Quaternion().slerp(d, 0.3).multiply(k3.q);
-    keys[4] = { ...keys[4], q, p: k3.p.map((x, j) => x + (x - k2.p[j]) * 0.15) };
-    keys[5] = { ...keys[5], q: q.clone(), p: keys[4].p.slice() };
-  }
-
-  // the point met c at time t: the pick stops right there and bounces back
-  strike(c, dir, t) {
-    const v = this.view, keys = v.anim.keys;
-    this.swing.struck = true;
-    const here = v.pose(t);
-    const at = { ...keys[3], p: here.p, q: here.q };
-    const bounce = this.hooks.hit?.(c, dir) ?? 0;
-    const back = (k, f) => ({ ...k, p: at.p.map((x, j) => x + (keys[2].p[j] - x) * f), q: at.q.clone().slerp(keys[2].q, f) });
-    keys[3] = at;
-    keys[4] = back(keys[4], 0.06 + bounce * 0.2);
-    keys[5] = back(keys[5], 0.02 + bounce * 0.08);
-    v.t = this.swing.t = keys[3].t; // (not a new stroke)
   }
 
   render(renderer, camera) { this.view.render(renderer, camera); }

@@ -194,11 +194,13 @@ const KEYS = [
   { t: 0.16, p: [0.3, -0.5, -0.3], q: basis([0.26, 0.86, -0.22], [-0.22, 0.4, -0.89]), e: 'out' },    // raise over the right shoulder
   { t: 0.2, p: [0.31, -0.48, -0.28], q: basis([0.28, 0.87, -0.16], [-0.22, 0.45, -0.86]), e: 'inOut' }, // hang
   { t: 0.29, p: [0.16, -0.36, -0.4], q: basis([-0.38, 0.3, -0.87], [-0.42, -0.9, 0.0]), e: 'in' },    // chop forward, a bit diagonal
-  { t: 0.36, p: [0.13, -0.38, -0.4], q: basis([-0.4, 0.14, -0.9], [-0.36, -0.93, 0.05]), e: 'out' },  // follow-through, down
-  { t: 0.62, ...IDLE, e: 'inOut' },                                                                   // recover
+  { t: 0.33, p: [0.14, -0.37, -0.4], q: basis([-0.39, 0.22, -0.89], [-0.39, -0.92, 0.03]), e: 'out' },  // follow-through (or recoil off what it met)
+  { t: 0.38, p: [0.13, -0.38, -0.4], q: basis([-0.4, 0.14, -0.9], [-0.36, -0.93, 0.05]), e: 'inOut' }, // settle, down
+  { t: 0.64, ...IDLE, e: 'inOut' },                                                                   // recover
 ];
 const SWING_TIME = KEYS[KEYS.length - 1].t;
-const IMPACT_T = 0.255;
+// the blow lands where the cutting edge really meets something (blow.js, axe.js)
+export const AXE_BLOW = { keys: KEYS, scale: 1, pivot: new THREE.Vector3(0, 0.1, 0), tip: new THREE.Vector3(-0.19, HEAD_Y, 0), lock: 0.2, end: 0.292, reach: 2.8 };
 
 export class AxeModel {
   constructor() {
@@ -247,6 +249,7 @@ export class AxeModel {
     this.quadScene.add(this.quad);
 
     this.t = -1; this.visible = false; this.hitStop = 0;
+    this.anim = { keys: KEYS.map((k) => ({ ...k })), contact: true }; // keys re-aimed at each stroke
   }
 
   setVisible(v) { this.visible = v; if (!v) { this.t = -1; this.queued = false; } }
@@ -259,25 +262,25 @@ export class AxeModel {
   }
   freeze(s) { this.hitStop = s; }
 
+  // the hand travels on a straight line, the axe turns about it (AXE_BLOW.pivot)
   pose(t) {
     if (t < 0) return IDLE;
-    for (let i = 1; i < KEYS.length; i++) {
-      const k0 = KEYS[i - 1], k1 = KEYS[i];
+    const keys = this.anim.keys, pv = AXE_BLOW.pivot;
+    for (let i = 1; i < keys.length; i++) {
+      const k0 = keys[i - 1], k1 = keys[i];
       if (t <= k1.t) {
-        const u = ease[k1.e]((t - k0.t) / (k1.t - k0.t));
-        return { p: k0.p.map((v, j) => v + (k1.p[j] - v) * u), q: k0.q.clone().slerp(k1.q, u) };
+        const u = ease[k1.e]((t - k0.t) / (k1.t - k0.t)), q = k0.q.clone().slerp(k1.q, u);
+        const at = (k) => new THREE.Vector3(...k.p).add(pv.clone().applyQuaternion(k.q));
+        return { p: at(k0).lerp(at(k1), u).sub(pv.clone().applyQuaternion(q)).toArray(), q };
       }
     }
     return IDLE;
   }
 
-  // advances the animation; returns true on the frame the blade bites
+  // advances the animation (the blow itself is found by contact, blow.js)
   update(dt, bob, moving) {
-    let impact = false;
     if (this.t >= 0) {
-      const before = this.t;
       if (this.hitStop > 0) this.hitStop -= dt; else this.t += dt;
-      if (before < IMPACT_T && this.t >= IMPACT_T) impact = true;
       if (this.t >= SWING_TIME) {
         this.t = -1;
         if (this.queued) { this.queued = false; this.t = 0; this.onChain?.(); }
@@ -319,7 +322,6 @@ export class AxeModel {
       C.setXYZW(i * 2 + 1, 0.8, 0.92, 1, 0);
     }
     P.needsUpdate = true; C.needsUpdate = true;
-    return impact;
   }
 
   render(renderer, mainCamera) {

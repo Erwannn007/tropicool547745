@@ -2,8 +2,12 @@
 // trees: each blow carves a real wedge into the trunk geometry (fresh pale
 // wood inside), chips, shake, fall, and logs left on the ground to pick up.
 // Felled trees are remembered per world and grow back after a while.
+// The blow lands where the edge really meets something (blow.js): a trunk is
+// chopped, anything else (stone, rock, ground, hut, pier) jars the axe back
+// with the same feedback as the pickaxe (Quarry.hit via hooks.hit).
 import * as THREE from 'three';
-import { AxeModel } from './axeModel.js';
+import { AxeModel, AXE_BLOW } from './axeModel.js';
+import { Blow } from './blow.js';
 import { globals } from './shaders.js';
 import { seedNumber } from './world.js';
 
@@ -37,6 +41,11 @@ export class Axe {
     this.scene = scene; this.camera = camera; this.hooks = hooks;
     this.sprite = new AxeModel();
     this.sprite.onChain = () => this.hooks.sound?.('swing');
+    this.blow = new Blow(this.sprite, AXE_BLOW, {
+      aim: (reach) => this.aim(reach),
+      cast: (o, dir, len) => this.hooks.cast?.(o, dir, len),
+      hit: (c, dir) => this.hit(c, dir),
+    });
     this.hits = new Map();
     this.shakes = [];
     this.falling = [];
@@ -134,14 +143,15 @@ export class Axe {
     this.chopped.push(p);
   }
 
-  // where on the trunk the blade bites: aim ray first, else a ray at chest height
-  trunkHit(p) {
+  // where on the trunk the blade bites: towards where the edge met it, the
+  // aim ray, else a ray at chest height
+  trunkHit(p, at) {
     const mesh = p.chop?.mesh;
     if (!mesh) return null;
     const cam = this.camera.position;
     const dir = new THREE.Vector3(); this.camera.getWorldDirection(dir);
     const y = Math.min(Math.max(cam.y - 0.35, p.y + 0.6), p.y + 1.7);
-    const tries = [dir, new THREE.Vector3(p.x - cam.x, y - cam.y, p.z - cam.z).normalize()];
+    const tries = [...(at ? [at.clone().sub(cam).normalize()] : []), dir, new THREE.Vector3(p.x - cam.x, y - cam.y, p.z - cam.z).normalize()];
     for (const d of tries) {
       this.ray.set(cam, d); this.ray.far = 3.5;
       const hit = this.ray.intersectObject(mesh, false)[0];
@@ -194,10 +204,27 @@ export class Axe {
     P.needsUpdate = N.needsUpdate = A.needsUpdate = true;
   }
 
-  strike() {
-    if (this.hooks.hitPlaced?.()) { this.sprite.freeze(0.05); this.camShake = 0.6; return; } // knock a placed object loose
+  // what the blow goes for: what the crosshair shows, or a trunk close in
+  // front (at chest height) when the crosshair is on the ground or the sky
+  aim(reach) {
+    const c = this.hooks.aim?.(reach);
+    if (c && c.kind !== 'ground') return c;
     const p = this.target();
-    if (!p) { this.hooks.sound?.('whiff'); return; }
+    if (!p) return c;
+    const cam = this.camera.position, d = Math.hypot(cam.x - p.x, cam.z - p.z) || 1, r = (p.type === 'palms' ? 0.32 : 0.35) * p.s;
+    const y = Math.min(Math.max(cam.y - 0.35, p.y + 0.6), p.y + 1.7);
+    const normal = new THREE.Vector3((cam.x - p.x) / d, 0, (cam.z - p.z) / d);
+    return { kind: 'wood', prop: p, point: new THREE.Vector3(p.x + normal.x * r, y, p.z + normal.z * r), normal };
+  }
+
+  // the edge met c (null: through air). Returns how hard the axe bounces back.
+  hit(c, dir) {
+    if (this.hooks.hitPlaced?.()) { this.sprite.freeze(0.05); this.camShake = 0.6; return 0.5; } // knock a placed object loose
+    if (c?.kind === 'wood' && HITS[c.prop.type]) { this.chop(c.prop, c.point); return 0.1; } // the blade bites in
+    return this.hooks.hit?.(c, dir) ?? 0;
+  }
+
+  chop(p, at) {
     const n = (this.hits.get(p) || 0) + 1;
     this.hits.set(p, n);
     const cam = this.camera.position;
@@ -206,7 +233,7 @@ export class Axe {
     const sh = this.shakes.find((s) => s.p === p);
     if (sh?.base) this.parts(p).forEach((part, k) => part.set(sh.base[k]));
     this.detach(p);
-    const hit = this.trunkHit(p);
+    const hit = this.trunkHit(p, at);
     if (hit) this.carve(p, hit);
     if (sh) sh.base = null; // re-capture
     const hp = hit ? hit.point : new THREE.Vector3(p.x + (cam.x - p.x) / d * 0.3 * p.s, p.y + 1.1, p.z + (cam.z - p.z) / d * 0.3 * p.s);
@@ -317,7 +344,9 @@ export class Axe {
   update(dt) {
     const pl = this.player;
     const moving = !!pl && pl.onGround && Math.hypot(pl.vel.x, pl.vel.z) > 0.5;
-    if (this.sprite.update(dt, pl ? pl.bob : 0, moving)) this.strike();
+    if (this.equipped) this.blow.aim(this.camera);
+    this.sprite.update(dt, pl ? pl.bob : 0, moving);
+    if (this.equipped) this.blow.sweep(this.camera);
 
     // impact camera shake (the player re-poses the camera every frame)
     if (this.camShake > 0) {

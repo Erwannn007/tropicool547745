@@ -7,7 +7,9 @@
 // real pieces (debris.js) that tumble, bounce and stay on the ground to be
 // picked up, thrown or put in the bag: nothing goes to the inventory on its
 // own. Mined stones are remembered per world (same store as felled trees).
-// Big cliff rocks only spark; the ground takes a bite; air is a whiff.
+// Big cliff rocks only spark; the ground takes a bite; the hut and the pier
+// knock the tool back; air is a whiff. The axe gets the same feedback on
+// anything that is not a trunk (axe.js), stones included.
 import * as THREE from 'three';
 import { saveFelled } from './axe.js';
 import { MAX_HITS } from './vegetation.js';
@@ -82,14 +84,17 @@ export class Quarry {
     this.probe.matrixAutoUpdate = false;
   }
 
-  setWorld(world, veg, player, debris) {
+  setWorld(world, veg, player, debris, structures) {
     for (const m of this.mining.values()) this.drop(m);
     for (const m of this.collapsing) this.drop(m);
     this.mining.clear(); this.collapsing = []; this.dropping = [];
     this.chips.clear(); this.sparks.clear(); this.grit.clear();
     this.world = world; this.veg = veg; this.player = player; this.debris = debris;
+    // hut and pier pieces the tools can meet (posts, floors, sofas, table, roof)
+    this.builds = [];
+    structures?.group.traverse((o) => { if (o.isMesh) { o.updateMatrixWorld(); this.builds.push({ mesh: o, box: new THREE.Box3().setFromObject(o) }); } });
     debris.lineClear = (a, b, body) => this.lineClear(a, b, body);
-    debris.castWorld = (o, dir, max) => this.cast(o, dir, max, { frags: false });
+    debris.castWorld = (o, dir, max) => this.cast(o, dir, max, { frags: false, builds: false });
     // the grass stays short around each stone so it shows (grows back once mined)
     for (const p of world.props.stones) if (!p.gone) this.hooks.flatten?.(p, p.x, p.z, 0.75 * p.s + 0.25);
   }
@@ -105,9 +110,10 @@ export class Quarry {
 
   // ---------------------------------------------------------------- casting
   // First thing met along a ray from o (unit dir) within max metres: a loose
-  // stone or a cliff rock (their real meshes), a trunk, the ground or a pier
-  // floor, a loose piece. -> { kind, point, normal, dist, prop | body } or null
-  cast(o, dir, max, { frags = true, skip = null } = {}) {
+  // stone or a cliff rock (their real meshes), a trunk, the hut or the pier
+  // (kind 'build'), the ground, a loose piece.
+  // -> { kind, point, normal, dist, prop | body } or null
+  cast(o, dir, max, { frags = true, builds = true, skip = null } = {}) {
     let best = null;
     const take = (kind, dist, point, normal, extra) => { if (dist <= max && (!best || dist < best.dist)) best = { kind, dist, point, normal, ...extra }; };
     const near = (p, r) => {
@@ -150,6 +156,11 @@ export class Quarry {
       if (pt.y < p.y - 0.2 || pt.y > p.y + 5 * p.s) continue;
       take('wood', t, pt, new THREE.Vector3(pt.x - p.x, 0, pt.z - p.z).normalize(), { prop: p });
     }
+    if (builds) for (const b of this.builds) {
+      if (!this.ray.ray.intersectsBox(b.box)) continue;
+      const hit = this.ray.intersectObject(b.mesh, false)[0];
+      if (hit) take('build', hit.distance, hit.point, hit.face.normal.clone().transformDirection(b.mesh.matrixWorld));
+    }
     // the ground (terrain or pier/hut floors): march, then refine
     const step = 0.06, P = new THREE.Vector3();
     const under = (t) => { P.copy(o).addScaledVector(dir, t); return P.y < this.player.groundAt(P.x, P.z, P.y + 0.05); };
@@ -178,7 +189,7 @@ export class Quarry {
     const d = b.clone().sub(a), len = d.length();
     if (len < 1e-3) return true;
     const stop = len - (body ? body.r * 0.9 : 0.02);
-    return stop <= 0 || !this.cast(a, d.divideScalar(len), stop, { frags: false });
+    return stop <= 0 || !this.cast(a, d.divideScalar(len), stop, { frags: false, builds: false });
   }
 
   // what the crosshair points at, within reach of the pick
@@ -210,12 +221,13 @@ export class Quarry {
   // the point was travelling (unit). Returns how hard the pick should bounce
   // back (0 = it sinks in / goes through).
   hit(c, dir, tool = 'pickaxe') {
+    this.tool = tool;
     if (!c) { this.hooks.sound?.('whiff'); return 0; }
     const at = c.point, n = c.normal;
     const square = Math.max(0, -dir.dot(n)); // 1 = straight into the surface
     const good = square > 0.35;
-    if (c.kind === 'stone') return this.hitStone(c.prop, at, n, dir, good, tool);
-    if (c.kind === 'rock') { // too big for a pick: a shower of sparks and a jarring clank
+    if (c.kind === 'stone' && TOOLS[tool]) return this.hitStone(c.prop, at, n, dir, good, tool);
+    if (c.kind === 'rock' || c.kind === 'stone') { // too big for a pick: a shower of sparks and a jarring clank
       this.spray(at, n, dir, 14, 2.4);
       for (let k = 0; k < 5; k++) this.chip(at, n, 1.2, pick(GREYS));
       this.hooks.sound?.('clank');
@@ -235,6 +247,13 @@ export class Quarry {
       this.impact(0.05, 0.35, 60, 0.5, 0.006);
       return 0.6;
     }
+    if (c.kind === 'build') { // hut or pier wood: it does not break, the tool knocks back off it
+      const up = at.clone().addScaledVector(n, 0.04);
+      for (let k = 0; k < 10; k++) this.chip(up, n, 1.1, pick(WOOD));
+      this.hooks.sound?.('clack');
+      this.impact(0.05, 0.35, 60, 0.6, 0.006);
+      return 0.6;
+    }
     // the point bites into the ground
     const w = this.world, gi = Math.floor((at.z + w.size / 2) / w.size * w.N) * w.N + Math.floor((at.x + w.size / 2) / w.size * w.N);
     const grassy = w.grass[gi] > 0.4, cols = grassy ? SOIL : SAND;
@@ -247,7 +266,7 @@ export class Quarry {
 
   // freeze frame, rumble, camera shake and a small upward kick of the view
   impact(freeze, rumble, ms, shake, kick) {
-    this.hooks.freeze?.(freeze);
+    this.hooks.freeze?.(freeze, this.tool);
     this.hooks.rumble?.(rumble, ms);
     this.camShake = Math.max(this.camShake, shake);
     this.kick = Math.max(this.kick, kick);
