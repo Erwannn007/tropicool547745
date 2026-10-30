@@ -28,24 +28,27 @@ export const ITEMS = {
   stairs: { name: 'Escalier', max: 16, cat: 'Construction', desc: 'Monte d’un étage (2 × 2 m). Se pose sur un plancher ou au bord pour y monter.', build: true },
 };
 
+// 'wood' in a recipe: any wood (palm or jungle tree), see WOOD_KINDS
+export const WOOD_KINDS = ['wood:palm', 'wood:tree'];
 export const RECIPES = [
-  { out: 'torch', n: 2, need: [['wood:palm', 1], ['fibre', 2], ['coconut', 1]] },
-  { out: 'campfire', n: 1, need: [['wood:tree', 2], ['wood:palm', 1], ['stone', 4], ['fibre', 1]] },
-  { out: 'transat', n: 1, need: [['wood:tree', 3], ['fibre', 6]] },
-  { out: 'parasol', n: 1, need: [['wood:palm', 2], ['fibre', 10]] },
-  { out: 'chest', n: 1, need: [['wood:tree', 4], ['wood:palm', 2], ['fibre', 2]] },
-  { out: 'book', n: 1, need: [['fibre', 6], ['wood:palm', 1]] },
-  { out: 'block:wood', n: 4, need: [['wood:tree', 2]] },
+  { out: 'torch', n: 2, need: [['wood', 1], ['fibre', 2], ['coconut', 1]] },
+  { out: 'campfire', n: 1, need: [['wood', 3], ['stone', 4], ['fibre', 1]] },
+  { out: 'transat', n: 1, need: [['wood', 3], ['fibre', 6]] },
+  { out: 'parasol', n: 1, need: [['wood', 2], ['fibre', 10]] },
+  { out: 'chest', n: 1, need: [['wood', 6], ['fibre', 2]] },
+  { out: 'book', n: 1, need: [['fibre', 6], ['wood', 1]] },
+  { out: 'block:wood', n: 4, need: [['wood', 2]] },
   { out: 'block:stone', n: 2, need: [['stone', 3]] },
-  { out: 'floor', n: 1, need: [['wood:tree', 2], ['fibre', 2]] },
-  { out: 'wall', n: 1, need: [['wood:palm', 3]] },
-  { out: 'door', n: 1, need: [['wood:palm', 2], ['wood:tree', 1]] },
-  { out: 'roof', n: 1, need: [['fibre', 8], ['wood:palm', 1]] },
-  { out: 'stairs', n: 1, need: [['wood:tree', 3]] },
+  { out: 'floor', n: 1, need: [['wood', 2], ['fibre', 2]] },
+  { out: 'wall', n: 1, need: [['wood', 3]] },
+  { out: 'door', n: 1, need: [['wood', 3]] },
+  { out: 'roof', n: 1, need: [['fibre', 8], ['wood', 1]] },
+  { out: 'stairs', n: 1, need: [['wood', 3]] },
 ];
 
 export function itemDef(id) {
   if (ITEMS[id]) return { id, ...ITEMS[id] };
+  if (id === 'wood') return { id, name: 'Bois (n’importe lequel)', max: 64, cat: 'Matériau', desc: '' };
   if (id.startsWith('fish:')) {
     const s = SPECIES[+id.slice(5)];
     return { id, name: s.name, max: 64, cat: 'Poisson', desc: `${rarityOf(s.w)} · ${s.d[0]}–${s.d[1]} m de fond. Fais-le griller sur un feu de camp.`, fish: s };

@@ -2,7 +2,7 @@
 // (pick up / place / split / shift-move / double-click collect / number-key
 // swap), crafting list, pixel panels matching the game menus. Item icons are
 // rendered from the 3D models (icons.js). Mouse, touch and gamepad.
-import { itemDef, RECIPES, CAT_COLOR } from './items.js';
+import { itemDef, RECIPES, CAT_COLOR, WOOD_KINDS } from './items.js';
 import { iconURL } from './icons.js';
 
 const HOTBAR = 9, SIZE = 36, CHEST = 100, CHEST_COLS = 6;
@@ -54,15 +54,23 @@ export class Inventory {
     this.changed();
     return n === 0;
   }
-  canCraft(r) { return r.need.every(([id, n]) => this.count(id) >= n); }
+  // what a recipe ingredient stands for: 'wood' is any wood
+  kinds(id) { return id === 'wood' ? WOOD_KINDS : [id]; }
+  have(id) { return this.kinds(id).reduce((n, k) => n + this.count(k), 0); }
+  canCraft(r) { return r.need.every(([id, n]) => this.have(id) >= n); }
   craft(k) {
     const r = RECIPES[k];
     if (!r) return;
     if (!this.canCraft(r)) { this.sound?.('deny'); this.toast?.('Il manque des matériaux'); return; }
-    for (const [id, n] of r.need) {
+    for (const [need, n] of r.need) {
       let left = n;
-      if (this.cursor?.id === id) { const t = Math.min(left, this.cursor.n); this.cursor.n -= t; left -= t; if (this.cursor.n <= 0) this.cursor = null; }
-      if (left) this.take(id, left);
+      for (const id of this.kinds(need)) { // the most plentiful wood first
+        if (this.cursor?.id === id) { const t = Math.min(left, this.cursor.n); this.cursor.n -= t; left -= t; if (this.cursor.n <= 0) this.cursor = null; }
+      }
+      for (const id of [...this.kinds(need)].sort((a, b) => this.count(b) - this.count(a))) {
+        const t = Math.min(left, this.count(id));
+        if (t) { this.take(id, t); left -= t; }
+      }
     }
     const left = this.add(r.out, r.n);
     if (left) { this.cursor = { id: r.out, n: left }; }
@@ -251,7 +259,7 @@ export class Inventory {
       el.className = 'recipe';
       const out = itemDef(r.out);
       el.innerHTML = `<div class="r-out"><img alt="" src="${iconURL(r.out)}">${r.n > 1 ? `<span>×${r.n}</span>` : ''}</div>
-        <div class="r-body"><div class="r-name">${out.name}</div><div class="r-need">${r.need.map(([id, n]) => `<span class="need" data-id="${id}" data-n="${n}"><img alt="" src="${iconURL(id)}">${n}</span>`).join('')}</div></div>
+        <div class="r-body"><div class="r-name">${out.name}</div><div class="r-need">${r.need.map(([id, n]) => `<span class="need" data-id="${id}" data-n="${n}" title="${itemDef(id).name}"><img alt="" src="${iconURL(id === 'wood' ? 'wood:tree' : id)}">${n}</span>`).join('')}</div></div>
         <button class="r-btn" tabindex="-1">Créer</button>`;
       el.querySelector('.r-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.craft(k); });
       el.addEventListener('pointerenter', () => this.showRecipeTip(k, el));
@@ -420,7 +428,7 @@ export class Inventory {
       el.classList.toggle('ok', ok);
       el.classList.toggle('pad-focus', this.open && this.padFocus && this.padIndex === SIZE + k);
       if (this.open && this.padFocus && this.padIndex === SIZE + k) el.scrollIntoView({ block: 'nearest' });
-      el.querySelectorAll('.need').forEach((n) => n.classList.toggle('miss', this.count(n.dataset.id) < +n.dataset.n));
+      el.querySelectorAll('.need').forEach((n) => n.classList.toggle('miss', this.have(n.dataset.id) < +n.dataset.n));
       if (this.flash === RECIPES[k].out) { el.classList.remove('done'); void el.offsetWidth; el.classList.add('done'); }
     });
     this.flash = null;

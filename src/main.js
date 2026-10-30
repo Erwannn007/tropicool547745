@@ -232,7 +232,7 @@ function giveItems(list) {
   }
   if (got.length) { toast(got.join(' · ')); audio.sfx('pickup'); }
 }
-// take a placed object or a built piece back (axe blow or empty hand)
+// take a placed object or a built piece back (only with a blow of the axe: no misclicks)
 function pickPlaced() {
   const o = placement.aimed();
   if (!o) {
@@ -367,9 +367,10 @@ function promptHud(dt) {
       promptTarget = { html: `<div class="pname">${itemDef(cookedId(fire.cook)).name}</div>${st < 2 ? `Cuisson ${pct} %` : COOK_STATE[st]}<br>${kb(K.use)} Retirer`, at: () => _anchor.set(fire.x, fire.y + 1.15, fire.z) };
       promptAcc = 0.05;
     } else if (fire && isRawFish(held)) promptTarget = { html: `<div class="pname">Feu de camp</div>${kb(K.use)} Faire griller`, at: () => _anchor.set(fire.x, fire.y + 1.1, fire.z) };
-    if (!promptTarget && state === 'play' && !carrying && (!held || held === 'axe' || !(TOOLS_IN_HAND.has(held) || PLACEABLE[held]))) {
-      const p = building.aimed();
-      if (p) promptTarget = { html: `<div class="pname">${itemDef(p.type).name}</div>${kb(K.use)} ${held === 'axe' ? 'Démonter' : 'Reprendre'}`, at: () => _anchor.set(p.x, p.y + PIECES[p.type].mid + 0.4, p.z) };
+    if (!promptTarget && state === 'play' && !carrying && held === 'axe') { // what the axe would take back
+      const o = placement.aimed(), p = o ? null : building.aimed();
+      if (o) promptTarget = { html: `<div class="pname">${itemDef(o.id).name}</div>${kb(K.use)} Reprendre`, at: () => _anchor.set(o.x, o.y + (PLACEABLE[o.id].h ?? 0.9) + 0.4, o.z) };
+      else if (p) promptTarget = { html: `<div class="pname">${itemDef(p.type).name}</div>${kb(K.use)} Démonter`, at: () => _anchor.set(p.x, p.y + PIECES[p.type].mid + 0.4, p.z) };
     }
     if (!promptTarget && state === 'play' && !carrying && itemDef(held ?? '').eat) promptTarget = { html: `${kb(K.use)} Manger ${kb(K.drop)} Déposer`, bottom: true };
     else if (!promptTarget && state === 'play' && !carrying && isRawFish(held)) promptTarget = { html: `Grille-le sur un feu de camp ${kb(K.drop)} Déposer`, bottom: true };
@@ -822,9 +823,10 @@ function frame() {
       else if (PLACEABLE[heldId]) { if (placement.place()) inventory.take(heldId, 1); }
       else if (isPiece(heldId)) { if (building.place()) inventory.take(heldId, 1); }
       else if (itemDef(heldId ?? '').eat) hands.eat();
-      else if (isRawFish(heldId) && !piece && !pickPlaced()) toast('Grille-le sur un feu de camp 🔥');
       else if (piece) grabPiece(piece);
-      else if (!pickPlaced()) toast('Prends un outil dans ta barre');
+      else if (placement.aimed() || building.aimed()) toast('Frappe-le avec la hache pour le reprendre 🪓');
+      else if (isRawFish(heldId)) toast('Grille-le sur un feu de camp 🔥');
+      else toast('Prends un outil dans ta barre');
     }
   } else if (state === 'book') {
     input.consumeLook();
