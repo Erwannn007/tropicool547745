@@ -82,6 +82,9 @@ export function itemDef(id) {
   if (id === 'crab') return { id, name: 'Crabe cru', max: 16, cat: 'Poisson', desc: 'Attrapé sur la plage. Fais-le griller sur un feu de camp.' };
   if (id === 'grill:crab') return { id, name: 'Crabe grillé', max: 16, cat: 'Nourriture', desc: 'Carapace rouge vif, chair tendre et sucrée. Utilise-le pour le manger.', eat: 'good' };
   if (id === 'burnt:crab') return { id, name: 'Crabe carbonisé', max: 16, cat: 'Nourriture', desc: 'Oublié sur le feu… Ça croque un peu trop.', eat: 'burnt' };
+  if (id === 'turtle') return { id, name: 'Tortue crue', max: 4, cat: 'Poisson', desc: 'Prise sur la plage. Fais-la griller sur un feu de camp.' };
+  if (id === 'grill:turtle') return { id, name: 'Tortue grillée', max: 4, cat: 'Nourriture', desc: 'Rôtie dans sa carapace, chair fondante. Utilise-la pour la manger.', eat: 'good' };
+  if (id === 'burnt:turtle') return { id, name: 'Tortue carbonisée', max: 4, cat: 'Nourriture', desc: 'Restée trop longtemps sur le feu… Il ne reste que du charbon.', eat: 'burnt' };
   if (id.startsWith('fish:')) {
     const s = SPECIES[+id.slice(5)];
     return { id, name: s.name, max: 64, cat: 'Poisson', desc: `${rarityOf(s.w)} · ${s.d[0]}–${s.d[1]} m de fond. Fais-le griller sur un feu de camp.`, fish: s };

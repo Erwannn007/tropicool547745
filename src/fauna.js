@@ -79,16 +79,17 @@ export function crabModel(pal = CRAB) {
   const eyes = merge([-1, 1].map((s) => [part(ell(0.012, 0.012, 0.012, 6, 3).translate(s * 0.03, 0.155, 0.07), 0)]));
   return { parts: [{ geo: merge([...list, [stalks]]), tex: t }, { geo: eyes, tex: eye }], mode: 1 };
 }
-function turtleModel() {
+// shell, skin: live, or cooked on the fire (models.js turtleModelFor)
+export function turtleModel(shellPal = TURTLE_SHELL, skinPal = TURTLE_SKIN) {
   // domed shell of scutes (hexagons with pale rims), olive skin with spots
   const shell = tex(32, 32, (g, w, h) => {
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const row = Math.floor(y / 8), fx = (x + (row % 2) * 4) % 8, fy = y % 8;
       const e = Math.min(fx, 7 - fx, fy, 7 - fy);
-      ramp(g, TURTLE_SHELL, x, y, e === 0 ? 5 : e === 1 ? 1 : 2.6 + Math.sin(x * 0.8 + y) * 0.8);
+      ramp(g, shellPal, x, y, e === 0 ? 5 : e === 1 ? 1 : 2.6 + Math.sin(x * 0.8 + y) * 0.8);
     }
   });
-  const skin = tex(16, 16, (g, w, h) => { const r = mulberry32(3); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, TURTLE_SKIN, x, y, r() < 0.15 ? 4 : 1.6 + (r() - 0.5)); });
+  const skin = tex(16, 16, (g, w, h) => { const r = mulberry32(3); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, skinPal, x, y, r() < 0.15 ? 4 : 1.6 + (r() - 0.5)); });
   const dome = ell(0.36, 0.17, 0.46, 14, 6).translate(0, 0.1, 0);
   const plastron = ell(0.33, 0.04, 0.42, 12, 3).translate(0, 0.09, 0);
   const head = merge([[tube((q) => V(0, 0.12 + q * 0.04, 0.4 + q * 0.14), () => 0.06, { rings: 3, radial: 8 })], [ell(0.07, 0.06, 0.09, 8, 4).translate(0, 0.17, 0.57)]]);
@@ -210,6 +211,7 @@ class Herd {
   dispose() { for (const m of this.meshes) { m.removeFromParent(); m.geometry.dispose(); m.dispose(); } this.mats.forEach((m) => m.dispose()); }
 }
 
+const HUNTED = { crab: 0.24, turtle: 0.42 }; // the animals the tools can strike, and their hit radius
 const MODELS = { crab: crabModel, turtle: turtleModel, dolphin: dolphinModel, butterfly: butterflyModel,
   tern: () => birdModel('#f08a24', (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(g, TERN, x, y, y > 13 && x > 8 ? 0 : 2.6 + (y < 4 ? 1.2 : 0) + ((x + y) % 5 === 0 ? -0.6 : 0)); }, 0.42),
   macaw: () => birdModel('#e8dcbc', (g, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = y / h; if (v > 0.8) ramp(g, MACAW.blu, x, y, 1 + (x % 3)); else if (v > 0.62) ramp(g, MACAW.yel, x, y, 1 + (x % 2)); else ramp(g, MACAW.red, x, y, 1.6 + (x + y) % 3); } }, 0.3),
@@ -286,7 +288,7 @@ export class Fauna {
       const herd = this.herds[a.kind];
       if (a.dead != null) { // struck down: gone a while, then another one turns up
         herd.set(a.i, HIDE, 0, 0);
-        if ((a.dead -= dt) <= 0) { const s = this.beach(); if (s) { a.x = s.x; a.z = s.z; a.mode = 'idle'; a.t = 2; } a.dead = s ? null : 10; }
+        if ((a.dead -= dt) <= 0) { const s = this.beach(); if (s) { a.x = a.hx = s.x; a.z = a.hz = s.z; a.mode = 'idle'; a.t = 2; } a.dead = s ? null : 10; }
         continue;
       }
       const far = Math.hypot((a.x ?? a.cx) - cam.x, (a.z ?? a.cz) - cam.z);
@@ -303,12 +305,12 @@ export class Fauna {
     for (const h of Object.values(this.herds)) h.flush();
   }
 
-  // the first crab along a ray from o (unit dir) within max metres
+  // the first crab or turtle along a ray from o (unit dir) within max metres
   ray(o, dir, max) {
     let best = null;
     for (const a of this.animals) {
-      if (a.kind !== 'crab' || a.dead != null || a.wx == null) continue;
-      const r = 0.24 * a.s, cx = a.x - o.x, cy = a.wy - 0.04 - o.y, cz = a.z - o.z;
+      if (!HUNTED[a.kind] || a.dead != null || a.wx == null) continue;
+      const r = HUNTED[a.kind] * a.s, cx = a.x - o.x, cy = a.wy - 0.04 - o.y, cz = a.z - o.z;
       const t = cx * dir.x + cy * dir.y + cz * dir.z, d2 = cx * cx + cy * cy + cz * cz - t * t;
       if (t < 0 || d2 > r * r) continue;
       const tt = t - Math.sqrt(r * r - d2);

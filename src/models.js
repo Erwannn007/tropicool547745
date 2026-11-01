@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { pixTex, handleTex, steelTex, handleGeometry, headGeometry } from './axeModel.js';
 import { mulberry32, makeSimplex } from './noise.js';
 import { SPECIES } from './fishing.js';
-import { crabModel } from './fauna.js';
+import { crabModel, turtleModel } from './fauna.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const cache = new Map();
@@ -1467,9 +1467,15 @@ export function fishModelFor(id, colors, cook = 0) { return once(`m:${id}:${cook
 const COOKED = { fish: 0, grill: 2, burnt: 3 };
 const CRAB_COOK = [null, ['#7a1e10', '#a02c14', '#c8441e', '#e05c2a', '#f2844a', '#fab07a'], ['#8a1a0c', '#b8260e', '#e03a18', '#f86a30', '#ffa060', '#ffd8b0'], ['#120c0a', '#1e1410', '#2e2018', '#3e2c20', '#523a28', '#6a2a14']];
 export function crabModelFor(stage = 0) { return once(`m:crab:${stage}`, () => crabModel(CRAB_COOK[stage] || undefined)); }
+const TURTLE_COOK = [null,
+  [['#2e2412', '#44361a', '#5c4a20', '#76602a', '#907636', '#ac9050'], ['#4a3e26', '#665234', '#846a40', '#a2844e', '#c0a068']],
+  [['#3a1e0c', '#5a2e10', '#7e4416', '#a25e20', '#c47c30', '#e2a050'], ['#6a3a18', '#8e5220', '#b06c2c', '#d08c40', '#ecb060']],
+  [['#120c0a', '#1e1410', '#2e2018', '#3e2c20', '#523a28', '#6a2a14'], ['#160e0a', '#24180e', '#342216', '#46301e', '#5a3c22']]];
+export function turtleModelFor(stage = 0) { return once(`m:turtle:${stage}`, () => turtleModel(...(TURTLE_COOK[stage] || []))); }
 export function itemModel(id) {
   if (MODELS[id]) return MODELS[id]();
   if (id === 'crab' || id === 'grill:crab' || id === 'burnt:crab') return crabModelFor(id === 'crab' ? 0 : id === 'grill:crab' ? 2 : 3);
+  if (id === 'turtle' || id === 'grill:turtle' || id === 'burnt:turtle') return turtleModelFor(id === 'turtle' ? 0 : id === 'grill:turtle' ? 2 : 3);
   const [kind, n] = id?.split(':') ?? [];
   if (COOKED[kind] != null && SPECIES[+n]) return fishModelFor('fish:' + n, SPECIES[+n].c, COOKED[kind]);
   return null;

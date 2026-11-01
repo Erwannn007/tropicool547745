@@ -192,10 +192,10 @@ const quarry = new Quarry(scene, camera, {
   rumble: (s, ms) => input.rumble(s, ms),
   freeze: (s, tool) => (tool === 'axe' ? axe.sprite : hands.view).freeze(s),
   flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
-  killed: (a, dir) => { // a crab struck down: it lies there to be picked up
+  killed: (a, dir) => { // a crab or a turtle struck down: it lies there, on its back, to be picked up
     fauna.kill(a);
     audio.sfx('crabHit');
-    debris.spawnItem('crab', new THREE.Vector3(a.x, a.wy + 0.15, a.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, a.yaw, 0)), new THREE.Vector3(dir.x * 1.2, 2.2, dir.z * 1.2), new THREE.Vector3((Math.random() - 0.5) * 8, 0, (Math.random() - 0.5) * 8));
+    debris.spawnItem(a.kind, new THREE.Vector3(a.x, a.wy + 0.15, a.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, a.yaw, 0)), new THREE.Vector3(dir.x * 1.2, 2.2, dir.z * 1.2), new THREE.Vector3((Math.random() - 0.5) * 8, 0, (Math.random() - 0.5) * 8));
   },
   shattered: (p) => {
     if (p.mineral) discovered('ores', p.mineral);
@@ -215,7 +215,7 @@ const cooking = new Cooking(scene, camera, {
   sound: (n) => audio.sfx(n),
   sizzle: (k, burning) => audio.setSizzle(k, burning),
   save: () => placement.save(),
-  ready: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast(o.cook?.id === 'crab' ? '🔥 Ton crabe est grillé !' : '🔥 Ton poisson est grillé !'); },
+  ready: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast(o.cook?.id === 'crab' ? '🔥 Ton crabe est grillé !' : o.cook?.id === 'turtle' ? '🔥 Ta tortue est grillée !' : '🔥 Ton poisson est grillé !'); },
   burnt: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast('Ça sent le brûlé… 💨'); },
 });
 // rowboats on the lagoon
@@ -282,7 +282,7 @@ function pickPlaced() {
 }
 // camp fire under the crosshair, and what can be done there with what is in hand
 function aimedFire() { const o = placement.aimed(); return o?.id === 'campfire' ? o : null; }
-const isRawFish = (id) => !!id?.startsWith('fish:') || id === 'crab';
+const isRawFish = (id) => !!id?.startsWith('fish:') || id === 'crab' || id === 'turtle';
 let foundTimer;
 function useFire(o, held) {
   if (o.cook) {
@@ -443,7 +443,7 @@ function promptHud(dt) {
       promptTarget = { html: `<div class="pname">${itemDef(b.kind).name}</div>${kb(K.grab)} Prendre ${kb(K.stash)} Ranger`, at: () => _anchor.copy(b.mesh.position).setY(b.mesh.position.y + b.r + 0.12) };
     } else if ((held === 'pickaxe' || held === 'axe') && quarry.aim(2.6)?.kind === 'animal') {
       const c = quarry.aim(2.6).animal;
-      promptTarget = { html: `<div class="pname">${FAUNA.crab.name}</div>${kb(K.use)} Frapper`, at: () => _anchor.set(c.x, c.wy + 0.35, c.z) };
+      promptTarget = { html: `<div class="pname">${FAUNA[c.kind].name}</div>${kb(K.use)} Frapper`, at: () => _anchor.set(c.x, c.wy + 0.35, c.z) };
     } else if (held === 'pickaxe') {
       const a = quarry.aim();
       if (a?.kind === 'stone') promptTarget = { html: `<div class="pname">${MINERALS[a.prop.mineral || 'basalt'].label}</div>${kb(K.use)} Miner`, at: () => _anchor.set(a.prop.x, a.prop.y + 0.75 * a.prop.s, a.prop.z) };
