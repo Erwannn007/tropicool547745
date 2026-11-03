@@ -60,6 +60,8 @@ export const ITEMS = {
   'rod:gold': { name: 'Canne dorée', max: 1, cat: 'Outil', desc: 'Moulinet et anneaux en or : ça mord deux fois plus vite et les poissons rares viennent plus souvent.', tier: 1 },
   'lantern:copper': { name: 'Lanterne en cuivre', max: 8, cat: 'Objet à poser', desc: 'Lanterne de marin en cuivre, une flamme chaude derrière ses vitres.', place: 'lantern:copper' },
   statue: { name: 'Statue d’or', max: 2, cat: 'Objet à poser', desc: 'Idole tiki coulée dans l’or, yeux d’améthyste. Elle brille au soleil comme sous la lune.', place: 'statue' },
+  pearl: { name: 'Perle', max: 64, cat: 'Matériau', desc: 'Une perle ronde et nacrée, prise dans un bénitier géant au fond du lagon. Le bénitier en refait une avec le temps.' },
+  'block:nacre': { name: 'Bloc de nacre', max: 64, cat: 'Construction', desc: 'Dalles de nacre irisée, roses et vertes à la lumière. S’empile et se colle aux autres blocs.', build: true },
   stairs: { name: 'Escalier', max: 16, cat: 'Construction', desc: 'Monte d’un étage (2 × 2 m). Se pose sur un plancher ou au bord pour y monter.', build: true },
 };
 
@@ -103,6 +105,7 @@ export const RECIPES = [
   { out: 'block:copper', n: 2, need: [['ingot:copper', 3]] },
   { out: 'block:obsidian', n: 2, need: [['obsidian', 3]] },
   { out: 'block:gold', n: 1, need: [['ingot:gold', 4]] },
+  { out: 'block:nacre', n: 4, need: [['pearl', 1], ['stone', 4]] },
 ];
 // workstations a recipe may need nearby
 export const STATIONS = { anvil: 'Enclume' };

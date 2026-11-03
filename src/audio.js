@@ -11,7 +11,9 @@ export class Audio {
     const ctx = (this.ctx = new AC());
     this.master = ctx.createGain();
     this.master.gain.value = this.volume;
-    this.master.connect(ctx.destination);
+    // under water everything goes through a closing low-pass (setUnder)
+    this.muffle = ctx.createBiquadFilter(); this.muffle.type = 'lowpass'; this.muffle.frequency.value = 20000; this.muffle.Q.value = 0.5;
+    this.master.connect(this.muffle); this.muffle.connect(ctx.destination);
 
     // brown noise (soft rumble) + white noise (hiss, crunch, splash)
     const len = ctx.sampleRate * 4;
@@ -56,6 +58,11 @@ export class Audio {
     this.every(0.04, 0.22, () => { if (this.fire > 0.03) this.noise({ type: 'highpass', f0: 1500 + Math.random() * 3500, q: 1.5, dur: 0.012 + Math.random() * 0.02, attack: 0.001, gain: 0.09 * this.fire, out: this.fireBus }); });
     // a fish on the spit: fat frying on hot skin (a fizzing hiss that breathes),
     // tiny crackles, and now and then a drop of fat spitting in the embers
+    // the deep: a slow pressure hum, the swell breathing, far clicks of the reef
+    this.underBus = ctx.createGain(); this.underBus.gain.value = 0; this.underBus.connect(ctx.destination);
+    loop(this.brown, 0.5, 'lowpass', 180, 0.6, 0.13, 0.25, this.underBus);
+    loop(this.brown, 0.12, 'bandpass', 420, 0.8, 0.07, 0.08, this.underBus);
+    this.every(0.08, 0.5, () => { if (this.under) this.noise({ type: 'bandpass', f0: 2500 + Math.random() * 3500, q: 6, dur: 0.008, attack: 0.001, gain: 0.04 * Math.random() * this.volume, out: this.underBus }); }); // snapping shrimp
     this.sizzleBus = ctx.createGain(); this.sizzleBus.gain.value = 0; this.sizzleBus.connect(this.master);
     loop(this.white, 0.035, 'highpass', 5200, 0.6, 1.7, 0.02, this.sizzleBus);
     loop(this.white, 0.02, 'bandpass', 2600, 0.9, 0.9, 0.012, this.sizzleBus);
@@ -78,6 +85,14 @@ export class Audio {
     this.timers.push(setTimeout(tick, Math.random() * max * 1000));
   }
 
+  // eyes under the surface: the world above goes dull, the deep hums
+  setUnder(on) {
+    this.under = on;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.muffle.frequency.setTargetAtTime(on ? 520 : 20000, t, on ? 0.05 : 0.15);
+    this.underBus.gain.setTargetAtTime(on ? this.volume * 0.9 : 0, t, 0.2);
+  }
   setRain(k) { if (this.rainBus) this.rainBus.gain.setTargetAtTime(k, this.ctx.currentTime, 1.5); }
   setFire(k) { this.fire = k; if (this.fireBus) this.fireBus.gain.setTargetAtTime(k, this.ctx.currentTime, 0.4); }
   // k: how loud the nearest cooking fish is (0..1); burning: it is charring
@@ -433,6 +448,22 @@ export class Audio {
       this.noise({ type: 'highpass', f0: 3200, q: 1, dur: 0.03, attack: 0.001, gain: 0.1 });
       this.tone(2200, 2150, 0.12, 'sine', 0.03, 0.09);
     }
+    if (name === 'dive') { // plunging in: a gulp of water closing over the head
+      this.noise({ type: 'lowpass', f0: 900, f1: 200, q: 0.8, dur: 0.5, attack: 0.01, gain: 0.35, buf: this.brown });
+      for (let i = 0; i < 6; i++) this.tone(300 + Math.random() * 500, 700 + Math.random() * 900, 0.06, 'sine', 0.05, 0.05 + i * 0.05);
+    }
+    if (name === 'surface' || name === 'gasp') { // breaking the surface, water running off; a deep breath if it was long
+      this.noise({ type: 'bandpass', f0: 1800, f1: 900, q: 0.7, dur: 0.35, attack: 0.01, gain: 0.12 });
+      this.noise({ type: 'highpass', f0: 3000, q: 0.5, dur: 0.5, attack: 0.05, gain: 0.04, delay: 0.1 });
+      if (name === 'gasp') this.noise({ type: 'bandpass', f0: 900, f1: 1400, q: 1.5, dur: 0.45, attack: 0.08, gain: 0.12, delay: 0.05 });
+    }
+    if (name === 'bubble') { // breathing out: a little chain of rising blips
+      for (let i = 0; i < 5; i++) { const f = 250 + Math.random() * 300; this.tone(f, f * 2.6, 0.05, 'sine', 0.05, i * (0.04 + Math.random() * 0.05)); }
+    }
+    if (name === 'pearl') { // the pearl in your hand: a soft shimmer
+      [1318, 1568, 1976, 2637].forEach((f, i) => this.tone(f, f, 0.4, 'sine', 0.04, i * 0.08));
+    }
+    if (name === 'clamShut') { this.tone(140, 80, 0.25, 'sine', 0.2); this.noise({ type: 'lowpass', f0: 500, q: 0.6, dur: 0.15, gain: 0.2, buf: this.brown }); }
     if (name === 'whiff') this.noise({ f0: 1600, f1: 600, q: 1.2, dur: 0.14, attack: 0.03, gain: 0.05 });
     if (name === 'grab') { // a stone scraped off the ground into the palm
       this.noise({ type: 'bandpass', f0: 1400, f1: 700, q: 1.5, dur: 0.09, attack: 0.005, gain: 0.08 });

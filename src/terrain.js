@@ -6,7 +6,7 @@ export function buildTerrain(world, tex, quality) {
   const group = new THREE.Group();
   const seg = quality === 'high' ? 1 : quality === 'medium' ? 1.6 : 2;
   const chunkMeters = 32;
-  const n = Math.round(chunkMeters / seg);
+  const nFine = Math.round(chunkMeters / seg);
   const half = world.size / 2;
 
   const material = makeMaterial({
@@ -76,14 +76,14 @@ export function buildTerrain(world, tex, quality) {
       }`,
   });
 
-  const built = new Set(); // chunks that have a mesh (not deep ocean)
+  const built = new Map(); // chunk -> its segment count (deep ocean floor: coarse, only seen when diving)
   for (let cz = -half; cz < half; cz += chunkMeters) {
     for (let cx = -half; cx < half; cx += chunkMeters) {
       let maxH = -1e9;
       for (let z = 0; z <= chunkMeters; z += 4) for (let x = 0; x <= chunkMeters; x += 4)
         maxH = Math.max(maxH, world.heightAt(cx + x, cz + z));
-      if (maxH < -7.5) continue; // deep ocean: water is opaque there
-      built.add(`${cx},${cz}`);
+      const n = maxH < -7.5 ? 4 : nFine; // deep ocean: the water is opaque from above, a coarse floor for divers
+      built.set(`${cx},${cz}`, n);
       const geo = new THREE.BufferGeometry();
       const verts = (n + 1) * (n + 1);
       const pos = new Float32Array(verts * 3);
@@ -118,7 +118,8 @@ export function buildTerrain(world, tex, quality) {
   const trueH = world.heightAt;
   group.userData.heightAt = (x, z) => {
     const cx = Math.floor((x + half) / chunkMeters) * chunkMeters - half, cz = Math.floor((z + half) / chunkMeters) * chunkMeters - half;
-    if (!built.has(`${cx},${cz}`)) return trueH(x, z);
+    const n = built.get(`${cx},${cz}`);
+    if (!n) return trueH(x, z);
     const s = chunkMeters / n, fx = (x - cx) / s, fz = (z - cz) / s;
     const i = Math.min(n - 1, Math.floor(fx)), j = Math.min(n - 1, Math.floor(fz)), u = fx - i, v = fz - j;
     const P = (a, c) => trueH(cx + (i + a) * s, cz + (j + c) * s);

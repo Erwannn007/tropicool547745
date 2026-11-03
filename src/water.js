@@ -10,6 +10,7 @@ export function buildWater() {
   const material = makeMaterial({
     transparent: true,
     depthWrite: false,
+    side: THREE.DoubleSide, // seen from below when diving
     defines: { RIPPLES },
     uniforms: { uRip: { value: Array.from({ length: RIPPLES }, () => new THREE.Vector4(0, 0, -100, 0)) } },
     vertex: /* glsl */`
@@ -36,6 +37,27 @@ export function buildWater() {
         float h = worldData(p).r;
         float depth = uWaterLevel - h;
         if (depth < -0.02) discard;
+
+        if (uCamPos.y < uWaterLevel) {
+          // from below: Snell's window, the bright sky straight overhead,
+          // the water mirroring itself all around it; ripples of light
+          float e = 0.15, w0 = waveH(p);
+          vec3 n = normalize(vec3(w0 - waveH(p + vec2(e, 0.0)), e * 6.0, w0 - waveH(p + vec2(0.0, e))));
+          vec3 V = normalize(uCamPos - vWorld); // pointing down to the eye
+          float up = -V.y + (n.x * V.x + n.z * V.z) * 0.6;
+          float win = step(0.66, up) + step(0.6, up) * step(0.5, hash12(px + floor(uTime * 4.0))) * (1.0 - step(0.66, up)); // a ragged pixel rim
+          vec3 tone = (uSkyAmb * 0.9 + uSunColor * 0.35) / vec3(0.845, 0.95, 1.08);
+          vec3 sky = mix(vec3(0.62, 0.92, 0.98), vec3(0.36, 0.74, 0.92), smoothstep(0.66, 1.0, up)) * tone;
+          vec3 col = mix(uFogColor * 1.25, sky, clamp(win, 0.0, 1.0));
+          float c1 = vnoise(p * 1.2 + vec2(uTime * 0.3, uTime * 0.17));
+          float c2 = vnoise(p * 1.5 - vec2(uTime * 0.21, -uTime * 0.27) + 11.0);
+          float lines = smoothstep(0.86, 0.97, 1.0 - abs(c1 - c2) * 3.0);
+          col += lines * mix(0.12, 0.3, win) * tone;
+          float sun = pow(max(dot(-V, uSunDir), 0.0), 90.0) * (1.0 - uNight);
+          col += step(0.3, sun) * vec3(1.0, 0.98, 0.85) * 0.8 + sun * 0.4;
+          gl_FragColor = vec4(applyFog(col, vWorld), mix(0.94, 0.86, clamp(win, 0.0, 1.0)));
+          return;
+        }
 
         vec3 shallow = vec3(0.56, 0.93, 0.86);
         vec3 lagoon  = vec3(0.16, 0.80, 0.82);

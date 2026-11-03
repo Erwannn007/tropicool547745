@@ -15,6 +15,8 @@ import { Audio } from './audio.js';
 import { Inventory } from './inventory.js';
 import { itemDef, toolKind } from './items.js';
 import { Forge, furnaceAccepts, SMELT_TIME } from './forge.js';
+import { Reef } from './reef.js';
+import { Diving } from './diving.js';
 import { Axe, loadFelled, legacyKey, worldKey } from './axe.js';
 import { initStore, loadWorld } from './store.js';
 import { newInstance, listSaves, findSave, writeSave, deleteSave, hasChanges, purge } from './saves.js';
@@ -237,6 +239,16 @@ const forge = new Forge(scene, camera, lights, {
     audio.sfx(id.startsWith('ingot') ? 'ingot' : 'pickup');
     if (!smeltTip && inventory.ext?.o !== o) { smeltTip = true; toast(`🔥 Le four a sorti : ${itemDef(id).name}`); }
   },
+});
+// the reef under the lagoon, and what it is like to dive down to it
+const reef = new Reef(scene);
+let swimTip = false;
+try { swimTip = !!localStorage.getItem('tropicool.diveTip'); } catch (_) { /* private */ }
+const diving = new Diving(scene, camera, {
+  sound: (n) => audio.sfx(n),
+  under: (on) => { audio.setUnder(on); sky.visible = !on; },
+  outOfAir: () => { toast('À bout de souffle ! Tu remontes respirer…', 2600); audio.sfx('gasp'); },
+  pop: (x, z) => { if (Math.hypot(x - camera.position.x, z - camera.position.z) < 25) waterFx.ripple(x, z, 0.15); },
 });
 // rowboats on the lagoon
 const boats = new Boats(scene, camera, {
@@ -470,7 +482,12 @@ function promptHud(dt) {
     promptAcc = 0.12;
     promptTarget = null;
     const held = toolKind(inventory.held?.id), heldFull = inventory.held?.id;
-    if (state !== 'play') { /* nothing */ } else if (boats.riding && !carrying && !debris.aimed) {
+    const clamAim = state === 'play' && player.diving && !carrying ? reef.aimedClam(camera) : null;
+    if (state !== 'play') { /* nothing */ } else if (clamAim) {
+      promptTarget = { html: `<div class="pname">Bénitier géant</div>${clamAim.has ? `${kb(K.use)} Prendre la perle` : 'Pas de perle'}`, at: () => _anchor.set(clamAim.x, clamAim.y + 0.55, clamAim.z) };
+    } else if (player.diving && !carrying && !debris.aimed) {
+      promptTarget = { html: input.lastDevice === 'gamepad' ? `${kb('✕')} Remonter · regarde vers le bas pour descendre` : input.lastDevice === 'touch' ? `${kb('⤒')} Remonter · regarde vers le bas pour descendre` : `${kb('Espace')} Monter ${kb('C')} Descendre`, bottom: true };
+    } else if (boats.riding && !carrying && !debris.aimed) {
       promptTarget = { html: `${K.row ? kb(K.row) + ' ' : ''}Ramer ${kb(K.jump)} Descendre${held === 'rod' ? ` ${kb(K.use)} Pêcher` : ''}`, bottom: true };
     } else if (carrying) {
       const b = hands.carried.body;
@@ -651,11 +668,12 @@ function buildWorld() {
   placement.setWorld(world, player);
   fillSiteChests(world);
   fauna.setWorld(world, player);
+  reef.build(world, world.heightAt, settings.quality);
   world.setShadowDir(globals.uSunDir.value);
   day.shadowDir.copy(globals.uSunDir.value);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { fauna, player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights, building, cooking, boats, forge, openFurnace, closeInventory, openInventory };
+  window.__game = { fauna, player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights, building, cooking, boats, forge, openFurnace, closeInventory, openInventory, reef, diving };
   console.log(`[tropicool] world ${settings.world.seed} (${world.cfg.seed}) built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
     bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length, stones: world.props.stones.length,
@@ -1061,6 +1079,11 @@ $('#to-start').onclick = () => {
 const tbtn = (id, fn) => $(id).addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
 tbtn('#btn-fish', () => input.pressed.add('action'));
 tbtn('#btn-jump', () => input.pressed.add('jump'));
+{ // held under water: keep rising
+  const b = $('#btn-jump');
+  b.addEventListener('pointerdown', () => { input.touchRise = true; });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, () => { input.touchRise = false; });
+}
 tbtn('#btn-grab', () => input.pressed.add(grabUi === 'drop' ? 'drop' : 'grab'));
 tbtn('#btn-stash', () => input.pressed.add('stash'));
 tbtn('#btn-menu', () => openMenu('world'));
@@ -1194,6 +1217,18 @@ function frame() {
     if (p.has('stash') && debris.carried) letGo('stash');
     else if (p.has('stash') && piece) stashPiece(piece);
     if (p.has('drop')) { if (debris.carried) letGo('drop'); else dropHeld(); }
+    const clam = p.has('action') && !carrying && player.diving ? reef.aimedClam(camera) : null;
+    if (clam) {
+      if (reef.takePearl(clam)) { audio.sfx('clamShut'); audio.sfx('pearl'); giveItems([['pearl', 1]]); diving.puff(new THREE.Vector3(clam.x, clam.y + 0.25, clam.z), 10); }
+      else toast('Ce bénitier n’a pas de perle… pour l’instant');
+      p.delete('action');
+    }
+    // first swim in deep water: how to dive
+    if (!swimTip && player.swimming && !player.diving) {
+      swimTip = true;
+      try { localStorage.setItem('tropicool.diveTip', '1'); } catch (_) { /* private */ }
+      toast(input.lastDevice === 'keyboard' ? 'Pour plonger : regarde vers le bas et avance (ou C). Espace pour remonter.' : 'Pour plonger : regarde vers le bas et avance. Saute pour remonter.', 4500);
+    }
     const chest = p.has('action') && heldKind !== 'axe' && !carrying ? aimedChest() || aimedFurnace() : null;
     const fire = p.has('action') && heldKind !== 'axe' && !carrying && !chest ? aimedFire() : null;
     const gate = p.has('action') && heldKind !== 'axe' && !carrying && !chest && !fire ? aimedGate() : null;
@@ -1252,6 +1287,9 @@ function frame() {
   input.endFrame();
 
   day.update(state === 'start' ? dt * 0.3 : dt, camera, renderer);
+  diving.applyFog(); // under water the fog is the water itself
+  if (diving.under) day.rainFx.visible = false; // no rain falls under the surface
+  renderer.setClearColor(diving.under ? globals.uFogColor.value : 0x9fd2ff);
   if (current) {
     fishing.update(dt, input);
     axe.update(dt);
@@ -1270,9 +1308,11 @@ function frame() {
     boats.update(dt);
     cooking.update(dt);
     forge.update(dt);
+    reef.update(dt, camera, player);
+    diving.update(dt, player);
     fauna.update(dt, camera);
     const px = renderer.getDrawingBufferSize(_px).y * 0.5;
-    building.setScale(px); cooking.setScale(px); forge.setScale(px);
+    building.setScale(px); cooking.setScale(px); forge.setScale(px); diving.setScale(px);
     current.grass.update(camera);
     current.veg.update(camera);
   }

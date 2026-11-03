@@ -31,6 +31,7 @@ export const PIECES = {
   'block:obsidian': { mat: 'stone', boxes: [[0, 0, 0.5, 0.5, 0, 1]], mid: 0.5, grab: 0.5, r: 0.8, sound: 'stone' },
   'block:gold': { mat: 'stone', boxes: [[0, 0, 0.5, 0.5, 0, 1]], mid: 0.5, grab: 0.5, r: 0.8, sound: 'stone' },
   'block:copper': { mat: 'stone', boxes: [[0, 0, 0.5, 0.5, 0, 1]], mid: 0.5, grab: 0.5, r: 0.8, sound: 'stone' },
+  'block:nacre': { mat: 'stone', boxes: [[0, 0, 0.5, 0.5, 0, 1]], mid: 0.5, grab: 0.5, r: 0.8, sound: 'stone' },
   floor: { mat: 'wood', boxes: [[0, 0, 1, 1, -0.22, 0]], mid: -0.1, grab: 0, r: 1.5, sound: 'big' },
   wall: { mat: 'wood', boxes: [[0, 0, 1, 0.24, 0, H]], mid: H / 2, grab: 0.3, r: 1.2, sound: 'big' },
   door: { mat: 'wood', boxes: [[-0.72, 0, 0.28, 0.24, 0, H], [0.72, 0, 0.28, 0.24, 0, H], [0, 0, 0.44, 0.24, 2.0, H]], check: [[0, 0, 1, 0.24, 0, H]], mid: H / 2, grab: 0.3, r: 1.2, sound: 'big' },
@@ -51,7 +52,7 @@ export const PIECES = {
 export const isPiece = (id) => !!PIECES[id];
 
 // sockets: where a new piece of one of `types` goes relative to a piece
-const WALLS = ['wall', 'door', 'window'], BLOCKS = ['block:wood', 'block:stone', 'block:obsidian', 'block:gold', 'block:copper'], FLOORS = ['floor', 'flatroof'];
+const WALLS = ['wall', 'door', 'window'], BLOCKS = ['block:wood', 'block:stone', 'block:obsidian', 'block:gold', 'block:copper', 'block:nacre'], FLOORS = ['floor', 'flatroof'];
 const S = (types, x, y, z, yaw = 0) => ({ types, x, y, z, yaw });
 const RIDGE = 1.17; // the top of a roof panel's high edge over its level
 const SOCKETS = {

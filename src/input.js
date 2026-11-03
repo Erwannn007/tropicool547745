@@ -154,6 +154,7 @@ export class Input {
     const lx = dz(ax[2] || 0), ly = dz(ax[3] || 0);
     if (b.some(Boolean) || Math.abs(mx) + Math.abs(my) + Math.abs(lx) + Math.abs(ly) > 0) this.lastDevice = 'gamepad';
     this.padSprint = b[10] || b[6];
+    this.padRise = b[0];
     this.padLook = { x: Math.sign(lx) * lx * lx, y: Math.sign(ly) * ly * ly };
     // menu navigation with the left stick too
     const stickY = ax[1] || 0;
@@ -189,6 +190,9 @@ export class Input {
     if (l > 1) { x /= l; y /= l; }
     this.move.x = x; this.move.y = y;
     this.sprint = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || !!this.padSprint || Math.hypot(this.stick.x, this.stick.y) > 0.97;
+    // held, for swimming under water: rise (jump held) and sink (C / Ctrl; on a pad or a phone: look down and swim)
+    this.rise = this.keys.has('Space') || !!this.padRise || !!this.touchRise;
+    this.sink = this.keys.has('KeyC') || this.keys.has('ControlLeft');
     if (this.padLook) {
       this.look.x += this.padLook.x * 2.8 * dt * this.sensitivity;
       this.look.y += this.padLook.y * 2.0 * dt * this.sensitivity;

@@ -125,16 +125,37 @@ export class Player {
     const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
     const mvx = (fx * -input.move.y + rx * input.move.x) * speed;
     const mvz = (fz * -input.move.y + rz * input.move.x) * speed;
-    const accel = this.onGround || this.swimming ? 14 : 3;
-    this.vel.x += (mvx - this.vel.x) * Math.min(1, accel * dt);
-    this.vel.z += (mvz - this.vel.z) * Math.min(1, accel * dt);
+    // Diving: in deep water, swimming forward while looking down (or holding
+    // C / Ctrl) takes you under; then you swim where you look, jump held
+    // rises, and with nothing pressed you drift slowly back up. Out of
+    // breath (diving.js sets outOfAir), you are carried up to the surface.
+    const floatY = water - 1.28, fwdIn = -input.move.y;
+    const wantDown = depth > 1.25 && !frozen && (input.sink || (this.pitch < -0.32 && fwdIn > 0.3));
+    this.diving = depth > 1.25 && !this.outOfAir && (this.pos.y < floatY - 0.12 || (this.swimming && wantDown));
+    if (this.outOfAir && this.pos.y < floatY - 0.05) this.diving = true;
+    if (this.diving) {
+      const sp = frozen ? 0 : input.sprint ? 4.4 : 3, cp = Math.cos(this.pitch), sy = Math.sin(this.pitch);
+      const tx = (fx * cp * fwdIn + rx * input.move.x) * sp, tz = (fz * cp * fwdIn + rz * input.move.x) * sp;
+      let ty = sy * fwdIn * sp;
+      if (input.rise && !frozen) ty += 2.8;
+      if (input.sink && !frozen) ty -= 2.4;
+      if (!fwdIn && !input.move.x && !input.rise && !input.sink) ty = 0.35; // a breath of air in the lungs: you float up
+      if (this.outOfAir) ty = 3.8;
+      const k = Math.min(1, 4 * dt); // water drag: glide in, glide out
+      this.vel.x += (tx - this.vel.x) * k; this.vel.z += (tz - this.vel.z) * k; this.vel.y += (ty - this.vel.y) * k;
+      this.swimming = true;
+    } else {
+      const accel = this.onGround || this.swimming ? 14 : 3;
+      this.vel.x += (mvx - this.vel.x) * Math.min(1, accel * dt);
+      this.vel.z += (mvz - this.vel.z) * Math.min(1, accel * dt);
 
-    if (input.pressed.has('jump') && !frozen && (this.onGround || this.swimming)) {
-      this.vel.y = this.swimming ? 3.5 : 5.6;
-      if (!this.swimming) this.sound?.sfx('jump');
-      this.onGround = false;
+      if (input.pressed.has('jump') && !frozen && (this.onGround || this.swimming)) {
+        this.vel.y = this.swimming ? 3.5 : 5.6;
+        if (!this.swimming) this.sound?.sfx('jump');
+        this.onGround = false;
+      }
+      this.vel.y -= 16 * dt;
     }
-    this.vel.y -= 16 * dt;
 
     let nx = this.pos.x + this.vel.x * dt;
     let nz = this.pos.z + this.vel.z * dt;
@@ -168,8 +189,8 @@ export class Player {
 
     const ground = this.groundAt(this.pos.x, this.pos.z, this.pos.y);
     const wasGround = this.onGround, wasSwimming = this.swimming, fall = -this.vel.y;
-    const floatY = water - 1.28;
-    if (this.swimming || (ground < floatY && this.pos.y <= floatY)) {
+    if (this.diving) { if (this.pos.y > floatY) { this.pos.y = floatY; this.vel.y = Math.min(this.vel.y, 0); } this.onGround = false; } // back at the surface
+    else if (this.swimming || (ground < floatY && this.pos.y <= floatY)) {
       if (this.pos.y < floatY) { this.pos.y += (floatY - this.pos.y) * Math.min(1, 6 * dt); this.vel.y = Math.max(this.vel.y, 0) * 0.9; }
       this.onGround = false;
     }
@@ -189,11 +210,11 @@ export class Player {
       const phase = Math.floor(this.bob / Math.PI + 0.25);
       if (this.onGround && hs > 0.5 && phase !== this.stepPhase) this.sound.step(this.surface(), Math.min(1, hs / 7));
       this.stepPhase = phase;
-      if (this.swimming && hs > 0.5 && (this.swimT += dt) > 0.95) { this.swimT = 0; this.sound.step('swim'); }
+      if (this.swimming && !this.diving && hs > 0.5 && (this.swimT += dt) > 0.95) { this.swimT = 0; this.sound.step('swim'); }
       if (this.onGround && !wasGround && fall > 2.5) this.sound.land(this.surface(), fall);
       if (this.swimming && !wasSwimming && fall > 1) this.sound.sfx('splash');
     }
-    const swimBob = this.swimming ? Math.sin(performance.now() * 0.002) * 0.08 : 0;
+    const swimBob = this.swimming && !this.diving ? Math.sin(performance.now() * 0.002) * 0.08 : 0;
 
     this.camera.position.set(this.pos.x, this.pos.y + EYE + Math.sin(this.bob * 2) * 0.045 + swimBob, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');

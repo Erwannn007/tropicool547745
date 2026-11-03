@@ -7,7 +7,7 @@
 // background. Without IndexedDB (some private modes) records fall back to
 // localStorage, one key each. Older saves, one localStorage map per kind
 // holding every world, move over on the first run.
-export const KINDS = { felled: 'tropicool.felled.v1', mowed: 'tropicool.mowed.v1', placed: 'tropicool.placed.v1', build: 'tropicool.build.v1', boat: 'tropicool.boat.v1', sites: 'tropicool.sites.v1' }; // sites: chests put out, places found (sites.js)
+export const KINDS = { felled: 'tropicool.felled.v1', mowed: 'tropicool.mowed.v1', placed: 'tropicool.placed.v1', build: 'tropicool.build.v1', boat: 'tropicool.boat.v1', sites: 'tropicool.sites.v1', reef: 'tropicool.reef.v1' }; // sites: chests put out, places found (sites.js) · reef: pearls taken from the giant clams (reef.js)
 const DB = 'tropicool', OS = 'worlds', LS = 'tropicool.w:';
 const mem = new Map(), loaded = new Set();
 let db = null;

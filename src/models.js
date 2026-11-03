@@ -1677,6 +1677,73 @@ function statueModel() {
   };
 }
 
+// ---------------------------------------------------------------- the reef
+// Giant clam: two heavy fluted shells with a scalloped lip (signature), the
+// lid on a hinge at the back, a velvet mantle of electric blue between them
+// and, in some, a pearl. The lid opens and closes slowly (reef.js).
+const SHELL = ['#6a7068', '#8a9086', '#aab0a2', '#c8ccbc', '#e2e4d6', '#f6f6ec'];
+const MANTLE = ['#0e2e5a', '#16488a', '#2270b8', '#3a9ad8', '#6ac8ec', '#b0f0f8'];
+const NACRE = ['#b8b0c8', '#d0c8dc', '#e4dcec', '#f4eef8', '#fffaff'];
+export const CLAM = { W: 0.36, D: 0.24, H: 0.16 };
+function clamModel() {
+  const { W, D, H } = CLAM;
+  const bowl = (up) => {
+    const pts = [];
+    for (let k = 0; k <= 8; k++) { const a = (k / 8) * Math.PI / 2; pts.push(up ? [Math.cos(a), Math.sin(a)] : [Math.sin(a), -Math.cos(a)]); }
+    if (up) pts.reverse();
+    const g = lathe(up ? pts.reverse() : pts, 24, 6);
+    const P = g.attributes.position;
+    for (let i = 0; i < P.count; i++) {
+      const x = P.getX(i), y = P.getY(i), z = P.getZ(i), a = Math.atan2(z, x), rim = 1 - Math.min(1, Math.abs(y) * 3);
+      const flute = 1 + Math.cos(a * 10) * 0.06 * (1 - Math.abs(y)); // the deep ribs
+      P.setXYZ(i, x * W * flute, (y + Math.sign(up ? 1 : -1) * Math.max(0, Math.cos(a * 10)) * 0.35 * rim) * (up ? H * 0.75 : H) + H, z * D * flute);
+    }
+    g.computeVertexNormals();
+    return g;
+  };
+  const mantle = lathe([[1, -0.02], [0.95, 0.01], [0.8, 0.035], [0.5, 0.055], [0, 0.06]], 20, 4); // rim to centre: it faces up
+  { const P = mantle.attributes.position; for (let i = 0; i < P.count; i++) { const a = Math.atan2(P.getZ(i), P.getX(i)); P.setXYZ(i, P.getX(i) * W * 0.92, H - 0.005 + P.getY(i) + Math.sin(a * 14) * 0.01 * Math.hypot(P.getX(i), P.getZ(i)), P.getZ(i) * D * 0.85); } mantle.computeVertexNormals(); }
+  const pearl = lathe([[0, -0.042], [0.03, -0.03], [0.042, 0], [0.03, 0.03], [0, 0.042]], 8);
+  pearl.translate(0.04, H + 0.075, 0.08);
+  const shellTex = once('clamShell', () => pixTex(32, 16, (c, w, h) => {
+    const r = mulberry32(71);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let k = 2.6 + (x % 4 === 0 ? -1.4 : x % 4 === 1 ? 1.4 : 0) + (r() - 0.5) * 0.7 + (y < 3 ? 1 : 0);
+      if (y % 5 === 0) k -= 0.6; // growth lines
+      if (r() < 0.025) { ramp(c, ['#3a6a3a', '#4e8a4a', '#6aa85a'], x, y, r() * 2.5); continue; } // a little algae
+      ramp(c, SHELL, x, y, k);
+    }
+  }));
+  const mantleTex = once('clamMantle', () => pixTex(16, 16, (c, w, h) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const wv = Math.sin(x * 0.9 + Math.sin(y * 0.7) * 1.6);
+      ramp(c, MANTLE, x, y, (x * 3 + y * 7) % 11 === 0 ? 5 : 2.5 + wv * 1.4);
+    }
+  }));
+  const nacre = once('nacre', () => pixTex(8, 8, (c, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, NACRE, x, y, 3.5 - Math.hypot(x - 2.5, y - 2.5) * 0.7); }));
+  return {
+    parts: [
+      { geo: bowl(false), tex: shellTex, double: true },
+      { geo: mantle, tex: mantleTex, glow: 0.4 },
+      { geo: pearl, tex: nacre, metal: 1, tag: 'pearl' },
+      { geo: bowl(true), tex: shellTex, double: true, hinge: [0, H, -D] },
+    ],
+  };
+}
+function pearlModel() {
+  const nacre = once('nacre', () => pixTex(8, 8, (c, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, NACRE, x, y, 3.5 - Math.hypot(x - 2.5, y - 2.5) * 0.7); }));
+  return { parts: [{ geo: lathe([[0, 0], [0.04, 0.012], [0.055, 0.05], [0.04, 0.09], [0, 0.1]], 10), tex: nacre, metal: 1 }] };
+}
+// mother-of-pearl tiles: iridescent, a pink and green shimmer in bands
+OT.nacreBlock = () => once('b:nacre', () => pixTex(32, 32, (c, w, h) => {
+  const r = mulberry32(72), IRI = ['#a8b8d8', '#c8d0ec', '#f0dcf0', '#d8f0e8', '#fff8ff'];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const fx = x % 16, fy = y % 16;
+    if (fx === 0 || fy === 0) { ramp(c, ['#6a7088', '#7e86a0'], x, y, 0.5); continue; }
+    ramp(c, IRI, x, y, 2 + Math.sin((x + y) * 0.45 + Math.sin(y * 0.3)) * 1.6 + (r() - 0.5) * 0.6 + (fy === 1 ? 1 : 0));
+  }
+}));
+
 export const MODELS = {
   boat: () => once('m:boat', boatModel),
   'block:wood': () => once('m:bw', blockWood),
@@ -1728,6 +1795,9 @@ export const MODELS = {
   'lantern:copper': () => once('m:lantcu', copperLanternModel),
   statue: () => once('m:statue', statueModel),
   'rod:gold': () => once('m:rodau', goldRodModel),
+  clam: () => once('m:clam', clamModel),
+  pearl: () => once('m:pearl', pearlModel),
+  'block:nacre': () => once('m:bnacre', () => ({ parts: [{ geo: bevelBox(1, 1, 1, 0.06, [0.5, 0.5, 0.5]).translate(0, 0.5, 0), tex: OT.nacreBlock(), gloss: 0.5 }] })),
 };
 for (const metal of ['copper', 'iron', 'obsidian']) {
   MODELS['pickaxe:' + metal] = () => once('m:pick:' + metal, () => inMetalModel(MODELS.pickaxe(), metal));
