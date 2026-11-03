@@ -1129,8 +1129,9 @@ function frame() {
     if (p.has('menu')) openMenu('world');
     else if (p.has('inventory')) openInventory();
     for (let k = 1; k <= 9; k++) if (p.has('slot' + k)) inventory.select(k - 1);
-    if (p.has('next')) inventory.select(inventory.selected + 1);
-    if (p.has('prev')) inventory.select(inventory.selected - 1);
+    // wheel: one slot per notch (several per frame on a fast spin); pad bumpers: one per press
+    const steps = input.wheelSteps || (p.has('next') ? 1 : 0) - (p.has('prev') ? 1 : 0);
+    if (steps) inventory.select(inventory.selected + steps);
     const look = input.consumeLook();
     player.update(dt, input, look);
     boats.pushOut(player);

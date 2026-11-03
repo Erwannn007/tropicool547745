@@ -197,12 +197,11 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; background: var
   padding: var(--hp); pointer-events: auto; touch-action: none;
 }
 #hotbar .slots { display: flex; gap: var(--hg); position: relative; z-index: 1; }
-#hotbar .lens { /* yellow frame sliding to the selected slot, pixel steps */
+#hotbar .lens { /* yellow frame snapping to the selected slot (no slide, block-game style) */
   position: absolute; z-index: 2; pointer-events: none;
   top: calc(var(--hp) - 4px); left: calc(var(--hp) - 4px);
   width: calc(var(--hs) + 8px); height: calc(var(--hs) + 8px);
   transform: translateX(calc(var(--i, 0) * (var(--hs) + var(--hg))));
-  transition: transform .18s steps(4, end);
   border: 3px solid var(--accent);
   box-shadow: inset 0 0 0 1px #fff4c4, 0 0 0 1px #8a5a0c, 0 3px 0 rgba(0,0,0,.25);
 }

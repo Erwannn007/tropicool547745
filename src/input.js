@@ -36,20 +36,24 @@ export class Input {
       if (e.code === 'Escape' || e.code === 'Tab' || e.code === 'KeyM') { this.pressed.add('menu'); e.preventDefault(); }
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
-    // Hotbar scrolling: a mouse wheel notch is one step, but trackpads send a
-    // stream of tiny deltas (plus momentum) - accumulate and rate-limit.
+    // Hotbar scrolling, block-game style: every mouse wheel notch moves the
+    // selection exactly one slot, instantly, no rate limit (fast spins skip
+    // several slots). Trackpads send streams of tiny pixel deltas: those are
+    // accumulated so one step = a fixed distance of finger travel.
+    this.wheelSteps = 0;
     let wheelAcc = 0, wheelLast = 0;
     addEventListener('wheel', (e) => {
       if (!this.enabled || !e.deltaY) return;
       const now = performance.now();
-      const dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
-      if (now - wheelLast > 250 || Math.sign(dy) !== Math.sign(wheelAcc)) wheelAcc = 0;
+      const dir = Math.sign(e.deltaY);
+      const notch = e.deltaMode !== 0 || (e.wheelDeltaY && e.wheelDeltaY % 120 === 0) || Math.abs(e.deltaY) >= 50;
+      if (notch) { wheelAcc = 0; this.wheelSteps += dir; this.pressed.add(dir > 0 ? 'next' : 'prev'); return; }
+      if (now - wheelLast > 200 || Math.sign(wheelAcc) !== dir) wheelAcc = 0;
       wheelLast = now;
-      wheelAcc += dy;
-      if (Math.abs(wheelAcc) >= 90 && now - (this.wheelStep || 0) > 170) {
-        this.pressed.add(wheelAcc > 0 ? 'next' : 'prev');
-        this.wheelStep = now;
-        wheelAcc = 0;
+      wheelAcc += e.deltaY;
+      while (Math.abs(wheelAcc) >= 40) {
+        this.wheelSteps += dir; this.pressed.add(dir > 0 ? 'next' : 'prev');
+        wheelAcc -= 40 * dir;
       }
     }, { passive: true });
     addEventListener('blur', () => this.keys.clear());
@@ -192,5 +196,5 @@ export class Input {
   }
 
   consumeLook() { const l = { ...this.look }; this.look.x = 0; this.look.y = 0; return l; }
-  endFrame() { this.pressed.clear(); }
+  endFrame() { this.pressed.clear(); this.wheelSteps = 0; }
 }
