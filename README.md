@@ -24,6 +24,10 @@ Jeu cozy en 3D à la première personne : un archipel tropical généré procéd
 
 **Coffre** : pose-le puis utilise-le pour l’ouvrir (18 places, couvercle qui s’ouvre) ; Maj+clic / double touche / R1 envoie un objet d’un côté à l’autre. Un coffre plein ne se reprend pas.
 
+**Four et métaux** : le **four** (pierre ×8, fibres ×2) s’ouvre comme un coffre, avec trois cases : en haut ce qu’on fait cuire, en bas le combustible, à droite ce qui sort. Il fond le minerai en **lingots** (cuivre, fer, or), fait du **charbon de bois** avec le bois et grille aussi le poisson, le crabe et la tortue. Combustibles : charbon (8 cuissons), bois tropical (2), bois de palmier (1,5), noix de coco (1), fibres (½). Il continue de travailler fenêtre fermée ; allumé, il rougeoie, éclaire et fume.
+
+**Outils en métal** : hache et pioche **en cuivre** (dans le sac), puis l’**enclume** (lingots de fer ×4) pour forger celles **en fer** et **d’obsidienne**, la **canne dorée** (ça mord deux fois plus vite, plus de poissons rares) et la **statue d’or**. Une recette d’enclume ne se fabrique que tout près d’une enclume posée. Une meilleure hache abat en moins de coups (palmier : 4 / 3 / 2 / 1). Chaque minerai demande une pioche assez dure : cuivre avec la pioche de base, fer et améthyste avec celle en cuivre, or et obsidienne avec celle en fer ; une pioche trop faible ne fait que des étincelles. Lingots aussi pour la boussole, les lanternes (de cristal ou en cuivre) et les blocs de cuivre et d’or.
+
 **Carnet de voyage** : utilise-le pour l’ouvrir et écrire librement (40 pages, sauvegardées sur l’appareil ; L1 / R1 tournent les pages à la manette).
 
 **Objets à poser** : en main, un hologramme bleu montre où l’objet sera posé (rouge si impossible : eau, pente, obstacle, trop loin). La torche éclaire aussi quand on la tient. Un coup de hache (ou la main vide) reprend un objet posé. Les objets posés sont mémorisés par archipel.

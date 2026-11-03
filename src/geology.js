@@ -13,6 +13,9 @@ const GREYS = [[0.29, 0.27, 0.31], [0.44, 0.42, 0.43], [0.53, 0.5, 0.49], [0.62,
 // dark, b: bright), how much of the stone they cover (k), the tint of the
 // rock around them (base), sparkle in the sun (glint); crystal: the stone
 // bristles with crystals (vegetation.js)
+// tier: the pickaxe an ore takes (0 base, 1 copper, 2 iron, see items.js and
+// TOOLS in pickaxe.js): a weaker pick only sparks off it
+export const PICK_FOR = ['une pioche', 'une pioche en cuivre', 'une pioche en fer', 'une pioche d’obsidienne'];
 export const MINERALS = {
   basalt: { name: 'Basalte', label: 'Pierre', item: 'stone', hardness: 1, yield: 1, chips: GREYS },
   copper: {
@@ -21,22 +24,22 @@ export const MINERALS = {
     ore: { a: [0.1, 0.46, 0.38], b: [0.42, 0.86, 0.64], k: 0.55, base: [0.98, 0.98, 0.96], glint: 0.25 },
   },
   iron: {
-    name: 'Fer', label: 'Filon de fer', item: 'ore:iron', hardness: 1.6, yield: 0.6, icon: '🟤',
+    name: 'Fer', label: 'Filon de fer', item: 'ore:iron', hardness: 1.6, tier: 1, yield: 0.6, icon: '🟤',
     chips: [[0.5, 0.2, 0.1], [0.72, 0.36, 0.16], [0.88, 0.55, 0.28], [0.44, 0.42, 0.43]],
     ore: { a: [0.45, 0.16, 0.08], b: [0.9, 0.5, 0.22], k: 0.6, base: [0.95, 0.86, 0.8], glint: 0.2 },
   },
   gold: {
-    name: 'Or', label: 'Filon d’or', item: 'ore:gold', hardness: 1.2, yield: 0.45, icon: '🟡',
+    name: 'Or', label: 'Filon d’or', item: 'ore:gold', hardness: 1.2, tier: 2, yield: 0.45, icon: '🟡',
     chips: [[1, 0.86, 0.35], [0.85, 0.62, 0.15], [0.97, 0.95, 0.85], [0.62, 0.58, 0.55]],
     ore: { a: [0.78, 0.55, 0.1], b: [1, 0.9, 0.4], k: 0.42, base: [1.02, 1, 0.97], glint: 1 },
   },
   obsidian: {
-    name: 'Obsidienne', label: 'Obsidienne', item: 'obsidian', hardness: 1.8, yield: 1, icon: '⚫',
+    name: 'Obsidienne', label: 'Obsidienne', item: 'obsidian', hardness: 1.8, tier: 2, yield: 1, icon: '⚫',
     chips: [[0.1, 0.08, 0.13], [0.24, 0.2, 0.3], [0.5, 0.42, 0.62], [0.06, 0.05, 0.08]],
     ore: { a: [0.08, 0.06, 0.12], b: [0.46, 0.36, 0.62], k: 0.3, base: [0.24, 0.21, 0.29], glint: 0.7 },
   },
   amethyst: {
-    name: 'Améthyste', label: 'Géode d’améthyste', item: 'amethyst', hardness: 1.4, yield: 0.75, icon: '🟣', crystal: true,
+    name: 'Améthyste', label: 'Géode d’améthyste', item: 'amethyst', hardness: 1.4, tier: 1, yield: 0.75, icon: '🟣', crystal: true,
     chips: [[0.55, 0.3, 0.75], [0.8, 0.62, 0.98], [0.95, 0.9, 1], [0.53, 0.5, 0.49]],
     ore: { a: [0.42, 0.2, 0.62], b: [0.86, 0.68, 1], k: 0.3, base: [0.92, 0.9, 0.96], glint: 0.8 },
   },

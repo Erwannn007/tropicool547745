@@ -7,6 +7,7 @@ import { pixTex, handleTex, steelTex, handleGeometry, headGeometry } from './axe
 import { mulberry32, makeSimplex } from './noise.js';
 import { SPECIES } from './fishing.js';
 import { crabModel, turtleModel } from './fauna.js';
+import { inMetal } from './metals.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const cache = new Map();
@@ -1418,6 +1419,264 @@ function compassModel() {
 }
 const oreBlock = (tex) => () => ({ parts: [{ geo: bevelBox(1, 1, 1, 0.06, [0.5, 0.5, 0.5]).translate(0, 0.5, 0), tex: tex(), metal: tex === OT.goldBlock ? 1 : 0, gloss: tex === OT.obsBlock ? 0.6 : 0 }] });
 
+// ---------------------------------------------------------------- metalwork
+// (forge.js): ingots, charcoal, the furnace, the anvil, tools in other metals,
+// the copper lantern and the golden statue
+const CLAY = ['#6a3018', '#86401f', '#a25228', '#ba6634', '#d07c44', '#e4985a'];
+const SOOT = ['#1a1210', '#261a16', '#34241c', '#463024'];
+const IRONR = ['#1e2028', '#2c303a', '#3e4450', '#5a6272', '#7a8496', '#c8d0de'];
+const CHARR = ['#0e0c0e', '#18151a', '#242028', '#343038', '#4c4852', '#7a7684'];
+const INGOT_PAL = { copper: ['#5a2410', '#7e3618', '#a44e24', '#c86c34', '#e8925a', '#ffc89a'], iron: IRONR, gold: NUGGET };
+// cast bar: a sloped-sided block, bright brushed top, the foundry stamp (a
+// little sun) pressed into it
+function ingotModel(metal) {
+  const g = bevelBox(0.2, 0.05, 0.1, 0.01);
+  const P = g.attributes.position, U = g.attributes.uv;
+  for (let i = 0; i < P.count; i++) {
+    if (P.getY(i) > 0) { P.setX(i, P.getX(i) * 0.8); P.setZ(i, P.getZ(i) * 0.76); }
+    U.setXY(i, U.getX(i) * 4 + 0.5, U.getY(i) * 4 + 0.5);
+  }
+  g.translate(0, 0.025, 0);
+  g.computeVertexNormals();
+  const pal = INGOT_PAL[metal];
+  const tex = once('ingot:' + metal, () => pixTex(16, 16, (c, w, h) => {
+    const r = mulberry32(metal.length * 7);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, pal, x, y, 3 + Math.sin(x * 0.9) * 0.4 + (r() - 0.5) * 0.9 + (y < 2 ? 1.2 : y > 13 ? -1 : 0));
+    // stamp: a ring with four rays, pressed in (dark) with a lit lower lip
+    for (const [x, y] of [[7, 5], [8, 5], [6, 6], [9, 6], [6, 7], [9, 7], [7, 8], [8, 8], [7, 3], [8, 3], [4, 6], [11, 7], [7, 10], [8, 10]]) { ramp(c, pal, x, y, 1); ramp(c, pal, x, y + 1, 4.6); }
+  }));
+  return { parts: [{ geo: g, tex, metal: 1 }] };
+}
+// charcoal: three burnt sticks, black with the square checking of charred wood
+function charcoalModel() {
+  const tex = once('charcoal', () => pixTex(16, 16, (c, w, h) => {
+    const r = mulberry32(31);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let k = 2 + (r() - 0.5) * 1.2;
+      if (x % 4 === 0 || (y + (Math.floor(x / 4) % 2) * 2) % 5 === 0) k = 0.3; // cracks
+      else if (x % 4 === 1) k += 1.5; // silvery sheen on each block
+      ramp(c, CHARR, x, y, k);
+    }
+  }));
+  const stick = (len, r) => { const s = lathe([[0, 0], [r * 0.7, 0], [r, 0.015], [r * 0.95, len * 0.5], [r, len - 0.015], [r * 0.7, len], [0, len]], 7); s.rotateZ(Math.PI / 2); return s; };
+  return { parts: [{ geo: merge([[stick(0.24, 0.05), M(0.12, 0.05, -0.04, 0, 0.2)], [stick(0.2, 0.045), M(0.1, 0.05, 0.06, 0, -0.3)], [stick(0.18, 0.04), M(0.08, 0.13, 0.01, 0, 0.1)]]), tex }] };
+}
+
+// Furnace: a clay dome on a ring of stones, its arched mouth facing +X
+// (towards whoever placed it), a chimney at the back. Inside the tunnel lie
+// the coals: they glow and flames lick out only while it burns (parts marked
+// lit, shown by forge.js). Signature: the brick voussoirs round the mouth and
+// the soot that blackens the clay above it.
+export const FURNACE = { MOUTH: V(0.5, 0.42, 0), H: 1.25 };
+function furnaceModel() {
+  const R = 0.52, B = 0.3; // dome radius, plinth height
+  const plinth = lathe([[0, 0], [R + 0.08, 0], [R + 0.1, 0.04], [R + 0.08, B - 0.03], [R + 0.03, B], [0, B]], 16, 4);
+  const domePts = [];
+  for (let k = 0; k <= 9; k++) { const a = (k / 9) * Math.PI / 2; domePts.push([Math.cos(a) * R * (1 - 0.06 * Math.sin(a * 2)), B + Math.sin(a) * R * 1.25]); }
+  const dome = lathe(domePts, 20, 1);
+  { // soot licked up the clay above the mouth (+X): darker vertex colours there
+    const P = dome.attributes.position, col = [];
+    for (let i = 0; i < P.count; i++) {
+      const x = P.getX(i), y = P.getY(i) - B, z = P.getZ(i);
+      const k = x > 0 ? Math.max(0, 1 - Math.abs(z) / 0.3) * Math.max(0, 1 - Math.abs(y - 0.42) / 0.22) * (x / R) : 0;
+      const v = k > 0.55 ? 0.32 : k > 0.25 ? 0.6 : 1;
+      col.push(v, v * 0.95, v * 0.92);
+    }
+    dome.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  }
+  const clay = once('clay', () => pixTex(64, 32, (c, w, h) => {
+    const r = mulberry32(57);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let k = 2.8 + Math.sin(x * 0.35 + Math.sin(y * 0.4) * 2) * 0.5 + (r() - 0.5) * 0.9; // hand-smoothed clay
+      if (r() < 0.03) k -= 1.4; // pits
+      if ((x * 7 + y * 13) % 53 === 0) k = 0.6; // little cracks
+      ramp(c, CLAY, x, y, k);
+    }
+  }));
+  // tunnel into the dome: an arch (flat sill, round top) swept along x
+  const AW = 0.2, AH = 0.18, AR = AW; // half width, wall height, arch radius
+  const arch = [];
+  arch.push([-AW, 0]);
+  for (let k = 0; k <= 10; k++) { const a = Math.PI - (k / 10) * Math.PI; arch.push([Math.cos(a) * AR, AH + Math.sin(a) * AR * 0.8]); }
+  arch.push([AW, 0]);
+  const x0 = 0.12, x1 = R + 0.1, pos = [], nor = [], uv = [], idx = [];
+  arch.forEach(([z, y], i) => {
+    for (const x of [x0, x1]) {
+      pos.push(x, B + y, z);
+      const nz = -z / AR, ny = y > AH ? -(y - AH) / AR : 0; nor.push(0, ny || 0, nz);
+      uv.push(i / arch.length * 2, (x - x0) * 4);
+    }
+  });
+  for (let i = 0; i < arch.length - 1; i++) { const a = i * 2; idx.push(a, a + 3, a + 1, a, a + 2, a + 3); }
+  const back = pos.length / 3; pos.push(x0, B + AH * 0.6, 0); nor.push(1, 0, 0); uv.push(0.5, 0);
+  arch.forEach((_, i) => { if (i < arch.length - 1) idx.push(back, i * 2, (i + 1) * 2); });
+  const tunnel = geo(pos, nor, uv, idx);
+  const sootTex = once('ovenIn', () => pixTex(16, 16, (c, w, h) => { const r = mulberry32(58); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, SOOT, x, y, 0.8 + (r() - 0.5) * 1.4); }));
+  // brick voussoirs: a ring of wedges round the arch, standing proud of the clay
+  const bricks = [];
+  for (let k = 0; k < 9; k++) {
+    const a0 = Math.PI - (k / 9) * Math.PI, a1 = Math.PI - ((k + 0.86) / 9) * Math.PI;
+    const ring = (a, rr) => [Math.cos(a) * rr, AH + Math.sin(a) * rr * 0.8];
+    const s = new THREE.Shape();
+    const p0 = ring(a0, AR + 0.005), p1 = ring(a0, AR + 0.1), p2 = ring(a1, AR + 0.1), p3 = ring(a1, AR + 0.005);
+    s.moveTo(...p0); s.lineTo(...p1); s.lineTo(...p2); s.lineTo(...p3); s.lineTo(...p0);
+    const b = new THREE.ExtrudeGeometry(s, { depth: 0.09, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.008, bevelSegments: 1 });
+    b.rotateY(Math.PI / 2); b.translate(x1 - 0.06, B, 0);
+    bricks.push([b]);
+  }
+  for (const sz of [-1, 1]) { // jambs down to the sill
+    const j = bevelBox(0.1, AH, 0.08, 0.012); j.translate(x1 - 0.015, B + AH / 2, sz * (AW + 0.05)); bricks.push([j]);
+  }
+  const brickGeo = merge(bricks);
+  { const P = brickGeo.attributes.position, U = brickGeo.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getZ(i) * 3 + P.getX(i) * 2, P.getY(i) * 3); }
+  const brickTex = once('voussoir', () => pixTex(16, 16, (c, w, h) => {
+    const r = mulberry32(59), BR = ['#6a2414', '#8a3018', '#a83e1e', '#c45228', '#dc6c38'];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, BR, x, y, 2.4 + (r() - 0.5) * 1.4 + (y === 0 ? 1.4 : 0));
+  }));
+  // chimney at the back, a lip of stone on top
+  const chimney = lathe([[0, 0], [0.12, 0], [0.11, 0.3], [0.1, 0.42], [0.13, 0.44], [0.13, 0.5], [0.08, 0.5], [0.08, 0.4], [0, 0.4]], 10, 1);
+  chimney.translate(-0.24, B + R * 0.95, 0);
+  // the fire inside: coals (always there, ash grey when cold) + embers and flames (lit)
+  const bed = lathe([[0, 0.03], [0.12, 0.025], [0.17, 0.01], [0.18, 0]], 10);
+  bed.scale(1.3, 1, 1); bed.translate(0.3, B, 0);
+  const ashTex = once('ash', () => pixTex(16, 16, (c, w, h) => { const r = mulberry32(60); const A = ['#3a3434', '#4e4646', '#686060', '#888080']; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, A, x, y, 1.6 + (r() - 0.5) * 2); }));
+  const embers = bed.clone().translate(0, 0.004, 0);
+  const flames = merge([[flameGeo(1.2), M(0.28, B + 0.02, 0)], [flameGeo(0.9), M(0.36, B + 0.02, 0.07)], [flameGeo(0.85), M(0.34, B + 0.02, -0.08)]]);
+  return {
+    parts: [
+      { geo: plinth, tex: BT.masonry() },
+      { geo: dome, tex: clay, vcol: true },
+      { geo: tunnel, tex: sootTex, double: true },
+      { geo: brickGeo, tex: brickTex },
+      { geo: chimney, tex: clay },
+      { geo: bed, tex: ashTex },
+      { geo: embers, tex: T.coals(), glow: 0.6, lit: true },
+      { geo: flames, flame: true, lit: true },
+    ],
+    height: FURNACE.H,
+  };
+}
+
+// Anvil on a stump: a forged London-pattern anvil (horn towards -X, heel
+// and its square hardy hole towards +X) strapped onto a log with an iron
+// band. Signature: the polished, bright working face on the dark iron.
+function anvilModel() {
+  const SH = 0.42; // stump height
+  const stump = lathe([[0, 0], [0.22, 0], [0.24, 0.03], [0.22, 0.08], [0.21, SH - 0.02], [0.2, SH], [0, SH]], 12, 2);
+  const ringsTop = lathe([[0, SH + 0.001], [0.2, SH + 0.001]], 12);
+  { const P = ringsTop.attributes.position, U = ringsTop.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) * 2.4 + 0.5, P.getZ(i) * 2.4 + 0.5); }
+  const band = lathe([[0.214, SH - 0.1], [0.222, SH - 0.095], [0.222, SH - 0.06], [0.214, SH - 0.055]], 12);
+  const s = new THREE.Shape(); // side profile (x along, y up), from the horn tip clockwise
+  s.moveTo(-0.36, 0.2);
+  s.quadraticCurveTo(-0.22, 0.17, -0.15, 0.2);
+  s.lineTo(-0.15, 0.24); s.lineTo(0.24, 0.24); s.lineTo(0.24, 0.17); // face, heel
+  s.quadraticCurveTo(0.12, 0.17, 0.09, 0.1); // under the heel to the waist
+  s.lineTo(0.13, 0.03); s.lineTo(0.17, 0); s.lineTo(-0.17, 0); s.lineTo(-0.13, 0.03); // feet
+  s.lineTo(-0.09, 0.1);
+  s.quadraticCurveTo(-0.14, 0.15, -0.2, 0.155); // under the horn
+  s.quadraticCurveTo(-0.3, 0.165, -0.36, 0.2);
+  const body = new THREE.ExtrudeGeometry(s, { depth: 0.14, curveSegments: 8, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.01, bevelSegments: 2 });
+  body.translate(0, SH, -0.07);
+  const P = body.attributes.position, col = [];
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i) - SH, z = P.getZ(i);
+    if (x < -0.15) P.setZ(i, z * (0.35 + 0.65 * Math.max(0, 1 - (-0.15 - x) / 0.21))); // the horn tapers to a point
+    let k = y > 0.235 ? 5 : y > 0.2 ? 3 : y < 0.04 ? 1 : 2;
+    if (x < -0.3) k = 4; // the horn tip, worn bright
+    const c = new THREE.Color(IRONR[k]); col.push(c.r, c.g, c.b);
+  }
+  body.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  { const U = body.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) * 5, P.getY(i) * 5 + P.getZ(i) * 5); }
+  body.computeVertexNormals();
+  const hole = bevelBox(0.03, 0.004, 0.03, 0.002); hole.translate(0.18, SH + 0.252, 0);
+  const holeTex = once('hardy', () => pixTex(2, 2, (c) => { c.fillStyle = '#121218'; c.fillRect(0, 0, 2, 2); }));
+  const ringTex = once('stumpTop', () => pixTex(16, 16, (c, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const d = Math.hypot(x - 7.5, y - 7.5); ramp(c, FRESH, x, y, d > 7 ? 0 : 2.5 + (Math.floor(d) % 2) * 1.4); } }));
+  return {
+    parts: [
+      { geo: stump, tex: T.log(BARK) },
+      { geo: ringsTop, tex: ringTex },
+      { geo: band, tex: T.steel(), metal: 1 },
+      { geo: body, tex: T.steel(), metal: 1, vcol: true },
+      { geo: hole, tex: holeTex },
+    ],
+    height: SH + 0.25,
+  };
+}
+
+// a tool head repainted in another metal (metals.js)
+function inMetalModel(model, metal) {
+  return { ...model, parts: model.parts.map((p) => (p.vcol && p.metal ? { ...p, geo: inMetal(p.geo, metal), gloss: metal === 'obsidian' ? 0.6 : p.gloss } : p)) };
+}
+// golden rod: gilded blank, gold reel
+function goldRodModel() {
+  const m = rodModel();
+  return { parts: m.parts.map((p, k) => (k === 0 ? { ...p, tex: T.gold() } : k === 2 ? { ...p, tex: OT.nugget() } : p)) };
+}
+
+// Copper lantern: a sailor's lantern, glass chimney round a little flame,
+// copper cage gone green in the joints, a cone cap and a carrying ring
+function copperLanternModel() {
+  const cu = once('cuLantern', () => pixTex(16, 16, (c, w, h) => {
+    const r = mulberry32(61), CU = ['#5a2410', '#7e3618', '#a44e24', '#c86c34', '#e8925a', '#ffc89a'];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (r() < 0.1 || y % 8 === 0) ramp(c, VERDI, x, y, 2 + r() * 2); // verdigris in the seams
+      else ramp(c, CU, x, y, 3 + Math.sin(x * 0.8) * 0.6 + (r() - 0.5) * 0.8);
+    }
+  }));
+  const base = lathe([[0, 0], [0.12, 0], [0.13, 0.025], [0.1, 0.05], [0.09, 0.07], [0, 0.07]], 12, 2);
+  const cap = lathe([[0, 0.34], [0.11, 0.34], [0.12, 0.36], [0.05, 0.44], [0.035, 0.47], [0.04, 0.49], [0, 0.5]], 12, 2);
+  const bars = [];
+  for (let i = 0; i < 4; i++) {
+    const a = i / 4 * Math.PI * 2, x = Math.cos(a) * 0.085, z = Math.sin(a) * 0.085;
+    bars.push([tube((t) => V(x * (1 + 0.18 * Math.sin(t * Math.PI)), 0.07 + t * 0.27, z * (1 + 0.18 * Math.sin(t * Math.PI))), () => 0.009, { rings: 5, radial: 4 })]);
+  }
+  for (const y of [0.12, 0.29]) bars.push([lathe([[0.094, y], [0.1, y + 0.006], [0.094, y + 0.012]], 12)]);
+  const ring = tube((t) => V(Math.cos(t * Math.PI) * 0.045, 0.5 + Math.sin(t * Math.PI) * 0.055, 0), () => 0.008, { rings: 8, radial: 4 });
+  const glass = lathe([[0.068, 0.07], [0.082, 0.14], [0.082, 0.27], [0.068, 0.34]], 12);
+  const glassTex = once('lampGlass', () => pixTex(8, 8, (c, w, h) => { const G = ['#e86a1a', '#f8962a', '#ffc040', '#ffe27a']; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, G, x, y, 1.5 + (y > 2 && y < 6 ? 1.3 : 0) + (x === 2 ? 0.8 : 0)); }));
+  return {
+    parts: [
+      { geo: merge([[base], [cap], ...bars, [ring]]), tex: cu, metal: 1 },
+      { geo: glass, tex: glassTex, glow: 0.7 },
+      { geo: flameGeo(0.7).translate(0, 0.13, 0), flame: true },
+    ],
+  };
+}
+
+// Golden statue: a tiki idol cast in gold on a stone plinth: heavy brow,
+// broad nose, a wide grin with teeth, hands on the belly, amethyst eyes.
+function statueModel() {
+  const plinth = bevelBox(0.5, 0.16, 0.5, 0.03); plinth.translate(0, 0.08, 0);
+  const body = lathe([[0, 0.16], [0.2, 0.16], [0.22, 0.2], [0.2, 0.42], [0.22, 0.56], [0.19, 0.62], [0.24, 0.68], [0.25, 0.92], [0.24, 1.05], [0.22, 1.12], [0.14, 1.18], [0, 1.2]], 14, 2);
+  const brow = tube((t) => V(Math.sin(t * Math.PI) * 0.06 + 0.19, 0.98, (t - 0.5) * 0.36), () => 0.035, { rings: 10, radial: 6, up: V(1, 0, 0) });
+  const nose = lathe([[0, 0], [0.05, 0], [0.06, 0.06], [0.035, 0.13], [0, 0.14]], 8); nose.scale(1, 1, 1.4); nose.translate(0.2, 0.8, 0);
+  const lip = tube((t) => V(0.22 + Math.sin(t * Math.PI) * 0.03, 0.74 - Math.sin(t * Math.PI) * 0.04, (t - 0.5) * 0.3), () => 0.022, { rings: 10, radial: 6, up: V(1, 0, 0) });
+  const teeth = [];
+  for (let k = 0; k < 5; k++) { const z = (k - 2) * 0.05, t = bevelBox(0.03, 0.04, 0.035, 0.006); t.translate(0.235 + Math.cos(z * 4) * 0.02, 0.705 - Math.cos(z * 6) * 0.03, z); teeth.push([t]); }
+  const arms = [];
+  for (const sz of [-1, 1]) arms.push([tube((t) => V(0.05 + Math.sin(t * 2.2) * 0.17, 0.6 - t * 0.14, sz * (0.22 - t * 0.17)), () => 0.04, { rings: 10, radial: 6, up: V(0, 1, 0) })]);
+  const gold = once('idolGold', () => pixTex(32, 32, (c, w, h) => {
+    const r = mulberry32(62);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let k = 3 + Math.sin(y * 0.5) * 0.6 + (r() - 0.5) * 0.8;
+      if (y % 16 === 0) k = 1; else if (y % 16 === 1) k = 4.6; // a carved band now and then
+      if (y % 16 > 4 && y % 16 < 9 && Math.abs(((x + y) % 6) - 3) === 0) k = 1.6; // zigzag of the band
+      if (x % 11 === 0 && r() < 0.5) k += 1.2; // light catching the chisel marks
+      ramp(c, NUGGET, x, y, k);
+    }
+  }));
+  const eyes = merge([-1, 1].map((sz) => [crystalCluster(3, 63 + sz, 0.45), M(0.23, 0.885, sz * 0.085, 0, 0, -Math.PI / 2)]));
+  return {
+    parts: [
+      { geo: plinth, tex: BT.masonry() },
+      { geo: merge([[body], [brow], [nose], [lip], ...arms]), tex: gold, metal: 1 },
+      { geo: merge(teeth), tex: OT.nugget(), metal: 1 },
+      { geo: eyes, tex: OT.gem(), glow: 0.5 },
+    ],
+    height: 1.2,
+  };
+}
+
 export const MODELS = {
   boat: () => once('m:boat', boatModel),
   'block:wood': () => once('m:bw', blockWood),
@@ -1460,7 +1719,20 @@ export const MODELS = {
   'block:obsidian': () => once('m:bobs', oreBlock(OT.obsBlock)),
   'block:gold': () => once('m:bau', oreBlock(OT.goldBlock)),
   'block:copper': () => once('m:bcu', oreBlock(OT.copperBlock)),
+  'ingot:copper': () => once('m:icu', () => ingotModel('copper')),
+  'ingot:iron': () => once('m:ife', () => ingotModel('iron')),
+  'ingot:gold': () => once('m:iau', () => ingotModel('gold')),
+  charcoal: () => once('m:charcoal', charcoalModel),
+  furnace: () => once('m:furnace', furnaceModel),
+  anvil: () => once('m:anvil', anvilModel),
+  'lantern:copper': () => once('m:lantcu', copperLanternModel),
+  statue: () => once('m:statue', statueModel),
+  'rod:gold': () => once('m:rodau', goldRodModel),
 };
+for (const metal of ['copper', 'iron', 'obsidian']) {
+  MODELS['pickaxe:' + metal] = () => once('m:pick:' + metal, () => inMetalModel(MODELS.pickaxe(), metal));
+  MODELS['axe:' + metal] = () => once('m:axe:' + metal, () => inMetalModel(MODELS.axe(), metal));
+}
 export function fishModelFor(id, colors, cook = 0) { return once(`m:${id}:${cook}`, () => fishModel(colors, cook)); }
 // the model of any item id: MODELS, a fish ('fish:N'), a grilled one
 // ('grill:N') or a burnt one ('burnt:N')

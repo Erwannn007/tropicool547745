@@ -41,6 +41,7 @@ export class Fishing {
     const reel = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 8), darkMat);
     reel.rotation.z = Math.PI / 2; reel.position.set(0.04, 0.3, 0);
     rod.add(handle, blank, reel);
+    this.rodMats = { blank: blankMat, reel: darkMat };
     this.tipLocal = new THREE.Vector3(0, 1.58, 0);
     this.rod = rod;
     this.rodHolder = new THREE.Group();
@@ -81,6 +82,13 @@ export class Fishing {
   }
 
   setWorld(world) { this.world = world; }
+
+  // the golden rod: gilded blank and reel, bites twice as fast, rare fish more often
+  setGold(on) {
+    this.gold = on;
+    this.rodMats.blank.color.set(on ? 0xffd860 : 0xd8b080);
+    this.rodMats.reel.color.set(on ? 0xe8b444 : 0x2b2f3a);
+  }
 
   setEquipped(on) {
     this.equipped = on;
@@ -136,8 +144,9 @@ export class Fishing {
   catchFish(input) {
     const depth = this.castDepth;
     const pool = SPECIES.filter((s) => depth >= s.d[0] && depth <= s.d[1] + 0.5);
-    let tot = pool.reduce((a, s) => a + s.w, 0), r = Math.random() * tot, pick = pool[0];
-    for (const s of pool) { r -= s.w; if (r <= 0) { pick = s; break; } }
+    const w = (s) => (this.gold ? Math.pow(s.w, 0.6) : s.w); // golden rod: the rare ones weigh more
+    let tot = pool.reduce((a, s) => a + w(s), 0), r = Math.random() * tot, pick = pool[0];
+    for (const s of pool) { r -= w(s); if (r <= 0) { pick = s; break; } }
     const size = Math.round(pick.s[0] + Math.pow(Math.random(), 1.6) * (pick.s[1] - pick.s[0]));
     const j = this.journal[pick.name] || { count: 0, best: 0 };
     const isNew = j.count === 0, record = size > j.best;
@@ -172,7 +181,7 @@ export class Fishing {
         B.y = THREE.MathUtils.lerp(this.from.y, 0, k) + Math.sin(k * Math.PI) * 3.2;
         if (k >= 1) {
           this.state = 'waiting'; this.t = 0;
-          this.waitFor = 2.5 + Math.random() * 7;
+          this.waitFor = (2.5 + Math.random() * 7) * (this.gold ? 0.5 : 1);
           this.nibbles = Math.floor(Math.random() * 3);
           this.splashAt(B, 10);
           this.hooks.sound?.('plop');

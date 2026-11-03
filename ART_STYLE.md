@@ -48,6 +48,9 @@ Les images de référence du projet sont des captures de jeux indé pixel-art 3D
 - Barque : peinture lagon `#0d4c5e #14687a #1d8592 #2ba2a8 #4cc0bc #86dcd0`, fond `#4a1a14 #62241a #7c3022 #963e2c #b0503a`, virure haute crème `#b8a888 #d4c6a4 #e8dcbc #f6eed6` + liseré corail, rivets cuivre `#6a3418 #9a5426 #c47a3a #e8a860` ; intérieur en rampe Planches avec membrures
 - Poisson grillé : `#5a2a10 #7e4016 #a85e24 #c8823a #e0a654 #f2c878`, marques de grill en diagonale, yeux blancs · carbonisé : `#120c0a #1e1410 #2e2018 #3e2c20 #523a28` + braises `#c8380e` · chair : `#d8b890 #ead0a8 #f6e4c4 #fff4e0`
 
+- Métaux des outils (`src/metals.js`, cinq teintes : talon, œil, joues, biseau, fil) : cuivre `#6a2e14 #94481e #c06a30 #e89a5a #ffd6a8` · fer forgé `#363a46 #4a505e #5e6676 #929cb0 #eef2fa` · obsidienne `#1c1628 #2c2440 #40345a #7262a8 #ddd0ff` · or `#7a4e0e #a87218 #d09a28 #ecc040 #fff4c0`
+- Four : argile `#6a3018 #86401f #a25228 #ba6634 #d07c44 #e4985a`, suie `#1a1210 #261a16 #34241c #463024` (au-dessus de la bouche), briques de l'arc `#6a2414 #8a3018 #a83e1e #c45228 #dc6c38` · charbon de bois `#0e0c0e #18151a #242028 #343038 #4c4852 #7a7684` (craquelures carrées)
+
 ## Mouvement
 Anticipation, temps mort, geste rapide, impact marqué (arrêt d'environ 70 ms, secousse, particules carrées), retour en douceur. Référence : le coup de hache (0 → 0,16 → 0,20 → impact 0,255 → 0,29 → 0,36 → 0,62 s) ; la pioche suit le même rythme (armé 0,17, temps mort 0,21, impact 0,255, recul 0,30, retour 0,66 s).
 

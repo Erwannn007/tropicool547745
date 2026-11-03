@@ -29,11 +29,11 @@ export const SITES = {
 // ---------------------------------------------------------------- loot
 // [item, min, max, chance]
 const LOOT = {
-  temple: [['ore:gold', 3, 8, 0.9], ['amethyst', 1, 3, 0.7], ['obsidian', 2, 4, 0.5], ['lantern', 1, 1, 0.6], ['torch', 2, 4, 0.5], ['compass', 1, 1, 0.35]],
-  wreck: [['ore:gold', 2, 6, 0.75], ['ore:iron', 2, 5, 0.6], ['ore:copper', 2, 5, 0.5], ['wood:tree', 4, 8, 0.6], ['compass', 1, 1, 0.45], ['boat', 1, 1, 0.25], ['torch', 2, 4, 0.5]],
+  temple: [['ore:gold', 3, 8, 0.9], ['amethyst', 1, 3, 0.7], ['obsidian', 2, 4, 0.5], ['lantern', 1, 1, 0.6], ['torch', 2, 4, 0.5], ['compass', 1, 1, 0.35], ['ingot:gold', 1, 2, 0.35]],
+  wreck: [['ore:gold', 2, 6, 0.75], ['ore:iron', 2, 5, 0.6], ['ore:copper', 2, 5, 0.5], ['wood:tree', 4, 8, 0.6], ['compass', 1, 1, 0.45], ['boat', 1, 1, 0.25], ['torch', 2, 4, 0.5], ['ingot:iron', 1, 3, 0.4], ['charcoal', 2, 6, 0.4]],
   tikis: [['obsidian', 2, 5, 0.8], ['ore:gold', 2, 4, 0.6], ['amethyst', 1, 2, 0.4], ['coconut', 2, 5, 0.6], ['torch', 2, 3, 0.4]],
   circle: [['amethyst', 2, 4, 0.85], ['obsidian', 1, 3, 0.6], ['lantern', 1, 1, 0.5], ['ore:gold', 1, 3, 0.4]],
-  camp: [['torch', 2, 5, 0.8], ['fibre', 6, 14, 0.7], ['wood:palm', 3, 8, 0.6], ['coconut', 2, 4, 0.6], ['campfire', 1, 1, 0.4], ['ore:iron', 2, 4, 0.4], ['ore:copper', 1, 3, 0.4], ['compass', 1, 1, 0.2]],
+  camp: [['torch', 2, 5, 0.8], ['fibre', 6, 14, 0.7], ['wood:palm', 3, 8, 0.6], ['coconut', 2, 4, 0.6], ['campfire', 1, 1, 0.4], ['ore:iron', 2, 4, 0.4], ['ore:copper', 1, 3, 0.4], ['compass', 1, 1, 0.2], ['charcoal', 2, 5, 0.5], ['ingot:copper', 1, 3, 0.3]],
 };
 function rollLoot(type, r) {
   const out = [];

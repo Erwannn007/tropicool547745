@@ -416,6 +416,23 @@ export class Audio {
       [0, 0.08, 0.16].forEach((d) => this.tone(200 + d * 600, 150, 0.06, 'triangle', 0.1, d));
       [784, 988, 1318].forEach((f, i) => this.tone(f, f, 0.12, 'triangle', 0.05, 0.26 + i * 0.07));
     }
+    if (name === 'forge') { // three hammer blows ringing on the anvil, then the bright new tool
+      [0, 0.2, 0.4].forEach((d, i) => {
+        this.noise({ type: 'highpass', f0: 2600, q: 0.8, dur: 0.03, attack: 0.001, gain: 0.25, delay: d });
+        this.tone(1650 + i * 40, 1600, 0.5, 'sine', 0.07, d); this.tone(3300, 3250, 0.3, 'sine', 0.035, d); this.tone(5100, 5050, 0.2, 'sine', 0.02, d);
+      });
+      [784, 988, 1318].forEach((f, i) => this.tone(f, f, 0.12, 'triangle', 0.05, 0.7 + i * 0.07));
+    }
+    if (name === 'furnaceLit') { // the fuel catches: a soft whoomp and a crackle
+      this.noise({ type: 'lowpass', f0: 200, f1: 600, q: 0.6, dur: 0.45, attack: 0.06, gain: 0.3, buf: this.brown });
+      this.noise({ type: 'bandpass', f0: 1200, f1: 2400, q: 0.8, dur: 0.35, attack: 0.1, gain: 0.05 });
+      for (let i = 0; i < 4; i++) this.noise({ type: 'highpass', f0: 3000 + Math.random() * 2500, q: 1, dur: 0.02, gain: 0.05, delay: 0.15 + i * 0.07 + Math.random() * 0.05 });
+    }
+    if (name === 'ingot') { // a fresh bar dropped out of the mould: a bright clink
+      this.tone(2200, 2150, 0.25, 'sine', 0.06); this.tone(3700, 3650, 0.18, 'sine', 0.03);
+      this.noise({ type: 'highpass', f0: 3200, q: 1, dur: 0.03, attack: 0.001, gain: 0.1 });
+      this.tone(2200, 2150, 0.12, 'sine', 0.03, 0.09);
+    }
     if (name === 'whiff') this.noise({ f0: 1600, f1: 600, q: 1.2, dur: 0.14, attack: 0.03, gain: 0.05 });
     if (name === 'grab') { // a stone scraped off the ground into the palm
       this.noise({ type: 'bandpass', f0: 1400, f1: 700, q: 1.5, dur: 0.09, attack: 0.005, gain: 0.08 });

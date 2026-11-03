@@ -2,7 +2,7 @@
 // (pick up / place / split / shift-move / double-click collect / number-key
 // swap), crafting list, pixel panels matching the game menus. Item icons are
 // rendered from the 3D models (icons.js). Mouse, touch and gamepad.
-import { itemDef, RECIPES, CAT_COLOR, WOOD_KINDS } from './items.js';
+import { itemDef, RECIPES, CAT_COLOR, WOOD_KINDS, STATIONS, toolKind } from './items.js';
 import { iconURL } from './icons.js';
 
 const HOTBAR = 9, SIZE = 36, CHEST = 100, CHEST_COLS = 6;
@@ -32,7 +32,8 @@ export class Inventory {
       if (d && Array.isArray(d.slots) && d.slots.length === SIZE) { this.slots = d.slots; this.selected = d.selected | 0; this.kit = d.kit | 0; }
     } catch (_) { /* fresh inventory */ }
     const since = { scythe: 4, pickaxe: 5 }; // handed out once, from that kit version on
-    for (const id of ['rod', 'axe', 'scythe', 'pickaxe']) if (!this.count(id) && !(since[id] && this.kit >= since[id])) this.add(id, 1);
+    const family = (id) => this.slots.some((s) => s && toolKind(s.id) === id); // a copper axe counts as an axe
+    for (const id of ['rod', 'axe', 'scythe', 'pickaxe']) if (!family(id) && !(since[id] && this.kit >= since[id])) this.add(id, 1);
     if (this.kit < 2) { this.add('torch', 4); this.add('transat', 1); this.add('campfire', 1); }
     if (this.kit < 3 && !this.count('book')) this.add('book', 1);
     if (this.kit < 4) this.add('chest', 1);
@@ -67,10 +68,12 @@ export class Inventory {
   // what a recipe ingredient stands for: 'wood' is any wood
   kinds(id) { return id === 'wood' ? WOOD_KINDS : [id]; }
   have(id) { return this.kinds(id).reduce((n, k) => n + this.count(k), 0); }
-  canCraft(r) { return r.need.every(([id, n]) => this.have(id) >= n); }
+  // r.at: a workstation that must be close by (this.near, set by main.js)
+  canCraft(r) { return (!r.at || !!this.near?.[r.at]) && r.need.every(([id, n]) => this.have(id) >= n); }
   craft(k) {
     const r = RECIPES[k];
     if (!r) return;
+    if (r.at && !this.near?.[r.at]) { this.sound?.('deny'); this.toast?.(`Ça se forge à côté d’une ${STATIONS[r.at].toLowerCase()}`); return; }
     if (!this.canCraft(r)) { this.sound?.('deny'); this.toast?.('Il manque des matériaux'); return; }
     for (const [need, n] of r.need) {
       let left = n;
@@ -84,7 +87,7 @@ export class Inventory {
     }
     const left = this.add(r.out, r.n);
     if (left) { this.cursor = { id: r.out, n: left }; }
-    this.sound?.('craft');
+    this.sound?.(r.at ? 'forge' : 'craft');
     this.flash = r.out;
     this.changed();
   }
@@ -118,8 +121,17 @@ export class Inventory {
   at(i) { return i >= CHEST ? this.ext?.slots[i - CHEST] ?? null : this.slots[i]; }
   put(i, v) { if (i >= CHEST) { if (this.ext) this.ext.slots[i - CHEST] = v; } else this.slots[i] = v; }
 
+  // a furnace slot only takes what fits there; its output is only taken from
+  refuse(i, id) { return i >= CHEST && this.ext?.accept && !this.ext.accept(i - CHEST, id); }
   leftClick(i) {
     const s = this.at(i), c = this.cursor;
+    if (c && this.refuse(i, c.id)) {
+      if (s && s.id === c.id && this.ext.output === i - CHEST) { // output onto a matching stack in hand: take more
+        const k = Math.min(s.n, itemDef(c.id).max - c.n); c.n += k; s.n -= k; if (s.n <= 0) this.put(i, null);
+        this.sound?.('tick'); this.changed(); return;
+      }
+      this.sound?.('deny'); return;
+    }
     if (!c) { if (s) { this.cursor = s; this.put(i, null); } }
     else if (!s) { this.put(i, c); this.cursor = null; }
     else if (s.id === c.id) {
@@ -134,6 +146,7 @@ export class Inventory {
 
   rightClick(i) {
     const s = this.at(i), c = this.cursor;
+    if (c && this.refuse(i, c.id)) { this.sound?.('deny'); return; }
     if (!c) {
       if (!s) return;
       const half = Math.ceil(s.n / 2);
@@ -154,7 +167,7 @@ export class Inventory {
     const s = this.at(i);
     if (!s) return;
     let targets;
-    if (this.ext) targets = i >= CHEST ? [...Array(SIZE).keys()] : this.ext.slots.map((_, k) => CHEST + k);
+    if (this.ext) targets = i >= CHEST ? [...Array(SIZE).keys()] : this.ext.slots.map((_, k) => CHEST + k).filter((j) => !this.refuse(j, s.id));
     else targets = i < HOTBAR ? [...Array(SIZE - HOTBAR).keys()].map((k) => k + HOTBAR) : [...Array(HOTBAR).keys()];
     const max = itemDef(s.id).max;
     for (const j of targets) {
@@ -190,11 +203,24 @@ export class Inventory {
   }
 
   // show a chest next to the bag (ext = { slots, onChange }) or hide it
+  // (ext.furnace: the furnace window, ext.accept(k, id), ext.progress())
   setChest(ext) {
     this.ext = ext;
     document.querySelector('.craft-panel').classList.toggle('hidden', !!ext);
-    document.querySelector('#chest-panel').classList.toggle('hidden', !ext);
+    document.querySelector('#chest-panel').classList.toggle('hidden', !ext || !!ext.furnace);
+    document.querySelector('#furnace-panel').classList.toggle('hidden', !ext?.furnace);
     this.render();
+  }
+  // the fire and the arrow of the furnace window, every frame while open
+  tickExt() {
+    if (!this.open || !this.ext?.progress) return;
+    const { fire, cook } = this.ext.progress();
+    const f = Math.ceil(fire * 7) / 7, c = Math.floor(cook * 12) / 12; // in pixel steps
+    if (f !== this.lastFire || c !== this.lastCook) {
+      this.lastFire = f; this.lastCook = c;
+      this.furnaceEl.style.setProperty('--fire', f);
+      this.furnaceEl.style.setProperty('--cook', c);
+    }
   }
 
   setOpen(open) {
@@ -211,12 +237,17 @@ export class Inventory {
   }
 
   // ---- gamepad -------------------------------------------------------
-  elOf(i) { return i >= CHEST ? this.chestEls[i - CHEST] : i >= SIZE ? this.craftEls[i - SIZE] : this.slotEls[i]; }
+  elOf(i) { return i >= CHEST ? (this.ext?.furnace ? this.furnaceEls : this.chestEls)[i - CHEST] : i >= SIZE ? this.craftEls[i - SIZE] : this.slotEls[i]; }
 
   handlePad(pressed) {
     let i = this.padIndex;
     const at = (r, c) => (r === 3 ? c : HOTBAR + r * 9 + c);
-    if (i >= CHEST) { // chest grid, 6 x 3
+    if (i >= CHEST && this.ext?.furnace) { // furnace: input over fuel, output on the right
+      const k = i - CHEST;
+      if (pressed.has('up') || pressed.has('down')) i = k === 2 ? i : CHEST + (1 - k);
+      if (pressed.has('right')) i = CHEST + 2;
+      if (pressed.has('left')) i = k === 2 ? CHEST : at(k === 0 ? 0 : 2, 8);
+    } else if (i >= CHEST) { // chest grid, 6 x 3
       const k = i - CHEST, r = Math.floor(k / CHEST_COLS), c = k % CHEST_COLS;
       if (pressed.has('up')) i = CHEST + ((r + 2) % 3) * CHEST_COLS + c;
       if (pressed.has('down')) i = CHEST + ((r + 1) % 3) * CHEST_COLS + c;
@@ -233,7 +264,7 @@ export class Inventory {
     } else {
       const row = i < HOTBAR ? 3 : Math.floor((i - HOTBAR) / 9), col = i < HOTBAR ? i : (i - HOTBAR) % 9;
       if (pressed.has('left')) i = at(row, (col + 8) % 9);
-      if (pressed.has('right')) i = col < 8 ? at(row, col + 1) : this.ext ? CHEST + Math.min(row, 2) * CHEST_COLS : SIZE + Math.min(row, RECIPES.length - 1);
+      if (pressed.has('right')) i = col < 8 ? at(row, col + 1) : this.ext?.furnace ? CHEST + (row < 2 ? 0 : 1) : this.ext ? CHEST + Math.min(row, 2) * CHEST_COLS : SIZE + Math.min(row, RECIPES.length - 1);
       if (pressed.has('up')) i = at((row + 3) % 4, col);
       if (pressed.has('down')) i = at((row + 1) % 4, col);
     }
@@ -262,6 +293,8 @@ export class Inventory {
     for (let i = 0; i < HOTBAR; i++) hot.appendChild(mk(i));
     this.chestEls = [];
     for (let k = 0; k < 18; k++) { const el = mk(CHEST + k); this.chestEls.push(el); $('#chest-grid').appendChild(el); }
+    this.furnaceEl = $('#furnace-panel');
+    this.furnaceEls = ['#fur-in', '#fur-fuel', '#fur-out'].map((sel, k) => { const el = mk(CHEST + k); $(sel).appendChild(el); return el; });
 
     // crafting list
     this.craftEls = RECIPES.map((r, k) => {
@@ -269,7 +302,7 @@ export class Inventory {
       el.className = 'recipe';
       const out = itemDef(r.out);
       el.innerHTML = `<div class="r-out"><img alt="" src="${iconURL(r.out)}">${r.n > 1 ? `<span>×${r.n}</span>` : ''}</div>
-        <div class="r-body"><div class="r-name">${out.name}</div><div class="r-need">${r.need.map(([id, n]) => `<span class="need" data-id="${id}" data-n="${n}" title="${itemDef(id).name}"><img alt="" src="${iconURL(id === 'wood' ? 'wood:tree' : id)}">${n}</span>`).join('')}</div></div>
+        <div class="r-body"><div class="r-name">${out.name}</div><div class="r-need">${r.need.map(([id, n]) => `<span class="need" data-id="${id}" data-n="${n}" title="${itemDef(id).name}"><img alt="" src="${iconURL(id === 'wood' ? 'wood:tree' : id)}">${n}</span>`).join('')}${r.at ? `<span class="need station" data-at="${r.at}"><img alt="" src="${iconURL(r.at)}">${STATIONS[r.at]}</span>` : ''}</div></div>
         <button class="r-btn" tabindex="-1">Créer</button>`;
       el.querySelector('.r-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.craft(k); });
       el.addEventListener('pointerenter', () => this.showRecipeTip(k, el));
@@ -380,8 +413,8 @@ export class Inventory {
     this.placeTip(el, x, y);
   }
   showRecipeTip(k, el) {
-    const d = itemDef(RECIPES[k].out);
-    this.tipEl.innerHTML = `<b>${d.name}</b><em style="color:${CAT_COLOR[d.cat] || '#fff'}">${d.cat}</em><span>${d.desc}</span>`;
+    const r = RECIPES[k], d = itemDef(r.out);
+    this.tipEl.innerHTML = `<b>${d.name}</b><em style="color:${CAT_COLOR[d.cat] || '#fff'}">${d.cat}</em><span>${d.desc}</span>${r.at ? `<em style="color:#ffb08e">Se forge à côté d’une ${STATIONS[r.at].toLowerCase()}</em>` : ''}`;
     this.placeTip(el);
   }
   placeTip(el, x, y) {
@@ -415,8 +448,12 @@ export class Inventory {
       this.slotEls[i].classList.toggle('pad-focus', this.open && this.padFocus && i === this.padIndex);
       this.slotEls[i].classList.toggle('active', i === this.selected);
     }
+    this.furnaceEls?.forEach((el, k) => {
+      this.paint(el, this.ext?.furnace ? this.ext.slots[k] ?? null : null);
+      el.classList.toggle('pad-focus', this.open && this.padFocus && !!this.ext?.furnace && this.padIndex === CHEST + k);
+    });
     this.chestEls?.forEach((el, k) => {
-      this.paint(el, this.ext?.slots[k] ?? null);
+      this.paint(el, this.ext?.furnace ? null : this.ext?.slots[k] ?? null);
       el.classList.toggle('pad-focus', this.open && this.padFocus && this.padIndex === CHEST + k);
     });
     for (let i = 0; i < HOTBAR; i++) {
@@ -438,7 +475,7 @@ export class Inventory {
       el.classList.toggle('ok', ok);
       el.classList.toggle('pad-focus', this.open && this.padFocus && this.padIndex === SIZE + k);
       if (this.open && this.padFocus && this.padIndex === SIZE + k) el.scrollIntoView({ block: 'nearest' });
-      el.querySelectorAll('.need').forEach((n) => n.classList.toggle('miss', this.have(n.dataset.id) < +n.dataset.n));
+      el.querySelectorAll('.need').forEach((n) => n.classList.toggle('miss', n.dataset.at ? !this.near?.[n.dataset.at] : this.have(n.dataset.id) < +n.dataset.n));
       if (this.flash === RECIPES[k].out) { el.classList.remove('done'); void el.offsetWidth; el.classList.add('done'); }
     });
     this.flash = null;

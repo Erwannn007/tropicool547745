@@ -44,6 +44,22 @@ export const ITEMS = {
   'block:obsidian': { name: 'Bloc d’obsidienne', max: 64, cat: 'Construction', desc: 'Dalle de verre volcanique poli. S’empile et se colle aux autres blocs.', build: true },
   'block:gold': { name: 'Bloc d’or', max: 64, cat: 'Construction', desc: 'Lingots empilés. Pour un trône, un phare, ou juste pour briller.', build: true },
   'block:copper': { name: 'Bloc de cuivre', max: 64, cat: 'Construction', desc: 'Plaques rivetées, verdies par l’air marin. S’empile et se colle aux autres blocs.', build: true },
+  // metalwork (forge.js): the furnace melts ore into ingots, the anvil forges the better tools
+  furnace: { name: 'Four', max: 4, cat: 'Objet à poser', desc: 'Four en pierres et argile. Utilise-le pour l’ouvrir : minerai en haut, combustible en bas, il fond le minerai en lingots, fait du charbon avec le bois et grille le poisson.', place: 'furnace' },
+  anvil: { name: 'Enclume', max: 2, cat: 'Objet à poser', desc: 'Enclume de fer sur un billot. Les outils en fer, en obsidienne et la canne dorée se forgent quand tu es à côté.', place: 'anvil' },
+  'ingot:copper': { name: 'Lingot de cuivre', max: 64, cat: 'Matériau', desc: 'Cuivre fondu au four. Pour les outils en cuivre, les lanternes et les blocs de cuivre.' },
+  'ingot:iron': { name: 'Lingot de fer', max: 64, cat: 'Matériau', desc: 'Fer fondu au four. Pour l’enclume, les outils en fer et en obsidienne.' },
+  'ingot:gold': { name: 'Lingot d’or', max: 64, cat: 'Matériau', desc: 'Or fondu au four. Pour la canne dorée, la statue et les blocs d’or.' },
+  charcoal: { name: 'Charbon de bois', max: 64, cat: 'Matériau', desc: 'Bois cuit au four. Le meilleur combustible : il brûle quatre fois plus longtemps que le bois.' },
+  'axe:copper': { name: 'Hache en cuivre', max: 1, cat: 'Outil', desc: 'Lame de cuivre rouge. Un coup de moins pour abattre un arbre.', tier: 1 },
+  'axe:iron': { name: 'Hache en fer', max: 1, cat: 'Outil', desc: 'Fer forgé à l’enclume. Abat un palmier en deux coups.', tier: 2 },
+  'axe:obsidian': { name: 'Hache d’obsidienne', max: 1, cat: 'Outil', desc: 'Tranchant de verre volcanique, plus fin qu’un rasoir. Un palmier tombe d’un seul coup.', tier: 3 },
+  'pickaxe:copper': { name: 'Pioche en cuivre', max: 1, cat: 'Outil', desc: 'Casse les pierres plus vite et entame le fer et les géodes d’améthyste.', tier: 1 },
+  'pickaxe:iron': { name: 'Pioche en fer', max: 1, cat: 'Outil', desc: 'Forgée à l’enclume. Assez dure pour l’or et l’obsidienne.', tier: 2 },
+  'pickaxe:obsidian': { name: 'Pioche d’obsidienne', max: 1, cat: 'Outil', desc: 'La plus tranchante : fend n’importe quel filon en quelques coups.', tier: 3 },
+  'rod:gold': { name: 'Canne dorée', max: 1, cat: 'Outil', desc: 'Moulinet et anneaux en or : ça mord deux fois plus vite et les poissons rares viennent plus souvent.', tier: 1 },
+  'lantern:copper': { name: 'Lanterne en cuivre', max: 8, cat: 'Objet à poser', desc: 'Lanterne de marin en cuivre, une flamme chaude derrière ses vitres.', place: 'lantern:copper' },
+  statue: { name: 'Statue d’or', max: 2, cat: 'Objet à poser', desc: 'Idole tiki coulée dans l’or, yeux d’améthyste. Elle brille au soleil comme sous la lune.', place: 'statue' },
   stairs: { name: 'Escalier', max: 16, cat: 'Construction', desc: 'Monte d’un étage (2 × 2 m). Se pose sur un plancher ou au bord pour y monter.', build: true },
 };
 
@@ -69,12 +85,35 @@ export const RECIPES = [
   { out: 'gable', n: 1, need: [['wood', 2]] },
   { out: 'flatroof', n: 1, need: [['fibre', 8], ['wood', 1]] },
   { out: 'stairs', n: 1, need: [['wood', 3]] },
-  { out: 'compass', n: 1, need: [['ore:iron', 2], ['ore:copper', 1], ['wood', 1]] },
-  { out: 'lantern', n: 2, need: [['amethyst', 1], ['ore:iron', 1]] },
-  { out: 'block:copper', n: 2, need: [['ore:copper', 3]] },
+  // metalwork: furnace first, then copper tools in the bag, then the anvil
+  // for everything forged in iron, obsidian or gold (at: 'anvil')
+  { out: 'furnace', n: 1, need: [['stone', 8], ['fibre', 2]] },
+  { out: 'axe:copper', n: 1, need: [['ingot:copper', 3], ['wood', 2]] },
+  { out: 'pickaxe:copper', n: 1, need: [['ingot:copper', 3], ['wood', 2]] },
+  { out: 'anvil', n: 1, need: [['ingot:iron', 4], ['stone', 3], ['wood', 2]] },
+  { out: 'axe:iron', n: 1, need: [['ingot:iron', 3], ['wood', 2]], at: 'anvil' },
+  { out: 'pickaxe:iron', n: 1, need: [['ingot:iron', 3], ['wood', 2]], at: 'anvil' },
+  { out: 'axe:obsidian', n: 1, need: [['obsidian', 3], ['ingot:iron', 1], ['ingot:gold', 1], ['wood', 2]], at: 'anvil' },
+  { out: 'pickaxe:obsidian', n: 1, need: [['obsidian', 3], ['ingot:iron', 1], ['ingot:gold', 1], ['wood', 2]], at: 'anvil' },
+  { out: 'rod:gold', n: 1, need: [['ingot:gold', 3], ['fibre', 4], ['wood', 1]], at: 'anvil' },
+  { out: 'compass', n: 1, need: [['ingot:iron', 1], ['ingot:copper', 1], ['wood', 1]] },
+  { out: 'lantern', n: 2, need: [['amethyst', 1], ['ingot:iron', 1]] },
+  { out: 'lantern:copper', n: 2, need: [['ingot:copper', 2], ['coconut', 1]] },
+  { out: 'statue', n: 1, need: [['ingot:gold', 6], ['amethyst', 2]], at: 'anvil' },
+  { out: 'block:copper', n: 2, need: [['ingot:copper', 3]] },
   { out: 'block:obsidian', n: 2, need: [['obsidian', 3]] },
-  { out: 'block:gold', n: 1, need: [['ore:gold', 4]] },
+  { out: 'block:gold', n: 1, need: [['ingot:gold', 4]] },
 ];
+// workstations a recipe may need nearby
+export const STATIONS = { anvil: 'Enclume' };
+
+// Tool families: 'axe', 'axe:copper', 'axe:iron'… are all axes. The base
+// tool is tier 0; better ones cut and mine faster (axe.js, pickaxe.js) and
+// the pickaxe tier decides which ores it can break (geology.js).
+export const TIER_NAME = ['de base', 'en cuivre', 'en fer', 'd’obsidienne'];
+export const toolKind = (id) => (id && /^(axe|pickaxe|rod)(:|$)/.test(id) ? id.split(':')[0] : id);
+export const toolTier = (id) => ITEMS[id]?.tier ?? 0;
+export const toolMetal = (id) => (id?.includes(':') && toolKind(id) !== id ? id.split(':')[1] : null); // 'copper' | 'iron' | 'obsidian' | 'gold' | null
 
 export function itemDef(id) {
   if (ITEMS[id]) return { id, ...ITEMS[id] };

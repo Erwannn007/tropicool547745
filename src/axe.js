@@ -13,6 +13,9 @@ import { seedNumber } from './world.js';
 import { getW, setW } from './store.js';
 
 const HITS = { palms: 4, trees: 5 };
+// blows a tree takes with each axe (base, copper, iron, obsidian)
+const POWER = { axe: 1, 'axe:copper': 1.34, 'axe:iron': 2, 'axe:obsidian': 3 };
+export const blowsFor = (type, tool = 'axe') => Math.max(1, Math.round(HITS[type] / (POWER[tool] || 1)));
 const REGROW_MS = 20 * 60 * 1000;
 
 // where a world's changes are stored: its instance id (older saves used the config)
@@ -94,6 +97,8 @@ export class Axe {
   }
 
   setEquipped(on) { this.equipped = on; this.sprite.setVisible(on); }
+  // which axe is in hand ('axe', 'axe:copper'…): blows needed and blade colour
+  setTool(id) { this.tool = POWER[id] ? id : 'axe'; this.sprite.setMetal?.(this.tool.split(':')[1] || null); }
 
   render(renderer, camera) {
     this.dust.material.uniforms.uScale.value = renderer.getDrawingBufferSize(new THREE.Vector2()).y * 0.5;
@@ -159,15 +164,15 @@ export class Axe {
 
   // Each blow deepens the nearest notch (or starts one): a wedge with a
   // slanted upper face and a nearly flat lower face, cut into the vertices.
-  carve(p, hit) {
+  carve(p, hit, steps = 1) {
     const c = p.chop;
     const L = hit.point.clone().applyMatrix4(c.inv);
     const ctr = c.curve(Math.max(0, Math.min(1, L.y / c.H)));
     const dx = L.x - ctr.x, dz = L.z - ctr.z, dl = Math.hypot(dx, dz) || 1;
     const dir = [dx / dl, dz / dl];
     let n = c.notches.find((k) => Math.abs(k.y - L.y) < 0.24 && k.d[0] * dir[0] + k.d[1] * dir[1] > 0.4);
-    if (n) n.stage = Math.min(DEPTH.length - 1, n.stage + 1);
-    else c.notches.push(n = { y: L.y, d: dir, stage: 0 });
+    if (n) n.stage = Math.min(DEPTH.length - 1, n.stage + steps);
+    else c.notches.push(n = { y: L.y, d: dir, stage: Math.min(DEPTH.length - 1, steps - 1) });
 
     const P = c.geo.attributes.position, N = c.geo.attributes.normal, A = c.geo.attributes.aCut;
     const bp = c.basePos, bn = c.baseNor;
@@ -230,17 +235,17 @@ export class Axe {
     const sh = this.shakes.find((s) => s.p === p);
     if (sh?.base) this.parts(p).forEach((part, k) => part.set(sh.base[k]));
     this.detach(p);
-    const hit = this.trunkHit(p, at);
-    if (hit) this.carve(p, hit);
+    const hit = this.trunkHit(p, at), need = blowsFor(p.type, this.tool);
+    if (hit) this.carve(p, hit, Math.max(1, Math.round(DEPTH.length / need))); // a better blade bites deeper
     if (sh) sh.base = null; // re-capture
     const hp = hit ? hit.point : new THREE.Vector3(p.x + (cam.x - p.x) / d * 0.3 * p.s, p.y + 1.1, p.z + (cam.z - p.z) / d * 0.3 * p.s);
     this.burst(hp.x, hp.y, hp.z, 12, [0.55, 0.36, 0.18], 1.8);
     this.burst(hp.x, hp.y, hp.z, 6, [0.95, 0.82, 0.58], 1.4);
-    this.hooks.sound?.(`chop:${p.type}:${n / HITS[p.type]}`);
+    this.hooks.sound?.(`chop:${p.type}:${n / need}`);
     this.hooks.rumble?.(0.5, 90);
     this.sprite.freeze(0.07);
     this.camShake = 1;
-    if (n >= HITS[p.type]) this.fell(p);
+    if (n >= need) this.fell(p);
     else if (sh) sh.t = 0;
     else this.shakes.push({ p, t: 0, dir: [(p.x - cam.x) / d, (p.z - cam.z) / d] });
   }

@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { HeldView } from './held.js';
 import { MODELS, PICK, itemModel, bittenFish } from './models.js';
-import { itemDef } from './items.js';
+import { itemDef, toolKind } from './items.js';
 import { basis } from './axeModel.js';
 import { dress } from './dress.js';
 import { PLACEABLE } from './placement.js';
@@ -158,12 +158,13 @@ export class Hands {
     this.heldId = id;
     if (this.eating && this.eating.id !== id) this.stopEating();
     if (this.carried) return; // the stone in hand stays until it is dropped or thrown
-    this.id = id;
+    this.id = toolKind(id); // a copper or iron pickaxe swings like the base one
+    this.toolId = id;
     if (id === 'scythe') this.view.set(id, dress(MODELS.scythe(), 'held'), SCYTHE);
-    else if (id === 'pickaxe') this.view.set(id, dress(MODELS.pickaxe(), 'held'), { ...PICKAXE, keys: PICKAXE.keys.map((k) => ({ ...k })) });
+    else if (this.id === 'pickaxe') this.view.set(id, dress(MODELS[id](), 'held'), { ...PICKAXE, keys: PICKAXE.keys.map((k) => ({ ...k })) });
     else if (id === 'torch') this.view.set(id, dress(MODELS.torch(), 'held'), TORCH);
     else if (MINI[id]) this.view.set(id, dress(MODELS[id](), 'held'), MINI[id]);
-    else if (id && !['rod', 'axe', 'book'].includes(id) && itemModel(id)) this.view.set(id, ...this.itemView(id));
+    else if (id && !['rod', 'axe', 'book'].includes(this.id) && itemModel(id)) this.view.set(id, ...this.itemView(id));
     else this.view.set(null, null, null);
     this.light.off = id !== 'torch';
   }

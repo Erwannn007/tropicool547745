@@ -13,7 +13,8 @@ import { Input } from './input.js';
 import { Fishing, SPECIES, rarityOf } from './fishing.js';
 import { Audio } from './audio.js';
 import { Inventory } from './inventory.js';
-import { itemDef } from './items.js';
+import { itemDef, toolKind } from './items.js';
+import { Forge, furnaceAccepts, SMELT_TIME } from './forge.js';
 import { Axe, loadFelled, legacyKey, worldKey } from './axe.js';
 import { initStore, loadWorld } from './store.js';
 import { newInstance, listSaves, findSave, writeSave, deleteSave, hasChanges, purge } from './saves.js';
@@ -21,7 +22,7 @@ import { DayCycle, fmtHour } from './daycycle.js';
 import { Lights } from './lights.js';
 import { Hands } from './hands.js';
 import { Mower } from './scythe.js';
-import { Quarry } from './pickaxe.js';
+import { Quarry, canMine } from './pickaxe.js';
 import { Debris, hasModel } from './debris.js';
 import { WaterFX } from './splash.js';
 import { Placement, PLACEABLE } from './placement.js';
@@ -33,7 +34,7 @@ import { Boats } from './boat.js';
 import { listIsles, findIsle, writeIsle, deleteIsle, randomSeed, randomIsleCfg, isleName } from './discover.js';
 import { buildSites, chestSpot, SITES } from './sites.js';
 import { Fauna, SPECIES as FAUNA } from './fauna.js';
-import { MINERALS, ORES, MINERAL_OF } from './geology.js';
+import { MINERALS, ORES, MINERAL_OF, PICK_FOR } from './geology.js';
 import { getCodex, noteFind } from './codex.js';
 import { getW, setW } from './store.js';
 
@@ -186,7 +187,7 @@ const mower = new Mower(scene);
 // loose pieces of broken stone lying in the world (picked up by hand)
 const waterFx = new WaterFX(scene, water, { sound: (n) => audio.sfx(n) });
 const debris = new Debris(scene, { sound: (n) => audio.sfx(n), flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o), splash: (p, k) => waterFx.splash(p, k) });
-let shatterTip = false;
+let shatterTip = false, tooHardAt = 0;
 const quarry = new Quarry(scene, camera, {
   sound: (n) => audio.sfx(n),
   rumble: (s, ms) => input.rumble(s, ms),
@@ -196,6 +197,12 @@ const quarry = new Quarry(scene, camera, {
     fauna.kill(a);
     audio.sfx('crabHit');
     debris.spawnItem(a.kind, new THREE.Vector3(a.x, a.wy + 0.15, a.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, a.yaw, 0)), new THREE.Vector3(dir.x * 1.2, 2.2, dir.z * 1.2), new THREE.Vector3((Math.random() - 0.5) * 8, 0, (Math.random() - 0.5) * 8));
+  },
+  tooHard: (p) => { // ore harder than the pick: say which pick it takes
+    const now = performance.now();
+    if (now - (tooHardAt || 0) < 2500) return;
+    tooHardAt = now;
+    toast(`Trop dur ! Il faut ${PICK_FOR[MINERALS[p.mineral].tier]} ⛏️`, 2800);
   },
   shattered: (p) => {
     if (p.mineral) discovered('ores', p.mineral);
@@ -208,7 +215,8 @@ const quarry = new Quarry(scene, camera, {
 const placement = new Placement(scene, camera, lights, {
   sound: (n) => audio.sfx(n), message: toast,
   flatten: (o, x, z, r) => mower.flatten(o, x, z, r), release: (o) => mower.release(o),
-  spawned: (o) => cooking.attach(o), disposed: (o) => cooking.detach(o),
+  spawned: (o) => cooking.attach(o), disposed: (o) => { cooking.detach(o); forge.detach(o); },
+  made: (o) => forge.attach(o),
 });
 // a fish grilling on a camp fire
 const cooking = new Cooking(scene, camera, {
@@ -217,6 +225,18 @@ const cooking = new Cooking(scene, camera, {
   save: () => placement.save(),
   ready: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast(o.cook?.id === 'crab' ? '🔥 Ton crabe est grillé !' : o.cook?.id === 'turtle' ? '🔥 Ta tortue est grillée !' : '🔥 Ton poisson est grillé !'); },
   burnt: (o) => { if (Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < 20) toast('Ça sent le brûlé… 💨'); },
+});
+// furnaces: ore melted into ingots, wood into charcoal, fish grilled
+const near = (o, d = 20) => Math.hypot(o.x - camera.position.x, o.z - camera.position.z) < d;
+let smeltTip = false;
+const forge = new Forge(scene, camera, lights, {
+  changed: (o) => { placement.save(); if (inventory.ext?.o === o) inventory.render(); },
+  lit: (o) => { if (near(o)) audio.sfx('furnaceLit'); },
+  done: (o, id) => {
+    if (!near(o)) return;
+    audio.sfx(id.startsWith('ingot') ? 'ingot' : 'pickup');
+    if (!smeltTip && inventory.ext?.o !== o) { smeltTip = true; toast(`🔥 Le four a sorti : ${itemDef(id).name}`); }
+  },
 });
 // rowboats on the lagoon
 const boats = new Boats(scene, camera, {
@@ -241,7 +261,7 @@ const hands = new Hands(lights, {
   sound: (n) => audio.sfx(n),
   aim: (reach) => quarry.aim(reach),
   cast: (o, dir, max) => quarry.cast(o, dir, max),
-  hit: (c, dir) => quarry.hit(c, dir),
+  hit: (c, dir) => quarry.hit(c, dir, hands.toolId), // copper, iron, obsidian pick
   rumble: (s, ms) => input.rumble(s, ms),
   ate: (id) => {
     inventory.take(id, 1);
@@ -273,7 +293,7 @@ function pickPlaced() {
     giveItems(building.remove(p)); // [[id, n], …]: a doorway brings its door along
     return true;
   }
-  if (o.items?.some(Boolean)) { toast('Vide le coffre avant de le reprendre'); audio.sfx('deny'); return true; }
+  if (o.items?.some(Boolean)) { toast(o.id === 'furnace' ? 'Vide le four avant de le reprendre' : 'Vide le coffre avant de le reprendre'); audio.sfx('deny'); return true; }
   const fish = o.cook ? cooking.take(o) : null; // the fish on the spit comes with it
   const id = placement.pickUp(o);
   audio.sfx('place');
@@ -355,9 +375,23 @@ function openChest(o) {
   $('#chest-help').textContent = input.lastDevice === 'gamepad' ? 'R1 : envoyer d’un côté à l’autre' : input.lastDevice === 'touch' ? 'Double touche : envoyer d’un côté à l’autre' : 'Maj+clic : envoyer d’un côté à l’autre';
   openInventory();
 }
-function aimedChest() { const o = placement.aimed(); return o?.items ? o : null; }
+function aimedChest() { const o = placement.aimed(); return o?.items && o.id === 'chest' ? o : null; }
+function aimedFurnace() { const o = placement.aimed(); return o?.id === 'furnace' ? o : null; }
+// the furnace window next to the bag: what goes in, the fuel, what comes out
+function openFurnace(o) {
+  openChestObj = o;
+  audio.sfx('chestOpen');
+  inventory.setChest({
+    o, slots: o.items, furnace: true, output: 2, accept: furnaceAccepts,
+    progress: () => ({ fire: o.smelt.max ? o.smelt.burn / o.smelt.max : 0, cook: o.smelt.prog / SMELT_TIME }),
+    onChange: () => placement.save(),
+  });
+  $('#furnace-help').textContent = 'En haut : minerai, bois ou poisson cru · en bas : charbon, bois, coco ou fibres';
+  openInventory();
+}
+const anvilNear = () => placement.objects.some((o) => o.id === 'anvil' && Math.hypot(o.x - player.pos.x, o.z - player.pos.z) < 4 && Math.abs(o.y - player.pos.y) < 2.5);
 
-const ACTION_ICON = { compass: '🧭', lantern: '📍', boat: '📍', book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍', bed: '📍' };
+const ACTION_ICON = { furnace: '📍', anvil: '📍', statue: '📍', 'lantern:copper': '📍', compass: '🧭', lantern: '📍', boat: '📍', book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍', bed: '📍' };
 let lastHeld, stashing = false;
 function onHeldChange(held) {
   const id = held?.id ?? null;
@@ -365,10 +399,13 @@ function onHeldChange(held) {
   lastHeld = id;
   if (changed && debris.carried && !stashing) letGo('drop'); // taking another tool: the stone is put down (not when the piece itself goes into that slot)
   const busy = !!hands.carried; // a stone in the hand: the tools wait
-  fishing.setEquipped(!busy && id === 'rod');
-  axe.setEquipped(!busy && id === 'axe');
+  const kind = toolKind(id); // 'axe:iron' is an axe
+  fishing.setEquipped(!busy && kind === 'rod');
+  fishing.setGold(id === 'rod:gold');
+  axe.setEquipped(!busy && kind === 'axe');
+  axe.setTool(id);
   hands.setHeld(id);
-  $('#btn-fish').textContent = busy ? '➶' : ACTION_ICON[id] || (isPiece(id) ? '🔨' : itemDef(id ?? '').eat ? '🍽️' : '✋');
+  $('#btn-fish').textContent = busy ? '➶' : ACTION_ICON[kind] || (isPiece(id) ? '🔨' : itemDef(id ?? '').eat ? '🍽️' : '✋');
 }
 
 // ---- a piece of stone in the hand: pick up, drop, throw, put in the bag
@@ -432,7 +469,7 @@ function promptHud(dt) {
   if ((promptAcc -= dt) <= 0 || carrying) { // look for something to talk about a few times a second
     promptAcc = 0.12;
     promptTarget = null;
-    const held = inventory.held?.id;
+    const held = toolKind(inventory.held?.id), heldFull = inventory.held?.id;
     if (state !== 'play') { /* nothing */ } else if (boats.riding && !carrying && !debris.aimed) {
       promptTarget = { html: `${K.row ? kb(K.row) + ' ' : ''}Ramer ${kb(K.jump)} Descendre${held === 'rod' ? ` ${kb(K.use)} Pêcher` : ''}`, bottom: true };
     } else if (carrying) {
@@ -446,7 +483,10 @@ function promptHud(dt) {
       promptTarget = { html: `<div class="pname">${FAUNA[c.kind].name}</div>${kb(K.use)} Frapper`, at: () => _anchor.set(c.x, c.wy + 0.35, c.z) };
     } else if (held === 'pickaxe') {
       const a = quarry.aim();
-      if (a?.kind === 'stone') promptTarget = { html: `<div class="pname">${MINERALS[a.prop.mineral || 'basalt'].label}</div>${kb(K.use)} Miner`, at: () => _anchor.set(a.prop.x, a.prop.y + 0.75 * a.prop.s, a.prop.z) };
+      if (a?.kind === 'stone') {
+        const M = MINERALS[a.prop.mineral || 'basalt'], ok = canMine(a.prop, heldFull);
+        promptTarget = { html: `<div class="pname">${M.label}</div>${ok ? `${kb(K.use)} Miner` : `Il faut ${PICK_FOR[M.tier]}`}`, at: () => _anchor.set(a.prop.x, a.prop.y + 0.75 * a.prop.s, a.prop.z) };
+      }
       else if (a?.kind === 'rock') promptTarget = { html: '<div class="pname">Rocher</div>Trop gros pour la pioche', at: () => _anchor.copy(a.point).setY(a.point.y + 0.4) };
     } else if (held === 'axe') {
       const t = axe.target();
@@ -479,8 +519,14 @@ function promptHud(dt) {
     if (!promptTarget && state === 'play' && !carrying && itemDef(held ?? '').eat) promptTarget = { html: `${kb(K.use)} Manger ${kb(K.drop)} Déposer`, bottom: true };
     else if (!promptTarget && state === 'play' && !carrying && isRawFish(held)) promptTarget = { html: `Grille-le sur un feu de camp ${kb(K.drop)} Déposer`, bottom: true };
     if (!promptTarget && state === 'play' && !carrying && held !== 'axe') {
-      const c = aimedChest();
+      const c = aimedChest(), f = c ? null : aimedFurnace(), a = c || f ? null : placement.aimed();
       if (c) promptTarget = { html: `<div class="pname">Coffre</div>${kb(K.use)} Ouvrir`, at: () => _anchor.set(c.x, (c.y ?? camera.position.y - 1) + 0.9, c.z) };
+      else if (f) {
+        const [inp, , out] = f.items, burning = f.smelt.burn > 0;
+        const what = burning && inp ? `Fond : ${itemDef(inp.id).name} ${Math.round(f.smelt.prog / SMELT_TIME * 100)} %` : out ? `Prêt : ${out.n} × ${itemDef(out.id).name}` : burning ? 'Allumé' : 'Éteint';
+        promptTarget = { html: `<div class="pname">Four</div>${what}<br>${kb(K.use)} Ouvrir`, at: () => _anchor.set(f.x, f.y + 1.45, f.z) };
+        promptAcc = 0.05;
+      } else if (a?.id === 'anvil') promptTarget = { html: `<div class="pname">Enclume</div>Ouvre ton sac à côté pour forger`, at: () => _anchor.set(a.x, a.y + 1, a.z) };
     }
     // an item in hand that is not a tool: how to set it down
     if (!promptTarget && state === 'play' && !carrying && held && hasModel(held) && !TOOLS_IN_HAND.has(held) && !PLACEABLE[held] && held !== 'boat') {
@@ -501,7 +547,7 @@ const TOOLS_IN_HAND = new Set(['rod', 'axe', 'scythe', 'pickaxe', 'book', 'torch
 let grabUi = '';
 function grabHud() {
   const carrying = !!hands.carried, piece = !carrying && state === 'play' ? debris.aimed : null;
-  const held = inventory.held?.id;
+  const held = toolKind(inventory.held?.id);
   const canDrop = !carrying && !piece && held && hasModel(held) && !TOOLS_IN_HAND.has(held) && !PLACEABLE[held] && held !== 'boat';
   const ui = carrying ? 'carry' : piece ? 'grab' : canDrop ? 'drop' : '';
   if (ui === grabUi) return;
@@ -535,6 +581,7 @@ function closeBook() {
 
 function openInventory() {
   state = 'inventory';
+  inventory.near = { anvil: anvilNear() };
   inventory.padFocus = input.lastDevice === 'gamepad';
   inventory.setOpen(true);
   document.exitPointerLock?.();
@@ -547,7 +594,7 @@ function closeInventory() {
     inventory.setChest(null);
     placement.setLid(openChestObj, false);
     placement.save();
-    audio.sfx('chestClose');
+    audio.sfx(openChestObj.id === 'furnace' ? 'click' : 'chestClose');
     openChestObj = null;
   }
   state = 'play';
@@ -608,7 +655,7 @@ function buildWorld() {
   day.shadowDir.copy(globals.uSunDir.value);
   current = { world, terrain, grass, veg, structures };
   window.__world = current; // handy for debugging
-  window.__game = { fauna, player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights, building, cooking, boats };
+  window.__game = { fauna, player, camera, renderer, fishing, input, inventory, axe, day, hands, mower, quarry, debris, waterFx, placement, lights, building, cooking, boats, forge, openFurnace, closeInventory, openInventory };
   console.log(`[tropicool] world ${settings.world.seed} (${world.cfg.seed}) built in ${(performance.now() - t0) | 0} ms`, {
     islands: world.islands.length, palms: world.props.palms.length, trees: world.props.trees.length,
     bushes: world.props.bushes.length, ferns: world.props.ferns.length, rocks: world.props.rocks.length, stones: world.props.stones.length,
@@ -1138,7 +1185,7 @@ function frame() {
     if (boats.riding && p.has('jump')) boats.leave();
     shoreTimer -= dt;
     if (shoreTimer < 0 && current) { shoreTimer = 0.5; audio.setShore(shoreness()); }
-    const heldId = inventory.held?.id;
+    const heldId = inventory.held?.id, heldKind = toolKind(heldId);
     const carrying = !!hands.carried, piece = carrying ? null : debris.aimed;
     const turn = p.has('rotate') || (input.lastDevice === 'gamepad' && (p.has('left') || p.has('right')));
     if (turn && carrying) debris.turn();
@@ -1147,21 +1194,22 @@ function frame() {
     if (p.has('stash') && debris.carried) letGo('stash');
     else if (p.has('stash') && piece) stashPiece(piece);
     if (p.has('drop')) { if (debris.carried) letGo('drop'); else dropHeld(); }
-    const chest = p.has('action') && heldId !== 'axe' && !carrying ? aimedChest() : null;
-    const fire = p.has('action') && heldId !== 'axe' && !carrying && !chest ? aimedFire() : null;
-    const gate = p.has('action') && heldId !== 'axe' && !carrying && !chest && !fire ? aimedGate() : null;
-    const bed = p.has('action') && heldId !== 'axe' && !carrying && !chest && !fire && !gate ? aimedBed() : null;
-    const boat = p.has('action') && heldId !== 'axe' && !carrying && !chest && !fire && !gate && !bed && !boats.riding ? boats.aimed() : null;
-    if (chest) openChest(chest);
+    const chest = p.has('action') && heldKind !== 'axe' && !carrying ? aimedChest() || aimedFurnace() : null;
+    const fire = p.has('action') && heldKind !== 'axe' && !carrying && !chest ? aimedFire() : null;
+    const gate = p.has('action') && heldKind !== 'axe' && !carrying && !chest && !fire ? aimedGate() : null;
+    const bed = p.has('action') && heldKind !== 'axe' && !carrying && !chest && !fire && !gate ? aimedBed() : null;
+    const boat = p.has('action') && heldKind !== 'axe' && !carrying && !chest && !fire && !gate && !bed && !boats.riding ? boats.aimed() : null;
+    if (chest?.id === 'furnace') openFurnace(chest);
+    else if (chest) openChest(chest);
     else if (fire && useFire(fire, heldId)) { /* fish on or off the spit */ }
     else if (gate) building.toggle(gate, player.pos);
     else if (bed) sleepOn(bed);
     else if (boat) boats.board(boat);
     else if (p.has('action') && carrying) letGo('throw');
     else if (p.has('action')) {
-      if (heldId === 'rod') fishing.action(input);
-      else if (heldId === 'axe') axe.action();
-      else if (heldId === 'scythe' || heldId === 'pickaxe') hands.action();
+      if (heldKind === 'rod') fishing.action(input);
+      else if (heldKind === 'axe') axe.action();
+      else if (heldId === 'scythe' || heldKind === 'pickaxe') hands.action();
       else if (heldId === 'book') openBook();
       else if (PLACEABLE[heldId]) { if (placement.place()) inventory.take(heldId, 1); }
       else if (heldId === 'boat') { if (boats.place()) inventory.take(heldId, 1); }
@@ -1192,6 +1240,7 @@ function frame() {
       if (p.has('next')) p.add('quick');
       inventory.handlePad(p);
     }
+    inventory.tickExt();
     player.update(dt, { move: { x: 0, y: 0 }, pressed: new Set(), sprint: false }, { x: 0, y: 0 }, true);
   } else {
     input.consumeLook();
@@ -1220,9 +1269,10 @@ function frame() {
     boats.aim(state === 'play' && !hands.carried ? inventory.held?.id : null);
     boats.update(dt);
     cooking.update(dt);
+    forge.update(dt);
     fauna.update(dt, camera);
     const px = renderer.getDrawingBufferSize(_px).y * 0.5;
-    building.setScale(px); cooking.setScale(px);
+    building.setScale(px); cooking.setScale(px); forge.setScale(px);
     current.grass.update(camera);
     current.veg.update(camera);
   }

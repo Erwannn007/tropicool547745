@@ -4,6 +4,7 @@
 // target and upscaled with nearest filtering so it reads as big crisp pixels.
 import * as THREE from 'three';
 import { heldLight } from './shaders.js';
+import { repaint } from './metals.js';
 
 // ---------------------------------------------------------------- textures
 export function pixTex(w, h, paint) {
@@ -209,6 +210,7 @@ export class AxeModel {
     const wood = handleTex(), steel = steelTex();
     this.handleGeo = handleGeometry();
     this.headGeo = headGeometry();
+    this.steelCols = this.headGeo.attributes.color.array.slice(); // to repaint the blade per metal
     const build = (alpha) => {
       const g = new THREE.Group();
       g.add(new THREE.Mesh(this.handleGeo, bandedMaterial(wood, { alpha })));
@@ -252,6 +254,8 @@ export class AxeModel {
     this.anim = { keys: KEYS.map((k) => ({ ...k })), contact: true }; // keys re-aimed at each stroke
   }
 
+  // copper, iron or obsidian blade (null: the steel one)
+  setMetal(metal) { if (metal !== this.metal) { this.metal = metal; repaint(this.headGeo, this.steelCols, metal); } }
   setVisible(v) { this.visible = v; if (!v) { this.t = -1; this.queued = false; } }
   get swinging() { return this.t >= 0; }
   // returns true when a new swing starts; a press late in a swing is buffered

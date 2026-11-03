@@ -17,6 +17,10 @@ export const PLACEABLE = {
   chest: { circles: [[0.22, 0, 0.3], [-0.22, 0, 0.3]], foot: [[0.43, 0.27], [0.43, -0.27], [-0.43, 0.27], [-0.43, -0.27], [0, 0]], slope: 0.3, ring: 0.58, pick: 0.55, h: 0.35, slots: 18 },
   bed: { circles: [[0.55, 0, 0.6], [-0.55, 0, 0.6]], foot: [[1.0, 0.55], [1.0, -0.55], [-1.0, 0.55], [-1.0, -0.55], [0, 0]], slope: 0.3, ring: 1.15, pick: 0.85, h: 0.55, bed: true },
   lantern: { circles: [[0, 0, 0.16]], foot: [[0, 0], [0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]], slope: 0.5, ring: 0.26, pick: 0.3, h: 0.45, light: { y: 0.3, radius: 8, col: [0.78, 0.55, 1.0] } },
+  furnace: { circles: [[0, 0, 0.62]], foot: [[0.55, 0], [-0.55, 0], [0, 0.55], [0, -0.55], [0, 0]], slope: 0.35, ring: 0.72, pick: 0.75, h: 0.6, slots: 3 },
+  anvil: { circles: [[0, 0, 0.26], [-0.22, 0, 0.12]], foot: [[0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2], [0, 0]], slope: 0.35, ring: 0.42, pick: 0.42, h: 0.55 },
+  'lantern:copper': { circles: [[0, 0, 0.15]], foot: [[0, 0], [0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]], slope: 0.5, ring: 0.26, pick: 0.3, h: 0.45, light: { y: 0.24, radius: 8, col: [1.0, 0.66, 0.3] } },
+  statue: { circles: [[0, 0, 0.32]], foot: [[0.24, 0.24], [-0.24, 0.24], [0.24, -0.24], [-0.24, -0.24], [0, 0]], slope: 0.3, ring: 0.45, pick: 0.45, h: 0.9, light: { y: 0.9, radius: 4, col: [0.6, 0.42, 0.85] } },
   campfire: { circles: [[0, 0, 0.6]], foot: [[0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5], [0, 0]], slope: 0.35, ring: 0.68, pick: 0.7, light: { y: 0.7, radius: 10, col: [1.0, 0.52, 0.2] }, embers: 0.6, h: 0.4 },
 };
 
@@ -58,13 +62,13 @@ export class Placement {
     for (const o of this.objects) this.dispose(o, false);
     this.objects = [];
     this.world = world; this.player = player;
-    for (const e of getW('placed', worldKey(world.cfg)) || []) if (PLACEABLE[e.id]) this.spawn(e.id, e.x, e.y, e.z, e.yaw, e.items, e.cook);
+    for (const e of getW('placed', worldKey(world.cfg)) || []) if (PLACEABLE[e.id]) this.spawn(e.id, e.x, e.y, e.z, e.yaw, e.items, e.cook, e.smelt);
   }
   save() {
-    setW('placed', worldKey(this.world.cfg), this.objects.map((o) => ({ id: o.id, x: +o.x.toFixed(2), y: +o.y.toFixed(2), z: +o.z.toFixed(2), yaw: +o.yaw.toFixed(3), ...(o.items ? { items: o.items } : {}), ...(o.cook ? { cook: { id: o.cook.id, t: +o.cook.t.toFixed(1) } } : {}) })));
+    setW('placed', worldKey(this.world.cfg), this.objects.map((o) => ({ id: o.id, x: +o.x.toFixed(2), y: +o.y.toFixed(2), z: +o.z.toFixed(2), yaw: +o.yaw.toFixed(3), ...(o.items ? { items: o.items } : {}), ...(o.cook ? { cook: { id: o.cook.id, t: +o.cook.t.toFixed(1) } } : {}), ...(o.smelt ? { smelt: { burn: +o.smelt.burn.toFixed(1), max: o.smelt.max, prog: +o.smelt.prog.toFixed(1) } } : {}) })));
   }
 
-  spawn(id, x, y, z, yaw, items, cook) {
+  spawn(id, x, y, z, yaw, items, cook, smelt) {
     const def = PLACEABLE[id];
     const mesh = dress(MODELS[id](), 'world');
     mesh.position.set(x, y, z); mesh.rotation.y = yaw;
@@ -72,7 +76,8 @@ export class Placement {
     mesh.traverse((m) => { m.matrixAutoUpdate = false; });
     this.group.add(mesh);
     const o = { id, x, y, z, yaw, mesh, colliders: [] };
-    if (def.slots) { // a chest: its own storage and a lid on a hinge
+    if (smelt) o.smelt = { ...smelt };
+    if (def.slots) { // a chest: its own storage and a lid on a hinge (a furnace: its three slots)
       o.items = Array.from({ length: def.slots }, (_, k) => items?.[k] ?? null);
       o.lid = mesh.children.find((c) => c.userData.hinge);
       o.lidA = 0; o.lidOpen = false;
@@ -84,6 +89,7 @@ export class Placement {
     }
     this.hooks.flatten?.(o, x, z, def.ring + 0.15);
     if (cook) { o.cook = { ...cook }; this.hooks.spawned?.(o); } // a fish on the spit (cooking.js)
+    this.hooks.made?.(o); // furnaces (forge.js)
     if (def.light) o.light = this.lights.add({ x, y: y + def.light.y, z, radius: def.light.radius, r: def.light.col[0] * 0.8, g: def.light.col[1] * 0.8, b: def.light.col[2] * 0.8 });
     this.objects.push(o);
     return o;
@@ -123,7 +129,7 @@ export class Placement {
     }
     if (wet) return { ok: false, why: 'Pas dans l’eau' };
     if (hi - lo > def.slope) return { ok: false, why: 'Sol trop pentu' };
-    const y = id === 'transat' || id === 'campfire' || id === 'bed' ? (lo + hi) / 2 : this.player.groundAt(x, z, pl.pos.y + 1.5);
+    const y = id === 'transat' || id === 'campfire' || id === 'bed' || id === 'furnace' || id === 'statue' ? (lo + hi) / 2 : this.player.groundAt(x, z, pl.pos.y + 1.5);
     for (const [cx, cz, r] of def.circles) {
       const [lx, lz] = local(cx, cz, yaw), px = x + lx, pz = z + lz;
       if (Math.hypot(px - pl.pos.x, pz - pl.pos.z) < r + 0.32 && Math.abs(pl.pos.y - y) < 1.5) return { ok: false, why: 'Trop près de toi' };

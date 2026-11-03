@@ -26,9 +26,14 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 // What the stones are made of (geology.js) and what the tools can do to
 // them. A stone's strength is its size times the hardness of its mineral; a
 // good square blow takes off the tool's power, a glancing one much less.
+// tier: the hardest ore it breaks (MINERALS[].tier)
 export const TOOLS = {
-  pickaxe: { power: 1, glancing: 0.35 },
+  pickaxe: { power: 1, glancing: 0.35, tier: 0 },
+  'pickaxe:copper': { power: 1.4, glancing: 0.4, tier: 1 },
+  'pickaxe:iron': { power: 2, glancing: 0.45, tier: 2 },
+  'pickaxe:obsidian': { power: 3, glancing: 0.5, tier: 3 },
 };
+export const canMine = (p, tool) => (mineralOf(p).tier || 0) <= (TOOLS[tool]?.tier ?? -1);
 const strengthOf = (p) => Math.round((2 + Math.round(p.s * 2.4)) * mineralOf(p).hardness); // 3 blows for a pebble, 5 for a big one
 
 // square particles flying under gravity; drag > 0 slows them in the air
@@ -234,6 +239,14 @@ export class Quarry {
       this.hooks.killed?.(c.animal, dir);
       this.impact(0.06, 0.4, 70, 0.6, 0.006);
       return 0.15;
+    }
+    if (c.kind === 'stone' && TOOLS[tool] && !canMine(c.prop, tool)) { // ore too hard for this pick: sparks, and it rings off
+      this.spray(at, n, dir, 16, 2.6);
+      for (let k = 0; k < 4; k++) this.chip(at, n, 1.2, pick(mineralOf(c.prop).chips));
+      this.hooks.sound?.('clank');
+      this.hooks.tooHard?.(c.prop);
+      this.impact(0.06, 0.6, 80, 0.9, 0.012);
+      return 1;
     }
     if (c.kind === 'stone' && TOOLS[tool]) return this.hitStone(c.prop, at, n, dir, good, tool);
     if (c.kind === 'rock' || c.kind === 'stone') { // too big for a pick: a shower of sparks and a jarring clank
