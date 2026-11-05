@@ -1591,12 +1591,22 @@ function furnaceModel() {
     });
     for (let i = 0; i < inner.length - 1; i++) { const a = b + i * 2; shellS.idx.push(a, a + 2, a + 3, a, a + 3, a + 1); }
   }
-  const shell = geo(shellS.pos, shellS.nor, shellS.uv, shellS.idx);
-  // a quick normal check: the face triangles must face +X
+  // every triangle wound counter-clockwise seen from the side its normal points to
+  const orient = (g) => {
+    const P = g.attributes.position, N = g.attributes.normal, I = g.index.array;
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+    for (let t = 0; t < I.length; t += 3) {
+      a.fromBufferAttribute(P, I[t]); b.fromBufferAttribute(P, I[t + 1]); c.fromBufferAttribute(P, I[t + 2]);
+      n.fromBufferAttribute(N, I[t]).add(c.clone().fromBufferAttribute(N, I[t + 1])).add(c.clone().fromBufferAttribute(N, I[t + 2]));
+      if (b.sub(a).cross(c.sub(a)).dot(n) < 0) { const k = I[t + 1]; I[t + 1] = I[t + 2]; I[t + 2] = k; }
+    }
+    return g;
+  };
+  const shell = orient(geo(shellS.pos, shellS.nor, shellS.uv, shellS.idx));
   const clayGeo = merge([[paint(dome)], [paint(shell)]]);
   const tun = sweep(inner, X0, XF, true, AR, AR * 0.8);
   { const back = tun.pos.length / 3; tun.pos.push(X0, B + AH * 0.6, 0); tun.nor.push(1, 0, 0); tun.uv.push(0.5, 0); inner.forEach((_, i) => { if (i < inner.length - 1) tun.idx.push(back, i * 2, (i + 1) * 2); }); }
-  const tunnel = geo(tun.pos, tun.nor, tun.uv, tun.idx);
+  const tunnel = orient(geo(tun.pos, tun.nor, tun.uv, tun.idx));
   // hand-laid clay coils: a darker seam with a lit lip every few rows,
   // finger smears along them, pits and a few hairline cracks
   const clay = once('clay2', () => pixTex(64, 48, (c, w, h) => {

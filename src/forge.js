@@ -98,12 +98,16 @@ class Plume {
       any = true;
       this.life[i] -= dt;
       const k = i * 3, v = this.vel, age = 1 - Math.max(0, this.life[i] / this.max[i]);
-      // rising heat slows down, the wind takes over; a slow curl
-      v[k + 1] *= 1 - dt * 0.35;
-      const w = Math.min(1, age * 2.2), curl = Math.sin(t * 0.9 + i * 1.7) * 0.07;
-      G.position.setXYZ(i, G.position.getX(i) + (v[k] + WIND.x * w + curl) * dt, G.position.getY(i) + (v[k + 1] + 0.12) * dt, G.position.getZ(i) + (v[k + 2] + WIND.z * w - curl * 0.6) * dt);
+      // out of the throat it shoots up, then the jet dies down to a slow
+      // buoyant rise, the puff spreads sideways and the wind takes it more
+      // and more as it climbs; a slow curl
+      const damp = Math.exp(-dt * 1.8);
+      v[k] *= damp; v[k + 2] *= damp; v[k + 1] = 0.28 + (v[k + 1] - 0.28) * damp;
+      const w = Math.min(1, age * 1.8), curl = Math.sin(t * 0.8 + i * 1.7) * 0.06 * w;
+      G.position.setXYZ(i, G.position.getX(i) + (v[k] + WIND.x * w + curl) * dt, G.position.getY(i) + v[k + 1] * dt, G.position.getZ(i) + (v[k + 2] + WIND.z * w - curl * 0.6) * dt);
       G.aAge.setX(i, this.life[i] <= 0 ? 1 : age);
-      G.aSize.setX(i, this.s0[i] + (this.s1[i] - this.s0[i]) * Math.sqrt(age));
+      // swells fast right out of the chimney, then slowly
+      G.aSize.setX(i, this.s0[i] + (this.s1[i] - this.s0[i]) * (0.4 * Math.min(1, age / 0.1) + 0.6 * Math.sqrt(age)));
     }
     if (any) { G.position.needsUpdate = true; G.aAge.needsUpdate = true; G.aSize.needsUpdate = true; }
   }
@@ -113,7 +117,7 @@ export class Forge {
   constructor(scene, camera, lights, hooks) {
     this.scene = scene; this.camera = camera; this.lights = lights; this.hooks = hooks;
     this.furnaces = new Set();
-    this.smoke = new Plume(scene, 110);
+    this.smoke = new Plume(scene, 240);
     this.sparks = new Puffs(scene, 40, THREE.AdditiveBlending);
     this.acc = 0;
   }
@@ -184,8 +188,15 @@ export class Forge {
       if (this.step(o, dt)) this.hooks.changed?.(o);
       this.show(o);
       if (!puff || !this.burning(o) || Math.hypot(o.x - cam.x, o.z - cam.z) > 40) continue;
-      // smoke rolling out of the chimney; now and then a spark rides up with it
-      if (Math.random() < 0.75) this.smoke.emit(_v.copy(o.flue).add(_w.set((Math.random() - 0.5) * 0.06, 0.02, (Math.random() - 0.5) * 0.06)), _u.set((Math.random() - 0.5) * 0.12, 0.7 + Math.random() * 0.35, (Math.random() - 0.5) * 0.12), 4.2 + Math.random() * 1.6, 0.16 + Math.random() * 0.05, 0.75 + Math.random() * 0.35);
+      // smoke rolling out of the chimney in uneven breaths: born small inside
+      // the throat (the stack hides it), it swells as it comes out; now and
+      // then a spark rides up with it
+      o.smokeT = (o.smokeT ?? 0) - 0.12;
+      while (o.smokeT <= 0) {
+        const breath = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * 1.9 + o.x), a = Math.random() * Math.PI * 2, sp = 0.12 + Math.random() * 0.1;
+        this.smoke.emit(_v.copy(o.flue).add(_w.set(Math.cos(a) * 0.025, -0.07, Math.sin(a) * 0.025)), _u.set(Math.cos(a) * sp, 0.85 + breath * 0.45 + Math.random() * 0.2, Math.sin(a) * sp), 4.5 + Math.random() * 1.8, 0.07 + breath * 0.03, 0.62 + breath * 0.3 + Math.random() * 0.3);
+        o.smokeT += 0.05 + Math.random() * 0.05 + (1 - breath) * 0.05;
+      }
       if (Math.random() < 0.06) this.sparks.emit(_v.copy(o.flue), _u.set((Math.random() - 0.5) * 0.3, 1.2 + Math.random() * 0.6, (Math.random() - 0.5) * 0.3), SPARK[Math.floor(Math.random() * 3)], 0.9, 0.03, { alpha: 1, grow: -0.6, gravity: 0.6 });
       if (Math.random() < 0.45) {
         const s = Math.sin(o.yaw), co = Math.cos(o.yaw), sp = 0.4 + Math.random() * 0.6;
