@@ -46,7 +46,8 @@ export const ITEMS = {
   'block:copper': { name: 'Bloc de cuivre', max: 64, cat: 'Construction', desc: 'Plaques rivetées, verdies par l’air marin. S’empile et se colle aux autres blocs.', build: true },
   // metalwork (forge.js): the furnace melts ore into ingots, the anvil forges the better tools
   furnace: { name: 'Four', max: 4, cat: 'Objet à poser', desc: 'Four en pierres et argile. Utilise-le pour l’ouvrir : minerai en haut, combustible en bas, il fond le minerai en lingots, fait du charbon avec le bois et grille le poisson.', place: 'furnace' },
-  anvil: { name: 'Enclume', max: 2, cat: 'Objet à poser', desc: 'Enclume de fer sur un billot. Les outils en fer, en obsidienne et la canne dorée se forgent quand tu es à côté.', place: 'anvil' },
+  bench: { name: 'Établi', max: 2, cat: 'Objet à poser', desc: 'Grosse table de travail en planches, avec son étau. Les meubles, les constructions, la barque et le four se fabriquent quand tu es à côté.', place: 'bench' },
+  anvil: { name: 'Enclume', max: 2, cat: 'Objet à poser', desc: 'Enclume de fer sur un billot. Tout ce qui est en métal se forge quand tu es à côté : outils, boussole, lanternes, canne dorée, blocs de métal, statue.', place: 'anvil' },
   'ingot:copper': { name: 'Lingot de cuivre', max: 64, cat: 'Matériau', desc: 'Cuivre fondu au four. Pour les outils en cuivre, les lanternes et les blocs de cuivre.' },
   'ingot:iron': { name: 'Lingot de fer', max: 64, cat: 'Matériau', desc: 'Fer fondu au four. Pour l’enclume, les outils en fer et en obsidienne.' },
   'ingot:gold': { name: 'Lingot d’or', max: 64, cat: 'Matériau', desc: 'Or fondu au four. Pour la canne dorée, la statue et les blocs d’or.' },
@@ -67,48 +68,58 @@ export const ITEMS = {
 
 // 'wood' in a recipe: any wood (palm or jungle tree), see WOOD_KINDS
 export const WOOD_KINDS = ['wood:palm', 'wood:tree'];
+// r.at: a workstation that must be close by. By hand you only make what a
+// castaway can tie together (torches, a camp fire, the notebook) and the
+// workbench itself; the workbench (at: 'bench') makes the furniture, the
+// building pieces, the boat, the furnace and the anvil; the anvil
+// (at: 'anvil') forges everything made of metal.
 export const RECIPES = [
   { out: 'torch', n: 2, need: [['wood', 1], ['fibre', 2], ['coconut', 1]] },
   { out: 'campfire', n: 1, need: [['wood', 3], ['stone', 4], ['fibre', 1]] },
-  { out: 'transat', n: 1, need: [['wood', 3], ['fibre', 6]] },
-  { out: 'parasol', n: 1, need: [['wood', 2], ['fibre', 10]] },
-  { out: 'chest', n: 1, need: [['wood', 6], ['fibre', 2]] },
-  { out: 'bed', n: 1, need: [['wood', 5], ['fibre', 12]] },
-  { out: 'boat', n: 1, need: [['wood', 10], ['fibre', 6]] },
   { out: 'book', n: 1, need: [['fibre', 6], ['wood', 1]] },
-  { out: 'block:wood', n: 4, need: [['wood', 2]] },
-  { out: 'block:stone', n: 2, need: [['stone', 3]] },
-  { out: 'floor', n: 1, need: [['wood', 2], ['fibre', 2]] },
-  { out: 'wall', n: 1, need: [['wood', 3]] },
-  { out: 'door', n: 1, need: [['wood', 3]] },
-  { out: 'window', n: 1, need: [['wood', 3]] },
-  { out: 'gate', n: 1, need: [['wood', 2], ['fibre', 2]] },
-  { out: 'roof', n: 1, need: [['fibre', 8], ['wood', 1]] },
-  { out: 'gable', n: 1, need: [['wood', 2]] },
-  { out: 'flatroof', n: 1, need: [['fibre', 8], ['wood', 1]] },
-  { out: 'stairs', n: 1, need: [['wood', 3]] },
-  // metalwork: furnace first, then copper tools in the bag, then the anvil
-  // for everything forged in iron, obsidian or gold (at: 'anvil')
-  { out: 'furnace', n: 1, need: [['stone', 8], ['fibre', 2]] },
-  { out: 'axe:copper', n: 1, need: [['ingot:copper', 3], ['wood', 2]] },
-  { out: 'pickaxe:copper', n: 1, need: [['ingot:copper', 3], ['wood', 2]] },
-  { out: 'anvil', n: 1, need: [['ingot:iron', 4], ['stone', 3], ['wood', 2]] },
+  { out: 'bench', n: 1, need: [['wood', 6], ['fibre', 4]] },
+  { out: 'transat', n: 1, need: [['wood', 3], ['fibre', 6]], at: 'bench' },
+  { out: 'parasol', n: 1, need: [['wood', 2], ['fibre', 10]], at: 'bench' },
+  { out: 'chest', n: 1, need: [['wood', 6], ['fibre', 2]], at: 'bench' },
+  { out: 'bed', n: 1, need: [['wood', 5], ['fibre', 12]], at: 'bench' },
+  { out: 'boat', n: 1, need: [['wood', 10], ['fibre', 6]], at: 'bench' },
+  { out: 'block:wood', n: 4, need: [['wood', 2]], at: 'bench' },
+  { out: 'block:stone', n: 2, need: [['stone', 3]], at: 'bench' },
+  { out: 'floor', n: 1, need: [['wood', 2], ['fibre', 2]], at: 'bench' },
+  { out: 'wall', n: 1, need: [['wood', 3]], at: 'bench' },
+  { out: 'door', n: 1, need: [['wood', 3]], at: 'bench' },
+  { out: 'window', n: 1, need: [['wood', 3]], at: 'bench' },
+  { out: 'gate', n: 1, need: [['wood', 2], ['fibre', 2]], at: 'bench' },
+  { out: 'roof', n: 1, need: [['fibre', 8], ['wood', 1]], at: 'bench' },
+  { out: 'gable', n: 1, need: [['wood', 2]], at: 'bench' },
+  { out: 'flatroof', n: 1, need: [['fibre', 8], ['wood', 1]], at: 'bench' },
+  { out: 'stairs', n: 1, need: [['wood', 3]], at: 'bench' },
+  { out: 'block:obsidian', n: 2, need: [['obsidian', 3]], at: 'bench' },
+  { out: 'block:nacre', n: 4, need: [['pearl', 1], ['stone', 4]], at: 'bench' },
+  // metalwork: the furnace and the anvil at the workbench, then every metal
+  // thing at the anvil
+  { out: 'furnace', n: 1, need: [['stone', 8], ['fibre', 2]], at: 'bench' },
+  { out: 'anvil', n: 1, need: [['ingot:iron', 4], ['stone', 3], ['wood', 2]], at: 'bench' },
+  { out: 'axe:copper', n: 1, need: [['ingot:copper', 3], ['wood', 2]], at: 'anvil' },
+  { out: 'pickaxe:copper', n: 1, need: [['ingot:copper', 3], ['wood', 2]], at: 'anvil' },
   { out: 'axe:iron', n: 1, need: [['ingot:iron', 3], ['wood', 2]], at: 'anvil' },
   { out: 'pickaxe:iron', n: 1, need: [['ingot:iron', 3], ['wood', 2]], at: 'anvil' },
   { out: 'axe:obsidian', n: 1, need: [['obsidian', 3], ['ingot:iron', 1], ['ingot:gold', 1], ['wood', 2]], at: 'anvil' },
   { out: 'pickaxe:obsidian', n: 1, need: [['obsidian', 3], ['ingot:iron', 1], ['ingot:gold', 1], ['wood', 2]], at: 'anvil' },
   { out: 'rod:gold', n: 1, need: [['ingot:gold', 3], ['fibre', 4], ['wood', 1]], at: 'anvil' },
-  { out: 'compass', n: 1, need: [['ingot:iron', 1], ['ingot:copper', 1], ['wood', 1]] },
-  { out: 'lantern', n: 2, need: [['amethyst', 1], ['ingot:iron', 1]] },
-  { out: 'lantern:copper', n: 2, need: [['ingot:copper', 2], ['coconut', 1]] },
+  { out: 'compass', n: 1, need: [['ingot:iron', 1], ['ingot:copper', 1], ['wood', 1]], at: 'anvil' },
+  { out: 'lantern', n: 2, need: [['amethyst', 1], ['ingot:iron', 1]], at: 'anvil' },
+  { out: 'lantern:copper', n: 2, need: [['ingot:copper', 2], ['coconut', 1]], at: 'anvil' },
   { out: 'statue', n: 1, need: [['ingot:gold', 6], ['amethyst', 2]], at: 'anvil' },
-  { out: 'block:copper', n: 2, need: [['ingot:copper', 3]] },
-  { out: 'block:obsidian', n: 2, need: [['obsidian', 3]] },
-  { out: 'block:gold', n: 1, need: [['ingot:gold', 4]] },
-  { out: 'block:nacre', n: 4, need: [['pearl', 1], ['stone', 4]] },
+  { out: 'block:copper', n: 2, need: [['ingot:copper', 3]], at: 'anvil' },
+  { out: 'block:gold', n: 1, need: [['ingot:gold', 4]], at: 'anvil' },
 ];
 // workstations a recipe may need nearby
-export const STATIONS = { anvil: 'Enclume' };
+// name: shown on the recipe; where: the hint when it is not close by
+export const STATIONS = {
+  bench: { name: 'Établi', where: 'Ça se fabrique à côté d’un établi', tip: 'Se fabrique à côté d’un établi' },
+  anvil: { name: 'Enclume', where: 'Ça se forge à côté d’une enclume', tip: 'Se forge à côté d’une enclume' },
+};
 
 // Tool families: 'axe', 'axe:copper', 'axe:iron'… are all axes. The base
 // tool is tier 0; better ones cut and mine faster (axe.js, pickaxe.js) and

@@ -73,7 +73,7 @@ export class Inventory {
   craft(k) {
     const r = RECIPES[k];
     if (!r) return;
-    if (r.at && !this.near?.[r.at]) { this.sound?.('deny'); this.toast?.(`Ça se forge à côté d’une ${STATIONS[r.at].toLowerCase()}`); return; }
+    if (r.at && !this.near?.[r.at]) { this.sound?.('deny'); this.toast?.(STATIONS[r.at].where); return; }
     if (!this.canCraft(r)) { this.sound?.('deny'); this.toast?.('Il manque des matériaux'); return; }
     for (const [need, n] of r.need) {
       let left = n;
@@ -87,7 +87,7 @@ export class Inventory {
     }
     const left = this.add(r.out, r.n);
     if (left) { this.cursor = { id: r.out, n: left }; }
-    this.sound?.(r.at ? 'forge' : 'craft');
+    this.sound?.(r.at === 'anvil' ? 'forge' : 'craft');
     this.flash = r.out;
     this.changed();
   }
@@ -302,7 +302,7 @@ export class Inventory {
       el.className = 'recipe';
       const out = itemDef(r.out);
       el.innerHTML = `<div class="r-out"><img alt="" src="${iconURL(r.out)}">${r.n > 1 ? `<span>×${r.n}</span>` : ''}</div>
-        <div class="r-body"><div class="r-name">${out.name}</div><div class="r-need">${r.need.map(([id, n]) => `<span class="need" data-id="${id}" data-n="${n}" title="${itemDef(id).name}"><img alt="" src="${iconURL(id === 'wood' ? 'wood:tree' : id)}">${n}</span>`).join('')}${r.at ? `<span class="need station" data-at="${r.at}"><img alt="" src="${iconURL(r.at)}">${STATIONS[r.at]}</span>` : ''}</div></div>
+        <div class="r-body"><div class="r-name">${out.name}</div><div class="r-need">${r.need.map(([id, n]) => `<span class="need" data-id="${id}" data-n="${n}" title="${itemDef(id).name}"><img alt="" src="${iconURL(id === 'wood' ? 'wood:tree' : id)}">${n}</span>`).join('')}${r.at ? `<span class="need station" data-at="${r.at}"><img alt="" src="${iconURL(r.at)}">${STATIONS[r.at].name}</span>` : ''}</div></div>
         <button class="r-btn" tabindex="-1">Créer</button>`;
       el.querySelector('.r-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.craft(k); });
       el.addEventListener('pointerenter', () => this.showRecipeTip(k, el));
@@ -414,7 +414,7 @@ export class Inventory {
   }
   showRecipeTip(k, el) {
     const r = RECIPES[k], d = itemDef(r.out);
-    this.tipEl.innerHTML = `<b>${d.name}</b><em style="color:${CAT_COLOR[d.cat] || '#fff'}">${d.cat}</em><span>${d.desc}</span>${r.at ? `<em style="color:#ffb08e">Se forge à côté d’une ${STATIONS[r.at].toLowerCase()}</em>` : ''}`;
+    this.tipEl.innerHTML = `<b>${d.name}</b><em style="color:${CAT_COLOR[d.cat] || '#fff'}">${d.cat}</em><span>${d.desc}</span>${r.at ? `<em style="color:#ffb08e">${STATIONS[r.at].tip}</em>` : ''}`;
     this.placeTip(el);
   }
   placeTip(el, x, y) {

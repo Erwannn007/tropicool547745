@@ -50,6 +50,8 @@ Les images de référence du projet sont des captures de jeux indé pixel-art 3D
 
 - Métaux des outils (`src/metals.js`, cinq teintes : talon, œil, joues, biseau, fil) : cuivre `#6a2e14 #94481e #c06a30 #e89a5a #ffd6a8` · fer forgé `#363a46 #4a505e #5e6676 #929cb0 #eef2fa` · obsidienne `#1c1628 #2c2440 #40345a #7262a8 #ddd0ff` · or `#7a4e0e #a87218 #d09a28 #ecc040 #fff4c0`
 - Four : argile `#6a3018 #86401f #a25228 #ba6634 #d07c44 #e4985a`, suie `#1a1210 #261a16 #34241c #463024` (au-dessus de la bouche), briques de l'arc `#6a2414 #8a3018 #a83e1e #c45228 #dc6c38` · charbon de bois `#0e0c0e #18151a #242028 #343038 #4c4852 #7a7684` (craquelures carrées)
+- Lingots (7 teintes, du pied au biseau) : fer `#22262e #323844 #464e5e #5e6878 #7a8598 #a4aec0 #dce2ee` · cuivre `#4a1c0c #6a2e14 #94481e #c06a30 #e89a5a #ffc89a #fff0dc` · or `#6a400a #8a5a12 #b07e1e #d6a22c #ecc040 #fae078 #fffadc`
+- Fumée de cheminée : `#3a302c #5a504c #80797a #a8a6ac #cfd2da #e8ecf2` (en marches selon la hauteur, jamais en dégradé)
 - Récif : chaque corail a une couleur de base et une couleur de pointe (`PAL` dans `src/reef.js`), ombre = base × bleu froid, lumière = base chaude ; atlas gris en paliers (cerveau, polypes, plaques, dentelle, pores, nervures) · bénitier : coquille `#6a7068 #8a9086 #aab0a2 #c8ccbc #e2e4d6 #f6f6ec`, manteau `#0e2e5a #16488a #2270b8 #3a9ad8 #6ac8ec #b0f0f8` · nacre `#b8b0c8 #d0c8dc #e4dcec #f4eef8 #fffaff`
 - Sous l'eau : brouillard `#1a8599` → `#08386a` en profondeur, rayons de soleil `#bff8ff` en paliers, bulles `#1d6fa8 #8fe4ff #ffffff`
 

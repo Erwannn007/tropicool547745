@@ -388,6 +388,7 @@ function openChest(o) {
   openInventory();
 }
 function aimedChest() { const o = placement.aimed(); return o?.items && o.id === 'chest' ? o : null; }
+function aimedStation() { const o = placement.aimed(); return o?.id === 'bench' || o?.id === 'anvil' ? o : null; }
 function aimedFurnace() { const o = placement.aimed(); return o?.id === 'furnace' ? o : null; }
 // the furnace window next to the bag: what goes in, the fuel, what comes out
 function openFurnace(o) {
@@ -401,9 +402,10 @@ function openFurnace(o) {
   $('#furnace-help').textContent = 'En haut : minerai, bois ou poisson cru · en bas : charbon, bois, coco ou fibres';
   openInventory();
 }
-const anvilNear = () => placement.objects.some((o) => o.id === 'anvil' && Math.hypot(o.x - player.pos.x, o.z - player.pos.z) < 4 && Math.abs(o.y - player.pos.y) < 2.5);
+// a workstation (workbench, anvil) close enough to work at
+const stationNear = (id) => placement.objects.some((o) => o.id === id && Math.hypot(o.x - player.pos.x, o.z - player.pos.z) < 4 && Math.abs(o.y - player.pos.y) < 2.5);
 
-const ACTION_ICON = { furnace: '📍', anvil: '📍', statue: '📍', 'lantern:copper': '📍', compass: '🧭', lantern: '📍', boat: '📍', book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍', bed: '📍' };
+const ACTION_ICON = { furnace: '📍', anvil: '📍', bench: '📍', statue: '📍', 'lantern:copper': '📍', compass: '🧭', lantern: '📍', boat: '📍', book: '📖', rod: '🎣', axe: '🪓', scythe: '🌾', pickaxe: '⛏️', torch: '🔥', transat: '📍', parasol: '📍', campfire: '📍', bed: '📍' };
 let lastHeld, stashing = false;
 function onHeldChange(held) {
   const id = held?.id ?? null;
@@ -543,7 +545,8 @@ function promptHud(dt) {
         const what = burning && inp ? `Fond : ${itemDef(inp.id).name} ${Math.round(f.smelt.prog / SMELT_TIME * 100)} %` : out ? `Prêt : ${out.n} × ${itemDef(out.id).name}` : burning ? 'Allumé' : 'Éteint';
         promptTarget = { html: `<div class="pname">Four</div>${what}<br>${kb(K.use)} Ouvrir`, at: () => _anchor.set(f.x, f.y + 1.45, f.z) };
         promptAcc = 0.05;
-      } else if (a?.id === 'anvil') promptTarget = { html: `<div class="pname">Enclume</div>Ouvre ton sac à côté pour forger`, at: () => _anchor.set(a.x, a.y + 1, a.z) };
+      } else if (a?.id === 'anvil') promptTarget = { html: `<div class="pname">Enclume</div>${kb(K.use)} Forger`, at: () => _anchor.set(a.x, a.y + 1, a.z) };
+      else if (a?.id === 'bench') promptTarget = { html: `<div class="pname">Établi</div>${kb(K.use)} Fabriquer`, at: () => _anchor.set(a.x, a.y + 1.15, a.z) };
     }
     // an item in hand that is not a tool: how to set it down
     if (!promptTarget && state === 'play' && !carrying && held && hasModel(held) && !TOOLS_IN_HAND.has(held) && !PLACEABLE[held] && held !== 'boat') {
@@ -598,7 +601,7 @@ function closeBook() {
 
 function openInventory() {
   state = 'inventory';
-  inventory.near = { anvil: anvilNear() };
+  inventory.near = { anvil: stationNear('anvil'), bench: stationNear('bench') };
   inventory.padFocus = input.lastDevice === 'gamepad';
   inventory.setOpen(true);
   document.exitPointerLock?.();
@@ -1234,7 +1237,9 @@ function frame() {
     const gate = p.has('action') && heldKind !== 'axe' && !carrying && !chest && !fire ? aimedGate() : null;
     const bed = p.has('action') && heldKind !== 'axe' && !carrying && !chest && !fire && !gate ? aimedBed() : null;
     const boat = p.has('action') && heldKind !== 'axe' && !carrying && !chest && !fire && !gate && !bed && !boats.riding ? boats.aimed() : null;
+    const station = p.has('action') && heldKind !== 'axe' && !carrying && !chest && !fire && !gate && !bed && !boat && !PLACEABLE[heldId] ? aimedStation() : null;
     if (chest?.id === 'furnace') openFurnace(chest);
+    else if (station) openInventory();
     else if (chest) openChest(chest);
     else if (fire && useFire(fire, heldId)) { /* fish on or off the spit */ }
     else if (gate) building.toggle(gate, player.pos);

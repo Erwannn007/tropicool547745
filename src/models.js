@@ -1426,24 +1426,75 @@ const CLAY = ['#6a3018', '#86401f', '#a25228', '#ba6634', '#d07c44', '#e4985a'];
 const SOOT = ['#1a1210', '#261a16', '#34241c', '#463024'];
 const IRONR = ['#1e2028', '#2c303a', '#3e4450', '#5a6272', '#7a8496', '#c8d0de'];
 const CHARR = ['#0e0c0e', '#18151a', '#242028', '#343038', '#4c4852', '#7a7684'];
-const INGOT_PAL = { copper: ['#5a2410', '#7e3618', '#a44e24', '#c86c34', '#e8925a', '#ffc89a'], iron: IRONR, gold: NUGGET };
-// cast bar: a sloped-sided block, bright brushed top, the foundry stamp (a
-// little sun) pressed into it
+const INGOT_PAL = {
+  copper: ['#4a1c0c', '#6a2e14', '#94481e', '#c06a30', '#e89a5a', '#ffc89a', '#fff0dc'],
+  iron: ['#22262e', '#323844', '#464e5e', '#5e6878', '#7a8598', '#a4aec0', '#dce2ee'],
+  gold: ['#6a400a', '#8a5a12', '#b07e1e', '#d6a22c', '#ecc040', '#fae078', '#fffadc'],
+};
+// Cast bar: a true trapezoid ingot (wide foot, narrower top), crisp faces,
+// each face painted in its own patch of a 32 px atlas: brushed top with the
+// foundry stamp (a little sun) pressed in, sides shaded from the light top
+// edge to the cast foot, pitted underside. Signature: the bright honed
+// chamfer running round the top edge.
+const IA = { top: [1, 1, 23, 10], cham: [1, 11, 31, 13], side: [1, 14, 23, 22], end: [24, 14, 31, 22], foot: [1, 23, 23, 31] };
 function ingotModel(metal) {
-  const g = bevelBox(0.2, 0.05, 0.1, 0.01);
-  const P = g.attributes.position, U = g.attributes.uv;
-  for (let i = 0; i < P.count; i++) {
-    if (P.getY(i) > 0) { P.setX(i, P.getX(i) * 0.8); P.setZ(i, P.getZ(i) * 0.76); }
-    U.setXY(i, U.getX(i) * 4 + 0.5, U.getY(i) * 4 + 0.5);
-  }
-  g.translate(0, 0.025, 0);
-  g.computeVertexNormals();
+  const L = 0.105, W = 0.048, H = 0.052, C = 0.008; // foot half length / width, height, chamfer
+  const top = [L * 0.78, W * 0.66, H], sh = [top[0] + C, top[1] + C, H - C], foot = [L, W, 0];
+  const pos = [], nor = [], uv = [], idx = [];
+  const ctr = V(0, H / 2, 0);
+  // p0..p3: bottom-left, bottom-right, top-right, top-left of the face's
+  // atlas patch r = [x0, y0, x1, y1] (pixels, y down)
+  const quad = (pts, r) => {
+    const [a, b, c] = pts.map((p) => V(...p));
+    const n = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+    const out = n.dot(a.clone().add(c).multiplyScalar(0.5).sub(ctr)) > 0;
+    if (!out) n.negate();
+    const uvs = [[r[0], r[3]], [r[2], r[3]], [r[2], r[1]], [r[0], r[1]]];
+    const base = pos.length / 3;
+    pts.forEach((p, k) => { pos.push(...p); nor.push(n.x, n.y, n.z); uv.push(uvs[k][0] / 32, 1 - uvs[k][1] / 32); });
+    if (out) idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    else idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  };
+  const ring = ([x, z, y]) => [[-x, y, z], [x, y, z], [x, y, -z], [-x, y, -z]]; // +z side, then round
+  const band = (lo, hi, rLong, rEnd) => {
+    const A = ring(lo), B = ring(hi);
+    for (let k = 0; k < 4; k++) {
+      const j = (k + 1) % 4;
+      quad([A[k], A[j], B[j], B[k]], k % 2 === 0 ? rLong : rEnd);
+    }
+  };
+  const T0 = [top[0], top[1], top[2]], S0 = [sh[0], sh[1], sh[2]], F0 = [foot[0], foot[1], foot[2]];
+  band(F0, S0, IA.side, IA.end);
+  band(S0, T0, IA.cham, IA.cham);
+  const Tt = ring(T0); quad([Tt[0], Tt[1], Tt[2], Tt[3]], IA.top);
+  const Ff = ring(F0); quad([Ff[3], Ff[2], Ff[1], Ff[0]], IA.foot);
+  const g = geo(pos, nor, uv, idx);
   const pal = INGOT_PAL[metal];
-  const tex = once('ingot:' + metal, () => pixTex(16, 16, (c, w, h) => {
-    const r = mulberry32(metal.length * 7);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, pal, x, y, 3 + Math.sin(x * 0.9) * 0.4 + (r() - 0.5) * 0.9 + (y < 2 ? 1.2 : y > 13 ? -1 : 0));
-    // stamp: a ring with four rays, pressed in (dark) with a lit lower lip
-    for (const [x, y] of [[7, 5], [8, 5], [6, 6], [9, 6], [6, 7], [9, 7], [7, 8], [8, 8], [7, 3], [8, 3], [4, 6], [11, 7], [7, 10], [8, 10]]) { ramp(c, pal, x, y, 1); ramp(c, pal, x, y + 1, 4.6); }
+  const tex = once('ingot2:' + metal, () => pixTex(32, 32, (c) => {
+    const r = mulberry32(metal.length * 7 + 3);
+    const inR = (x, y, q) => x >= q[0] && x < q[2] && y >= q[1] && y < q[3];
+    const rowN = Array.from({ length: 32 }, () => (r() - 0.5) * 0.7);
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+      let k = 3;
+      if (inR(x, y, IA.top)) {
+        const q = IA.top, e = Math.min(x - q[0], q[2] - 1 - x, y - q[1], q[3] - 1 - y);
+        k = 4 + rowN[y] + (r() - 0.5) * 0.3; // brushed along the bar
+        const s = ((x - (y - q[1]) * 1.5) % 26 + 26) % 26;
+        if (s > 3 && s < 6) k = 5.2; // a slanting sheen
+        if (e === 0) k = 4.8;
+      } else if (inR(x, y, IA.cham)) k = (x % 9 === 4) ? 5.2 : 6;
+      else if (inR(x, y, IA.side) || inR(x, y, IA.end)) {
+        const q = inR(x, y, IA.side) ? IA.side : IA.end, f = (y - q[1]) / (q[3] - q[1] - 1);
+        k = (q === IA.side ? 3.6 : 2.9) - f * 1.4 + (r() - 0.5) * 0.5;
+        if (r() < 0.05) k -= 1.1; // casting pits
+        if (y === q[3] - 1) k -= 0.6;
+      } else if (inR(x, y, IA.foot)) k = 1.2 + (r() - 0.5) * 0.8 - (r() < 0.08 ? 0.8 : 0);
+      ramp(c, pal, x, y, k);
+    }
+    // the stamp: a ring with four rays, pressed in (dark) with a lit lower lip
+    const STAMP = [[-1, -1], [0, -1], [-2, 0], [1, 0], [-2, 1], [1, 1], [-1, 2], [0, 2], [-1, -3], [0, -3], [-4, 0], [3, 1], [-1, 3], [0, 3]];
+    for (const [dx, dy] of STAMP) ramp(c, pal, 12 + dx, 5 + dy + 1, 5.6);
+    for (const [dx, dy] of STAMP) ramp(c, pal, 12 + dx, 5 + dy, 2);
   }));
   return { parts: [{ geo: g, tex, metal: 1 }] };
 }
@@ -1462,70 +1513,125 @@ function charcoalModel() {
   return { parts: [{ geo: merge([[stick(0.24, 0.05), M(0.12, 0.05, -0.04, 0, 0.2)], [stick(0.2, 0.045), M(0.1, 0.05, 0.06, 0, -0.3)], [stick(0.18, 0.04), M(0.08, 0.13, 0.01, 0, 0.1)]]), tex }] };
 }
 
-// Furnace: a clay dome on a ring of stones, its arched mouth facing +X
-// (towards whoever placed it), a chimney at the back. Inside the tunnel lie
-// the coals: they glow and flames lick out only while it burns (parts marked
-// lit, shown by forge.js). Signature: the brick voussoirs round the mouth and
-// the soot that blackens the clay above it.
-export const FURNACE = { MOUTH: V(0.5, 0.42, 0), H: 1.25 };
+// Furnace: a beehive of clay coils on a masonry plinth ringed with field
+// stones, its arched mouth under a little hooded porch facing +X (towards
+// whoever placed it), a tall chimney at the back. The dome is really open
+// behind the porch: one looks into the soot-black tunnel and its bed of
+// coals, which glow (and the whole tunnel with them) while it burns (parts
+// marked lit, shown by forge.js). Signature: the brick voussoirs round the
+// mouth, the soot licked up the clay above it and the flat stone sill with
+// its spill of ash.
+export const FURNACE = { MOUTH: V(0.6, 0.42, 0), FLUE: V(-0.22, 1.44, 0), H: 1.45 };
 function furnaceModel() {
-  const R = 0.52, B = 0.3; // dome radius, plinth height
+  const R = 0.52, B = 0.3, DH = R * 1.3; // dome radius, plinth height, dome height
+  const AW = 0.2, AH = 0.18, AR = AW, OFF = 0.12; // mouth half width, wall height, arch radius, porch thickness
+  const XF = 0.6, X0 = 0.12, XS = 0.24; // porch face, back of the tunnel, back of the porch shell
   const plinth = lathe([[0, 0], [R + 0.08, 0], [R + 0.1, 0.04], [R + 0.08, B - 0.03], [R + 0.03, B], [0, B]], 16, 4);
-  const domePts = [];
-  for (let k = 0; k <= 9; k++) { const a = (k / 9) * Math.PI / 2; domePts.push([Math.cos(a) * R * (1 - 0.06 * Math.sin(a * 2)), B + Math.sin(a) * R * 1.25]); }
-  const dome = lathe(domePts, 20, 1);
-  { // soot licked up the clay above the mouth (+X): darker vertex colours there
-    const P = dome.attributes.position, col = [];
-    for (let i = 0; i < P.count; i++) {
-      const x = P.getX(i), y = P.getY(i) - B, z = P.getZ(i);
-      const k = x > 0 ? Math.max(0, 1 - Math.abs(z) / 0.3) * Math.max(0, 1 - Math.abs(y - 0.42) / 0.22) * (x / R) : 0;
-      const v = k > 0.55 ? 0.32 : k > 0.25 ? 0.6 : 1;
-      col.push(v, v * 0.95, v * 0.92);
-    }
-    dome.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  // field stones round the foot of the plinth (not in front of the mouth)
+  const stones = [], rnd = mulberry32(141);
+  for (let i = 0; i < 15; i++) {
+    const a = (i / 15) * Math.PI * 2 + 0.21;
+    if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < 0.5) continue;
+    stones.push([rockGeo(140 + i, 0.085 + rnd() * 0.04), M(Math.cos(a) * (R + 0.1), 0.035, Math.sin(a) * (R + 0.1), 0, rnd() * 6, 0)]);
   }
-  const clay = once('clay', () => pixTex(64, 32, (c, w, h) => {
+  // the arch of the mouth (inner) and of the porch round it (off > 0)
+  const archPts = (off) => {
+    const p = [[-(AW + off), 0]];
+    for (let k = 0; k <= 12; k++) { const a = Math.PI - (k / 12) * Math.PI; p.push([Math.cos(a) * (AR + off), AH + Math.sin(a) * (AR * 0.8 + off)]); }
+    p.push([AW + off, 0]);
+    return p;
+  };
+  const inArch = (x, y, z, off) => {
+    if (x < 0.02 || Math.abs(z) > AW + off) return false;
+    const yy = y - B, rz = AR + off, top = AH + Math.sqrt(Math.max(0, 1 - (z / rz) ** 2)) * (AR * 0.8 + off);
+    return yy < top;
+  };
+  // soot: darker vertex colours licked up the clay above the mouth
+  const sootAt = (x, y, z) => {
+    if (x <= 0) return 1;
+    const yy = y - B - (AH + AR * 0.8 + OFF), k = Math.max(0, 1 - Math.abs(z) / (0.26 + Math.max(0, yy) * 0.3)) * Math.max(0, 1 - Math.abs(yy - 0.08) / 0.2) * Math.min(1, x / 0.35);
+    return k > 0.5 ? 0.42 : k > 0.18 ? 0.68 : 1;
+  };
+  const paint = (g) => {
+    const P = g.attributes.position, col = [];
+    for (let i = 0; i < P.count; i++) { const v = sootAt(P.getX(i), P.getY(i), P.getZ(i)); col.push(v, v * 0.94, v * 0.9); }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    return g;
+  };
+  // the beehive: a bulging dome, cut open behind the porch
+  const domePts = [];
+  for (let k = 0; k <= 13; k++) { const a = (k / 13) * Math.PI / 2; domePts.push([Math.pow(Math.cos(a), 0.9) * R * (1 + 0.04 * Math.sin(a * 2.2)), B + Math.sin(a) * DH]); }
+  const dome = lathe(domePts, 48, 3);
+  {
+    const P = dome.attributes.position, I = dome.index.array, keep = [];
+    const inside = (i) => inArch(P.getX(i), P.getY(i), P.getZ(i), OFF - 0.005);
+    for (let t = 0; t < I.length; t += 3) if (!(inside(I[t]) && inside(I[t + 1]) && inside(I[t + 2]))) keep.push(I[t], I[t + 1], I[t + 2]);
+    dome.setIndex(keep);
+  }
+  // sweep an arch along x: the porch shell outside (normals out) or the tunnel inside (normals in)
+  const sweep = (pts, xa, xb, inward, rz, ry) => {
+    const pos = [], nor = [], uv = [], idx = [];
+    pts.forEach(([z, y], i) => {
+      let nz = y > AH ? z / rz : Math.sign(z), ny = y > AH ? (y - AH) / ry : 0;
+      const l = Math.hypot(nz, ny) || 1; nz /= l; ny /= l;
+      if (inward) { nz = -nz; ny = -ny; }
+      for (const x of [xa, xb]) { pos.push(x, B + y, z); nor.push(0, ny, nz); uv.push(i / pts.length * 1.5, (x - xa) * 3); }
+    });
+    for (let i = 0; i < pts.length - 1; i++) { const a = i * 2; inward ? idx.push(a, a + 3, a + 1, a, a + 2, a + 3) : idx.push(a, a + 1, a + 3, a, a + 3, a + 2); }
+    return { pos, nor, uv, idx };
+  };
+  const inner = archPts(0), outer = archPts(OFF);
+  const shellS = sweep(outer, XS, XF, false, AR + OFF, AR * 0.8 + OFF);
+  { // the porch face: a horseshoe between the two arches
+    const b = shellS.pos.length / 3;
+    inner.forEach(([z, y], i) => {
+      const [oz, oy] = outer[i];
+      shellS.pos.push(XF, B + y, z, XF, B + oy, oz); shellS.nor.push(1, 0, 0, 1, 0, 0);
+      shellS.uv.push(z * 2 + 0.5, y * 2, oz * 2 + 0.5, oy * 2);
+    });
+    for (let i = 0; i < inner.length - 1; i++) { const a = b + i * 2; shellS.idx.push(a, a + 2, a + 3, a, a + 3, a + 1); }
+  }
+  const shell = geo(shellS.pos, shellS.nor, shellS.uv, shellS.idx);
+  // a quick normal check: the face triangles must face +X
+  const clayGeo = merge([[paint(dome)], [paint(shell)]]);
+  const tun = sweep(inner, X0, XF, true, AR, AR * 0.8);
+  { const back = tun.pos.length / 3; tun.pos.push(X0, B + AH * 0.6, 0); tun.nor.push(1, 0, 0); tun.uv.push(0.5, 0); inner.forEach((_, i) => { if (i < inner.length - 1) tun.idx.push(back, i * 2, (i + 1) * 2); }); }
+  const tunnel = geo(tun.pos, tun.nor, tun.uv, tun.idx);
+  // hand-laid clay coils: a darker seam with a lit lip every few rows,
+  // finger smears along them, pits and a few hairline cracks
+  const clay = once('clay2', () => pixTex(64, 48, (c, w, h) => {
     const r = mulberry32(57);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      let k = 2.8 + Math.sin(x * 0.35 + Math.sin(y * 0.4) * 2) * 0.5 + (r() - 0.5) * 0.9; // hand-smoothed clay
-      if (r() < 0.03) k -= 1.4; // pits
-      if ((x * 7 + y * 13) % 53 === 0) k = 0.6; // little cracks
+      const fy = y % 6, wob = Math.round(Math.sin(x * 0.3 + Math.floor(y / 6)) * 0.7);
+      let k = 2.9 + Math.sin(x * 0.45 + y * 0.2 + Math.sin(y * 0.7) * 2) * 0.35 + (r() - 0.5) * 0.7;
+      if ((fy + wob + 6) % 6 === 0) k = 1.1; else if ((fy + wob + 6) % 6 === 1) k += 1.3; else if ((fy + wob + 6) % 6 === 5) k -= 0.6;
+      if (r() < 0.025) k -= 1.5;
+      if ((x * 7 + y * 13) % 61 === 0) k = 0.5;
       ramp(c, CLAY, x, y, k);
     }
   }));
-  // tunnel into the dome: an arch (flat sill, round top) swept along x
-  const AW = 0.2, AH = 0.18, AR = AW; // half width, wall height, arch radius
-  const arch = [];
-  arch.push([-AW, 0]);
-  for (let k = 0; k <= 10; k++) { const a = Math.PI - (k / 10) * Math.PI; arch.push([Math.cos(a) * AR, AH + Math.sin(a) * AR * 0.8]); }
-  arch.push([AW, 0]);
-  const x0 = 0.12, x1 = R + 0.1, pos = [], nor = [], uv = [], idx = [];
-  arch.forEach(([z, y], i) => {
-    for (const x of [x0, x1]) {
-      pos.push(x, B + y, z);
-      const nz = -z / AR, ny = y > AH ? -(y - AH) / AR : 0; nor.push(0, ny || 0, nz);
-      uv.push(i / arch.length * 2, (x - x0) * 4);
-    }
-  });
-  for (let i = 0; i < arch.length - 1; i++) { const a = i * 2; idx.push(a, a + 3, a + 1, a, a + 2, a + 3); }
-  const back = pos.length / 3; pos.push(x0, B + AH * 0.6, 0); nor.push(1, 0, 0); uv.push(0.5, 0);
-  arch.forEach((_, i) => { if (i < arch.length - 1) idx.push(back, i * 2, (i + 1) * 2); });
-  const tunnel = geo(pos, nor, uv, idx);
   const sootTex = once('ovenIn', () => pixTex(16, 16, (c, w, h) => { const r = mulberry32(58); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, SOOT, x, y, 0.8 + (r() - 0.5) * 1.4); }));
-  // brick voussoirs: a ring of wedges round the arch, standing proud of the clay
+  // inside, lit: the clay glows from orange at the mouth to white-hot deep in
+  const hotTex = once('ovenHot', () => pixTex(16, 16, (c, w, h) => {
+    const r = mulberry32(64), HOT = ['#5a1808', '#8a280c', '#c4420e', '#e8701a', '#ffa83a'];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, HOT, x, y, 3.6 - (y / h) * 2.6 + (r() - 0.5) * 1.2);
+  }));
+  const hot = tunnel.clone();
+  hot.translate(0, -B, 0); hot.scale(1, 0.975, 0.975); hot.translate(-0.002, B, 0);
+  // brick voussoirs: a ring of wedges round the arch, standing proud of the porch
   const bricks = [];
   for (let k = 0; k < 9; k++) {
     const a0 = Math.PI - (k / 9) * Math.PI, a1 = Math.PI - ((k + 0.86) / 9) * Math.PI;
-    const ring = (a, rr) => [Math.cos(a) * rr, AH + Math.sin(a) * rr * 0.8];
+    const rg = (a, rr) => [Math.cos(a) * rr, AH + Math.sin(a) * rr * 0.8];
     const s = new THREE.Shape();
-    const p0 = ring(a0, AR + 0.005), p1 = ring(a0, AR + 0.1), p2 = ring(a1, AR + 0.1), p3 = ring(a1, AR + 0.005);
+    const p0 = rg(a0, AR + 0.005), p1 = rg(a0, AR + 0.1), p2 = rg(a1, AR + 0.1), p3 = rg(a1, AR + 0.005);
     s.moveTo(...p0); s.lineTo(...p1); s.lineTo(...p2); s.lineTo(...p3); s.lineTo(...p0);
-    const b = new THREE.ExtrudeGeometry(s, { depth: 0.09, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.008, bevelSegments: 1 });
-    b.rotateY(Math.PI / 2); b.translate(x1 - 0.06, B, 0);
+    const b = new THREE.ExtrudeGeometry(s, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.008, bevelSegments: 1 });
+    b.rotateY(Math.PI / 2); b.translate(XF - 0.045, B, 0);
     bricks.push([b]);
   }
   for (const sz of [-1, 1]) { // jambs down to the sill
-    const j = bevelBox(0.1, AH, 0.08, 0.012); j.translate(x1 - 0.015, B + AH / 2, sz * (AW + 0.05)); bricks.push([j]);
+    const j = bevelBox(0.09, AH, 0.08, 0.012); j.translate(XF - 0.005, B + AH / 2, sz * (AW + 0.05)); bricks.push([j]);
   }
   const brickGeo = merge(bricks);
   { const P = brickGeo.attributes.position, U = brickGeo.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getZ(i) * 3 + P.getX(i) * 2, P.getY(i) * 3); }
@@ -1533,27 +1639,95 @@ function furnaceModel() {
     const r = mulberry32(59), BR = ['#6a2414', '#8a3018', '#a83e1e', '#c45228', '#dc6c38'];
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, BR, x, y, 2.4 + (r() - 0.5) * 1.4 + (y === 0 ? 1.4 : 0));
   }));
-  // chimney at the back, a lip of stone on top
-  const chimney = lathe([[0, 0], [0.12, 0], [0.11, 0.3], [0.1, 0.42], [0.13, 0.44], [0.13, 0.5], [0.08, 0.5], [0.08, 0.4], [0, 0.4]], 10, 1);
-  chimney.translate(-0.24, B + R * 0.95, 0);
+  // flat stone sill in front of the mouth, a spill of ash on it
+  const sill = bevelBox(0.26, 0.05, 0.62, 0.014, [0.3, 0, 0.3]); sill.translate(XF + 0.06, B - 0.02, 0);
+  const spill = lathe([[0, 0.012], [0.07, 0.009], [0.11, 0.003], [0.12, 0]], 10); spill.scale(1, 1, 1.4); spill.translate(XF + 0.05, B + 0.005, 0.02);
+  // chimney at the back: a tapering clay stack with two coil rings, a flared
+  // lip and soot round its throat
+  const chimney = lathe([[0, 0], [0.13, 0], [0.125, 0.16], [0.135, 0.18], [0.12, 0.2], [0.11, 0.42], [0.122, 0.44], [0.108, 0.46], [0.1, 0.56], [0.13, 0.58], [0.14, 0.62], [0.085, 0.63], [0.08, 0.52], [0, 0.52]], 12, 1);
+  chimney.translate(FURNACE.FLUE.x, FURNACE.FLUE.y - 0.63, 0);
+  const chimTex = once('chimney', () => pixTex(16, 32, (c, w, h) => {
+    const r = mulberry32(65);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const v = 1 - y / h; // 1 at the top of the stack
+      if (v > 0.86) ramp(c, SOOT, x, y, 1.5 + (r() - 0.5) * 1.5); // the throat, black with soot
+      else if (v > 0.78 && r() < (v - 0.78) * 9) ramp(c, SOOT, x, y, 2.5);
+      else ramp(c, CLAY, x, y, 2.8 + (r() - 0.5) * 0.8 + (y % 7 === 0 ? -1.4 : y % 7 === 1 ? 1 : 0));
+    }
+  }));
   // the fire inside: coals (always there, ash grey when cold) + embers and flames (lit)
   const bed = lathe([[0, 0.03], [0.12, 0.025], [0.17, 0.01], [0.18, 0]], 10);
-  bed.scale(1.3, 1, 1); bed.translate(0.3, B, 0);
+  bed.scale(1.3, 1, 1); bed.translate(0.32, B, 0);
   const ashTex = once('ash', () => pixTex(16, 16, (c, w, h) => { const r = mulberry32(60); const A = ['#3a3434', '#4e4646', '#686060', '#888080']; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, A, x, y, 1.6 + (r() - 0.5) * 2); }));
   const embers = bed.clone().translate(0, 0.004, 0);
-  const flames = merge([[flameGeo(1.2), M(0.28, B + 0.02, 0)], [flameGeo(0.9), M(0.36, B + 0.02, 0.07)], [flameGeo(0.85), M(0.34, B + 0.02, -0.08)]]);
+  const flames = merge([[flameGeo(1.2), M(0.3, B + 0.02, 0)], [flameGeo(0.9), M(0.4, B + 0.02, 0.07)], [flameGeo(0.85), M(0.37, B + 0.02, -0.08)]]);
   return {
     parts: [
       { geo: plinth, tex: BT.masonry() },
-      { geo: dome, tex: clay, vcol: true },
+      { geo: merge(stones), tex: T.stone() },
+      { geo: clayGeo, tex: clay, vcol: true },
       { geo: tunnel, tex: sootTex, double: true },
+      { geo: hot, tex: hotTex, glow: 0.9, lit: true, double: true },
       { geo: brickGeo, tex: brickTex },
-      { geo: chimney, tex: clay },
+      { geo: sill, tex: T.stone() },
+      { geo: spill, tex: ashTex },
+      { geo: chimney, tex: chimTex },
       { geo: bed, tex: ashTex },
       { geo: embers, tex: T.coals(), glow: 0.6, lit: true },
       { geo: flames, flame: true, lit: true },
     ],
     height: FURNACE.H,
+  };
+}
+
+// Workbench (établi): a thick plank top on four splayed log legs braced by
+// a slatted shelf, a wooden vice on the front left end with its round
+// screw handle, a mallet and a saw left on top. Its long side faces +X
+// (towards whoever placed it). Signature: the vice screw and the saw's
+// bright toothed edge.
+function benchModel() {
+  const TH = 0.86, LZ = 0.6, LX = 0.3; // top height, half length, half depth
+  const top = bevelBox(LX * 2, 0.09, LZ * 2, 0.018, [0.5, 0.5, 0.5]); top.translate(0, TH - 0.045, 0);
+  const legs = [];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const foot = V(sx * (LX - 0.02), 0, sz * (LZ - 0.02)), head = V(sx * (LX - 0.08), TH - 0.08, sz * (LZ - 0.1));
+    legs.push([logGeo(foot.distanceTo(head) + 0.02, 0.045), along(foot, head)]);
+  }
+  // shelf on two rails, slats across
+  const shelf = [];
+  for (const sx of [-1, 1]) { const rail = bevelBox(0.05, 0.05, LZ * 2 - 0.08, 0.01); rail.translate(sx * (LX - 0.05), 0.24, 0); shelf.push([rail]); }
+  for (let k = 0; k < 6; k++) { const s = bevelBox(LX * 2 - 0.06, 0.025, 0.13, 0.006, [0.2 * k, 0, 0.3]); s.translate(0, 0.28, -LZ + 0.13 + k * 0.17); shelf.push([s]); }
+  // vice: a jaw block on the front edge, a screw through it, a handle bar
+  const jaw = bevelBox(0.06, 0.16, 0.2, 0.012); jaw.translate(LX + 0.035, TH - 0.09, -LZ + 0.16);
+  const screw = lathe([[0, 0], [0.022, 0], [0.022, 0.12], [0.03, 0.125], [0.03, 0.15], [0, 0.155]], 8); screw.rotateZ(-Math.PI / 2); screw.translate(LX + 0.02, TH - 0.1, -LZ + 0.16);
+  const handle = lathe([[0, 0], [0.012, 0], [0.012, 0.22], [0.02, 0.225], [0.02, 0.25], [0, 0.25]], 6); handle.translate(LX + 0.16, TH - 0.21, -LZ + 0.16);
+  // mallet lying on top, head across the grain
+  const mHead = lathe([[0, 0], [0.04, 0], [0.045, 0.01], [0.045, 0.13], [0.04, 0.14], [0, 0.14]], 9); mHead.rotateX(Math.PI / 2); mHead.translate(0.06, TH + 0.045, 0.27);
+  const mHandle = lathe([[0, 0], [0.014, 0], [0.016, 0.2], [0.012, 0.22], [0, 0.22]], 6); mHandle.rotateZ(Math.PI / 2); mHandle.translate(0.06, TH + 0.045, 0.27); mHandle.rotateY(0.3);
+  // saw: a tapering steel blade, its teeth along the edge, a wooden grip
+  const sb = new THREE.Shape(); sb.moveTo(0, 0); sb.lineTo(0.36, 0.02); sb.lineTo(0.36, 0.075); sb.lineTo(0, 0.11); sb.lineTo(0, 0);
+  const blade = new THREE.ExtrudeGeometry(sb, { depth: 0.006, bevelEnabled: false });
+  blade.rotateX(-Math.PI / 2); blade.rotateY(-0.25); blade.translate(-0.2, TH + 0.003, -0.05);
+  { const P = blade.attributes.position, U = blade.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) * 4, P.getZ(i) * 4); }
+  const grip = bevelBox(0.1, 0.03, 0.12, 0.012); grip.rotateY(-0.25); grip.translate(-0.25, TH + 0.015, -0.08);
+  // wood shavings curled on the top
+  const shav = [];
+  for (let k = 0; k < 4; k++) shav.push([tube((t) => V(Math.cos(t * 5) * 0.018, Math.sin(t * 5) * 0.018 + 0.018, t * 0.03), () => 0.004, { rings: 8, radial: 3 }), M(0.15 + k * 0.035, TH, -0.3 + (k % 2) * 0.05, 0, k)]);
+  const sawTex = once('sawTeeth', () => pixTex(16, 16, (c, w, h) => {
+    const S = ['#525e78', '#66738c', '#808fa6', '#b8c4d9', '#f5faff'];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, S, x, y, 2.5 + (y % 4 === 0 ? 1.4 : 0) - (x % 3 === 0 ? 0.6 : 0));
+  }));
+  return {
+    parts: [
+      { geo: top, tex: BT.planks() },
+      { geo: merge(legs), tex: T.log(BARK) },
+      { geo: merge(shelf), tex: BT.planks() },
+      { geo: merge([[jaw], [mHead]]), tex: T.log(BARK) },
+      { geo: merge([[screw], [handle], [mHandle], [grip]]), tex: T.gold() },
+      { geo: blade, tex: sawTex, metal: 1, double: true },
+      { geo: merge(shav), tex: once('shaving', () => pixTex(4, 8, (c, w, h) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp(c, FRESH, x, y, 2.5 + (y % 3 === 0 ? 1.5 : 0)); })) },
+    ],
+    height: TH + 0.1,
   };
 }
 
@@ -1583,7 +1757,7 @@ function anvilModel() {
     if (x < -0.15) P.setZ(i, z * (0.35 + 0.65 * Math.max(0, 1 - (-0.15 - x) / 0.21))); // the horn tapers to a point
     let k = y > 0.235 ? 5 : y > 0.2 ? 3 : y < 0.04 ? 1 : 2;
     if (x < -0.3) k = 4; // the horn tip, worn bright
-    const c = new THREE.Color(IRONR[k]); col.push(c.r, c.g, c.b);
+    const c = new THREE.Color().setStyle(IRONR[k], THREE.NoColorSpace); col.push(c.r, c.g, c.b);
   }
   body.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   { const U = body.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) * 5, P.getY(i) * 5 + P.getZ(i) * 5); }
@@ -1792,6 +1966,7 @@ export const MODELS = {
   charcoal: () => once('m:charcoal', charcoalModel),
   furnace: () => once('m:furnace', furnaceModel),
   anvil: () => once('m:anvil', anvilModel),
+  bench: () => once('m:bench', benchModel),
   'lantern:copper': () => once('m:lantcu', copperLanternModel),
   statue: () => once('m:statue', statueModel),
   'rod:gold': () => once('m:rodau', goldRodModel),

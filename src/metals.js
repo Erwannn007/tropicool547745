@@ -4,7 +4,8 @@
 // or obsidian tool swaps each shade for the same step of its own ramp.
 import * as THREE from 'three';
 
-const hex = (h) => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; };
+// the ramps are display colours, like the steel shades: no sRGB decoding
+const hex = (h) => { const c = new THREE.Color().setStyle(h, THREE.NoColorSpace); return [c.r, c.g, c.b]; };
 export const STEEL = [[0.32, 0.37, 0.47], [0.4, 0.45, 0.55], [0.5, 0.56, 0.65], [0.72, 0.77, 0.85], [0.96, 0.98, 1.0]];
 export const METALS = {
   // red copper, darker where it is thick, pale pink-gold on the honed edge

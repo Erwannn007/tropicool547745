@@ -18,6 +18,7 @@ export const PLACEABLE = {
   bed: { circles: [[0.55, 0, 0.6], [-0.55, 0, 0.6]], foot: [[1.0, 0.55], [1.0, -0.55], [-1.0, 0.55], [-1.0, -0.55], [0, 0]], slope: 0.3, ring: 1.15, pick: 0.85, h: 0.55, bed: true },
   lantern: { circles: [[0, 0, 0.16]], foot: [[0, 0], [0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]], slope: 0.5, ring: 0.26, pick: 0.3, h: 0.45, light: { y: 0.3, radius: 8, col: [0.78, 0.55, 1.0] } },
   furnace: { circles: [[0, 0, 0.62]], foot: [[0.55, 0], [-0.55, 0], [0, 0.55], [0, -0.55], [0, 0]], slope: 0.35, ring: 0.72, pick: 0.75, h: 0.6, slots: 3 },
+  bench: { circles: [[0, 0.32, 0.36], [0, -0.32, 0.36]], foot: [[0.28, 0.58], [0.28, -0.58], [-0.28, 0.58], [-0.28, -0.58], [0, 0]], slope: 0.3, ring: 0.7, pick: 0.62, h: 0.9 },
   anvil: { circles: [[0, 0, 0.26], [-0.22, 0, 0.12]], foot: [[0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2], [0, 0]], slope: 0.35, ring: 0.42, pick: 0.42, h: 0.55 },
   'lantern:copper': { circles: [[0, 0, 0.15]], foot: [[0, 0], [0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]], slope: 0.5, ring: 0.26, pick: 0.3, h: 0.45, light: { y: 0.24, radius: 8, col: [1.0, 0.66, 0.3] } },
   statue: { circles: [[0, 0, 0.32]], foot: [[0.24, 0.24], [-0.24, 0.24], [0.24, -0.24], [-0.24, -0.24], [0, 0]], slope: 0.3, ring: 0.45, pick: 0.45, h: 0.9, light: { y: 0.9, radius: 4, col: [0.6, 0.42, 0.85] } },
@@ -129,7 +130,7 @@ export class Placement {
     }
     if (wet) return { ok: false, why: 'Pas dans l’eau' };
     if (hi - lo > def.slope) return { ok: false, why: 'Sol trop pentu' };
-    const y = id === 'transat' || id === 'campfire' || id === 'bed' || id === 'furnace' || id === 'statue' ? (lo + hi) / 2 : this.player.groundAt(x, z, pl.pos.y + 1.5);
+    const y = id === 'transat' || id === 'campfire' || id === 'bed' || id === 'furnace' || id === 'bench' || id === 'statue' ? (lo + hi) / 2 : this.player.groundAt(x, z, pl.pos.y + 1.5);
     for (const [cx, cz, r] of def.circles) {
       const [lx, lz] = local(cx, cz, yaw), px = x + lx, pz = z + lz;
       if (Math.hypot(px - pl.pos.x, pz - pl.pos.z) < r + 0.32 && Math.abs(pl.pos.y - y) < 1.5) return { ok: false, why: 'Trop près de toi' };
